@@ -14,46 +14,122 @@
 
 ## 0. État d'avancement
 
-> **Point d'arrêt : vendredi 4 septembre, ~01 h 40.** Reprise vendredi matin.
-> Dépôt propre, tout est poussé, rien en cours.
-> `main` = `origin/main` = **7b9f9be**.
+> **Point d'arrêt : vendredi 4 septembre, ~11 h 45.** Pause déjeuner, reprise
+> l'après-midi. Dépôt propre, rien en cours, `mvn` et `pytest` verts.
+> `main` = **4a73947**, **5 commits d'avance sur `origin/main`** — à pousser
+> à la reprise (`git push`).
 
-### Fait
+### Le § 4 est terminé. La contribution du PFE existe de bout en bout.
+
+C'était le seul point dur du plan, et il est passé. La chaîne complète est en
+place : un texte réglementaire scanné devient un corpus interrogeable, qui
+ancre la traduction de règles, qui alimente un écran d'activation, et qui
+répond à une question libre — chaque maillon citant sa page et son article.
+
+### Fait avant aujourd'hui
 
 | # | Étape | Preuve |
 |---|---|---|
-| — | Renommage des coordonnées Maven en `tn.schoolsys` / `schoolsys-*` | plus aucune collision `~/.m2` avec le projet copié |
-| §3.1 | Suppression des 4 modules backend (budget, pointage, audit, notification) | `mvn verify` vert, **562 tests, 0 échec** |
-| §3.3 | Nettoyage du front, 10 fichiers retouchés dont 5 tableaux de bord | `npm run build` vert, `oxlint` 0 erreur |
-| §7.1 | Dépôt git + push GitHub, secrets sortis du code | https://github.com/aymenkh9090/smartschool (privé) |
-| §7.2 | JaCoCo + module `coverage-report` | **29,7 %** de lignes agrégées (`planning` à 49,2 %) |
-| §7.4 | Dockerfiles backend et front (+ nginx SPA) | les 3 images construites en local **et** en CI |
-| §7.5 | Pipeline GitHub Actions, 4 jobs | [run #2 tout vert](https://github.com/aymenkh9090/smartschool/actions/runs/33824065706) |
+| — | Renommage des coordonnées Maven en `tn.schoolsys` / `schoolsys-*` | plus aucune collision `~/.m2` |
+| §3.1 | Suppression des 4 modules backend | `mvn verify` vert, **562 tests** |
+| §3.3 | Nettoyage du front, 10 fichiers retouchés | `npm run build` vert, `oxlint` 0 erreur |
+| §7.1 | Dépôt git + push GitHub, secrets sortis du code | dépôt privé |
+| §7.2 | JaCoCo + module `coverage-report` | **29,7 %** agrégés |
+| §7.4 | Dockerfiles backend et front | 3 images construites en local et en CI |
+| §7.5 | Pipeline GitHub Actions, 4 jobs | run #2 tout vert |
 
-### À reprendre demain, dans cet ordre
+### Fait aujourd'hui — § 4 en entier, 5 commits
 
-1. **§4 — le RAG consigne. C'est la contribution, et rien d'autre n'en dépend.**
-   Commencer par la transcription du corpus (~1 h 30) : c'est le seul travail
-   qui ne peut pas être parallélisé ni raccourci.
-2. §5 — les 4 retouches d'ergonomie du DSL (~2 h 30).
-3. §6 — le mobile React Native. **Point de non-retour dimanche 14 h**, plan B
-   documenté au §6.3.
-4. §7.3 — les 3 clics SonarCloud (importer le dépôt, méthode *GitHub Actions*,
-   secret `SONAR_TOKEN`). L'étape est déjà écrite dans le pipeline et
-   s'activera seule.
+| Commit | Contenu | Preuve |
+|---|---|---|
+| `f0cc441` | **Corpus + RAG consigne.** 22 chunks transcrits à la main depuis le scan arabe (18 articles + 3 tableaux + légende), recherche hybride dense + lexical | 41 tests, boot `22 articles indexés en 296 ms` |
+| `a306519` | **Ancrage de la traduction DSL.** `sources` + drapeau `concordance` | 157 tests |
+| `1642f65` | **NFKD, pluriels, synonymes du domaine** | rang 1 : 6 → 9 · top-3 : 10 → 12 |
+| `08bc7d5` | **Écran « Contraintes officielles »** + `GET /api/consigne/articles` | tsc + build verts |
+| `4a73947` | **`POST /api/consigne/chat`** + boîte de question dans l'onglet | 18 tests, 175 au total |
 
-### Deux vérifications non faites, à passer en premier demain
+**Chiffres à réutiliser tels quels dans le rapport et à la soutenance :**
 
-Elles ne demandent que quelques minutes et conditionnent tout le reste :
+- corpus : **22 chunks**, 18 articles + 3 tableaux + 1 légende, indexés en **296 ms** ;
+- recherche, apport du canal lexical, sur **deux jeux de questions distincts** —
+  ne pas les mélanger dans le rapport :
+  · les **13 questions figées dans `tests/test_consigne_rag.py`** : rang 1
+    **6 → 9**, top-3 **10 → 12** ;
+  · le **balayage de λ sur 16 questions** (les 13 plus 3 reformulations de la
+    question « 6 h par jour ») : rang 1 **6 → 11**, top-3 **10 → 14** ;
+- plancher : pertinentes ≥ **0,637**, hors-sujet ≤ **0,574**, écart **0,063** ;
+- chat : **1 à 7 s** avec articles, **120 ms** sans — le modèle n'est alors pas appelé ;
+- tests service Python : **175 verts**, 1 `xfail` documenté.
+
+### Les quatre décisions à défendre devant le jury
+
+Ce sont les vraies contributions. Chacune est un problème **mesuré**, pas une
+intuition, et chacune est consignée dans le code à l'endroit qu'elle concerne.
+
+1. **N'indexer que le texte normatif, pas notre analyse.** En indexant les deux,
+   les 22 chunks se ressemblaient tous : « donne-moi une recette de couscous »
+   marquait **0,639**, au-dessus de la pire question légitime (**0,625**). Les
+   deux populations se chevauchaient, aucun seuil ne pouvait plus les séparer.
+   Article seul : hors-sujet 0,574, pire cas légitime 0,637.
+
+2. **Recherche hybride, plancher sur le dense seul.** 22 articles du même texte
+   se ressemblent trop pour le dense. Le lexical classe, il n'autorise pas :
+   filtrer sur le score combiné laisserait passer une question hors sujet
+   partageant par hasard un terme rare. λ = 0,30 est un **choix argumenté**, pas
+   un optimum — le balayage monte encore, mais laisser le lexical dominer
+   reviendrait à faire de la correspondance de mots-clés.
+
+3. **L'ancrage provoque une régression, et il a fallu la traiter.** Montrer un
+   article à un 7B le pousse à traduire l'article. Mesuré sur 5 phrases × 3
+   passages : « de préférence des maths le matin » PERDAIT sa condition
+   `period = MORNING`, le § III.2.a nuançant en 3/4 – 1/4. Le garde-fou
+   n'interdisait que d'AJOUTER une condition ; le cas rencontré est l'inverse.
+   Corrigé, puis **vérifié sur des phrases tenues à l'écart** : 2 améliorées,
+   2 inchangées, 0 dégradée — l'ancrage fait désormais mieux que son absence.
+
+4. **Un total se lit, il ne s'estime pas.** Le modèle répondait « 4 heures » pour
+   `2+1+1+1` en comptant les séances. **Quatre reformulations du prompt n'y ont
+   rien changé**, dont un « NE CALCULE JAMAIS » en capitales. Correctif
+   structurel : les totaux sont calculés par script et inscrits dans le corpus.
+   C'est le même principe que `retrieval.py` applique déjà à la couverture du
+   cahier de séance.
+
+> **La phrase de la soutenance.** *« Le modèle ne décide de rien. Il traduit ; le
+> validateur Java refuse ou accepte ; l'analyse d'impact chiffre ; la citation
+> rend le tout vérifiable ; l'humain confirme. Une règle fausse est refusée, pas
+> appliquée. »*
+
+### À reprendre après le déjeuner, dans cet ordre
+
+1. **`git push`** — 5 commits en attente, c'est la première chose à faire.
+2. **§5 — ergonomie du DSL (~1 h 30 restante, pas 2 h 30).** L'écran officiel a
+   déjà livré le point 4 (le catalogue) et une partie du point 2 (le DSL est
+   replié derrière un `<details>` dans `AssistantRuleModal`). Restent :
+   - inverser l'entrée par défaut : ouvrir sur le champ de phrase, le
+     constructeur devenant « Mode expert » (~45 min) ;
+   - impact chiffré en langage courant : `matched_lessons` / `total_lessons`
+     existent déjà dans la réponse, les afficher en clair (~45 min).
+3. **§6 — mobile React Native. Point de non-retour dimanche 14 h**, plan B au §6.3.
+4. **§7.3 — SonarCloud**, 3 clics : importer le dépôt, méthode *GitHub Actions*,
+   secret `SONAR_TOKEN`. L'étape est déjà écrite dans le pipeline.
+
+### Bloqué, et ça ne dépend pas du code
+
+La vérification de bout en bout du § 3.4 exige `KC_CLIENT_SECRET`, que seule la
+console Keycloak donne :
 
 ```bash
-# Le mot de passe de la base a changé (secret sorti du code) : base neuve.
-docker compose down -v && docker compose up -d
+export KC_CLIENT_SECRET="<secret du client smartschool-backend>"
 mvn spring-boot:run -pl smartschool-api -Dspring-boot.run.profiles=demo
 ```
 
 - [ ] L'application démarre sans erreur Liquibase
 - [ ] Parcours : connexion → génération d'un emploi du temps → saisie d'un appel
+- [ ] L'onglet « Officielles » s'affiche et « Activer la règle » va au bout
+
+> **Fait ce matin en revanche** : `docker compose up -d` relance les **6**
+> conteneurs sains (`keycloak`, `keycloak-db`, `app-db`, `ai-assistant`,
+> `prometheus`, `grafana`). Le README n'en annonce que 3 — **à corriger**.
 
 ### Points ouverts
 
@@ -61,6 +137,19 @@ mvn spring-boot:run -pl smartschool-api -Dspring-boot.run.profiles=demo
   mobile — si une heure se libère dimanche, c'est là qu'elle rapporte le plus.
 - Le Quality Gate SonarCloud sera **rouge** au premier passage. Attendu,
   argumenté au §7.3 : le retourner en argument, pas le cacher.
+- **Limites du RAG, à assumer plutôt qu'à masquer** (toutes trois consignées
+  dans le code, deux par un test) :
+  - collision § I.3 / § III.1 sur « coupure matin/après-midi » — `xfail`
+    documenté, les deux articles parlent du même découpage de la journée ;
+  - le § II.2 (6 h/jour côté enseignant) entre dans le top-3 mais pas toujours
+    en tête : le § I.2 porte la même règle côté élève, mêmes chiffres, un mot
+    d'écart. `concordance` empêche la citation fausse ;
+  - le chat ne nomme pas toujours les trois types d'établissement, et omet
+    parfois la séance de quinzaine. **Aucune valeur fausse** — des
+    incomplétudes, pas des erreurs.
+- Le front n'a **aucune infrastructure de test**. Le parseur de tableaux
+  markdown a été vérifié en compilant le vrai composant avec rolldown ; en
+  ajouter une à deux jours du gel serait le mauvais arbitrage.
 
 ---
 
