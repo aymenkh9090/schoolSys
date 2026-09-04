@@ -4,11 +4,12 @@ Traduction d'une demande en langage naturel vers une règle DSL validée.
 Le flux, dans l'ordre, et pourquoi il est dans cet ordre :
 
     phrase utilisateur
-      → prompt construit à partir du CATALOGUE RÉEL du backend
+      → recherche dans la CIRCULAIRE MINISTÉRIELLE (top-3 articles)
+      → prompt = CATALOGUE RÉEL du backend + articles retrouvés
       → génération JSON contrainte (Ollama, format=json, température 0)
       → validation + analyse d'impact PAR LE BACKEND
       → [si refus] une tentative de correction, l'erreur du backend en entrée
-      → proposition rendue à l'utilisateur, avec son résumé et ses conflits
+      → proposition + résumé + conflits + ARTICLES CITÉS
       → *** aucune écriture *** — la confirmation est une action séparée
 
 Le modèle n'a ici qu'un seul rôle : passer d'une phrase à une structure. Il ne
@@ -18,6 +19,65 @@ réalisable (l'analyse de conflit le fait), ni si elle doit être enregistrée
 c'est ce qui rend le résultat vérifiable. Une règle produite par un modèle de
 7 milliards de paramètres tournant sur CPU sera parfois fausse ; ce qui compte,
 c'est qu'une règle fausse soit refusée plutôt qu'appliquée.
+
+**L'ancrage sur la circulaire ajoute la dernière pièce : la vérifiabilité de
+la SOURCE.** Le validateur dit qu'une règle est bien formée, l'analyse d'impact
+dit ce qu'elle change — ni l'un ni l'autre ne dit d'où elle sort. Un directeur
+qui active « six heures par jour au maximum » a le droit de savoir que c'est
+l'article II.2 de la circulaire n°66/2024, page 2, qui l'écrit, et de le lire.
+
+Le risque de cet ancrage est réel, il a été mesuré, et il s'est produit :
+injecter des articles dans le prompt pousse un modèle de 7B à traduire
+*l'article* au lieu de *la phrase de l'utilisateur*.
+
+**La mesure.** Cinq phrases traduites avec et sans ancrage, trois passages
+chacune (le modèle est reproductible à température 0, à une variante près sur
+quinze). Deux régressions stables sont apparues :
+
+  - « de préférence des maths le matin » perdait sa condition
+    `period = MORNING`. L'article § III.2.a nuance en « trois quarts le matin,
+    un quart l'après-midi » — le modèle en concluait qu'il ne fallait pas
+    fixer la demi-journée, et récompensait donc TOUTES les séances de maths ;
+  - « les travaux pratiques en laboratoire » passait de
+    `room.type EQUALS LABPHYSIQUE` à `room.type NOT_EQUALS SALLE_COURS`, en
+    mélangeant les deux moitiés du § III.4.
+
+Le premier garde-fou interdisait d'AJOUTER une condition absente de la phrase.
+Il ne disait rien du cas inverse — en RETIRER une — qui est celui qui s'est
+produit. Le prompt interdit désormais les deux et porte le contre-exemple
+travaillé du cas « maths le matin ».
+
+**Vérification sur des phrases tenues à l'écart**, pour ne pas mesurer le
+correctif sur son propre exemple : « de l'arabe le matin » et « éviter
+l'éducation physique le samedi matin ». Les deux régressions ont disparu, et
+sur ces deux phrases l'ancrage fait désormais MIEUX que l'absence d'ancrage —
+sans lui, le modèle ne gardait que la matière et laissait tomber le jour et la
+demi-journée. Échantillon de quatre phrases tenues à l'écart : deux améliorées,
+deux inchangées, aucune dégradée.
+
+Trois garde-fous, donc :
+
+  1. le prompt dit que les articles servent à choisir la portée, la sévérité et
+     les seuils — jamais à changer la règle demandée — et interdit aussi bien
+     d'ajouter que d'omettre une condition, contre-exemple à l'appui ;
+  2. seuls les articles qui se traduisent réellement en contrainte de solveur
+     (ceux qui portent une `portee`) sont injectés — les tableaux de volumes
+     horaires et les articles d'affectation sont écartés ;
+  3. la citation rendue à l'utilisateur distingue l'article dont la portée
+     CONCORDE avec la règle produite de ceux qui ne font que voisiner. Dire
+     « cette règle correspond au § II.2 » quand la recherche n'a fait que
+     remonter un article proche serait exactement le genre de citation
+     décorative qui décrédibilise un outil de traçabilité.
+
+**Limite connue.** Sur « les profs ne doivent pas dépasser 6 heures par jour »,
+la recherche remonte le § I.2 (même règle, côté ÉLÈVE) avant le § II.2 (côté
+enseignant) : les deux articles portent les mêmes chiffres et ne diffèrent que
+par un mot, et « profs » ne partage aucun terme avec « enseignant ». La règle
+produite reste juste — c'est le catalogue DSL qui la guide, pas l'article — et
+le drapeau `concordance` marque bien le § I.2 comme simplement voisin, donc
+l'interface ne citera pas à tort. Une table de synonymes du domaine
+(prof → enseignant, maths → mathématiques) dans le canal lexical fermerait
+l'écart ; elle n'est pas faite.
 """
 
 import json
@@ -28,6 +88,7 @@ from typing import Any
 
 from app.clients.backend import BackendClient, BackendError
 from app.clients.ollama import OllamaClient
+from app.services.consigne_retrieval import ArticleConsigne, ConsigneRetriever
 
 logger = logging.getLogger(__name__)
 
@@ -107,6 +168,49 @@ RÈGLES ABSOLUES :
 """
 
 
+# Découpé en deux moitiés plutôt qu'assemblé par str.format : le prompt contient
+# des exemples JSON, donc des accolades, et un format() y verrait des champs à
+# substituer. Une concaténation ne peut pas se casser en ajoutant un exemple.
+CONSIGNE_PROMPT_ENTETE = """
+ARTICLES DE LA CIRCULAIRE MINISTÉRIELLE EN RAPPORT AVEC CETTE DEMANDE
+
+Ces extraits de la circulaire n°66 du 04/09/2024 (ministère de l'Éducation,
+Tunisie) encadrent le TYPE de règle demandé. Ils t'aident à choisir la portée,
+la sévérité et les seuils corrects.
+
+"""
+
+CONSIGNE_PROMPT_PIED = """
+RÈGLE ABSOLUE SUR CES ARTICLES : tu traduis la phrase de l'utilisateur, et elle
+seule. Ne produis JAMAIS la règle d'un article à la place de la sienne.
+
+- N'AJOUTE jamais une condition, un seuil ou un jour qui ne figure pas dans sa
+  phrase.
+- N'OMETS jamais un élément qui figure dans sa phrase. Matière, jour,
+  demi-journée, heure, salle, niveau : chacun doit se retrouver dans les
+  conditions. Un article qui nuance la règle ("trois quarts le matin", "sauf
+  nécessité") ne t'autorise PAS à retirer la condition correspondante — la
+  nuance appartient au ministère, la règle appartient à l'utilisateur.
+- Si un article dit autre chose que l'utilisateur, c'est l'utilisateur qui
+  décide : il connaît son établissement, et une dérogation est sa responsabilité.
+
+Ces articles ne servent qu'à te dire quelle portée et quelle sévérité sont
+d'usage pour ce genre de règle.
+
+L'ERREUR À NE PAS COMMETTRE, sur un cas réel :
+  Utilisateur : « de préférence des maths le matin »
+  Article montré : § III.2.a — « trois quarts de l'horaire des matières
+  fondamentales sont programmés sur la période du matin, le quart restant
+  l'après-midi »
+  MAUVAIS : "conditions": [{"field": "subject.code", "operator": "EQUALS", "value": "MATH"}]
+            La demi-journée a disparu parce que l'article la nuance : la règle
+            récompense alors TOUTES les séances de maths, y compris celles de
+            l'après-midi. Ce n'est pas ce que l'utilisateur a demandé.
+  BON     : "conditions": [{"field": "subject.code", "operator": "EQUALS", "value": "MATH"},
+                           {"field": "period", "operator": "EQUALS", "value": "MORNING"}]
+"""
+
+
 @dataclass
 class ConstraintProposal:
     """
@@ -129,6 +233,13 @@ class ConstraintProposal:
     duration_ms: int = 0
     message: str = ""
 
+    # Articles de la circulaire retrouvés pour cette demande. Liste vide quand
+    # aucun ne dépasse le plancher — et c'est une information en soi, pas un
+    # échec : la plupart des règles d'un établissement sont des règles maison,
+    # que le ministère n'encadre pas. L'interface peut alors le dire, au lieu
+    # de laisser croire que toute règle a un fondement réglementaire.
+    sources: list[dict] = field(default_factory=list)
+
 
 class DslTranslator:
     def __init__(
@@ -139,9 +250,14 @@ class DslTranslator:
         temperature: float = 0.0,
         num_predict: int = 700,
         max_repair_attempts: int = 1,
+        consigne: ConsigneRetriever | None = None,
     ):
         self._ollama = ollama
         self._backend = backend
+        # Optionnel, et volontairement : la traduction doit rester possible sans
+        # le corpus. Un service déployé sans le fichier de circulaire perd la
+        # citation, pas la fonction.
+        self._consigne = consigne
         self._schema_ttl = schema_ttl_seconds
         self._options = {"temperature": temperature, "num_predict": num_predict}
         self._max_repair_attempts = max_repair_attempts
@@ -173,8 +289,22 @@ class DslTranslator:
                 duration_ms=_elapsed(started),
             )
 
+        # La recherche a lieu AVANT la génération : les articles retrouvés
+        # entrent dans le prompt, ils ne sont pas collés après coup à une règle
+        # déjà écrite. Une citation ajoutée en fin de course décrirait ce que le
+        # modèle aurait pu lire, pas ce qu'il a lu.
+        articles = await self._articles_pertinents(request_text)
+
+        system = SYSTEM_PROMPT + "\n" + _describe_schema(schema)
+        if articles:
+            system += (
+                "\n" + CONSIGNE_PROMPT_ENTETE
+                + _describe_articles(articles)
+                + "\n" + CONSIGNE_PROMPT_PIED
+            )
+
         messages = [
-            {"role": "system", "content": SYSTEM_PROMPT + "\n" + _describe_schema(schema)},
+            {"role": "system", "content": system},
             {"role": "user", "content": request_text},
         ]
 
@@ -199,11 +329,12 @@ class DslTranslator:
                     dsl=dsl, valid=False, errors=[exc.detail],
                     message="La règle n'a pas pu être vérifiée : " + exc.detail,
                     attempts=attempt + 1, duration_ms=_elapsed(started),
+                    sources=_sources(articles, dsl),
                 )
 
             if analysis.get("valid"):
                 return _proposal_from_analysis(
-                    dsl, analysis, attempt + 1, _elapsed(started)
+                    dsl, analysis, attempt + 1, _elapsed(started), articles
                 )
 
             last_errors = analysis.get("errors") or ["Règle refusée par le backend."]
@@ -218,12 +349,48 @@ class DslTranslator:
             feasible=True,
             attempts=1 + self._max_repair_attempts,
             duration_ms=_elapsed(started),
+            # Même sans règle produite, les articles restent utiles : ils disent
+            # à l'utilisateur ce que la circulaire prévoit sur le sujet qu'il
+            # vient d'aborder, ce qui vaut mieux qu'un échec sec.
+            sources=_sources(articles, None),
             message=(
                 "Je n'ai pas réussi à traduire cette demande en règle exploitable. "
                 "Reformulez-la plus simplement, par exemple : « les classes de terminale "
                 "ne doivent pas avoir de mathématiques après 15h le vendredi »."
             ),
         )
+
+    # ── ancrage sur la circulaire ─────────────────────────────────────────────
+
+    async def _articles_pertinents(self, request_text: str) -> list[ArticleConsigne]:
+        """
+        Les articles de la circulaire qui encadrent ce type de règle.
+
+        Deux filtres, et le second est le plus important :
+
+          - le **plancher** du RAG écarte les demandes que la circulaire ne
+            couvre pas. Il y en a beaucoup, et c'est normal : « pas de cours
+            pour M. Ben Salah le mercredi » est une contrainte de personne, pas
+            une règle du ministère ;
+          - seuls les articles **traduisibles en contrainte** (`portee` non
+            nulle) sont retenus. Les tableaux de volumes horaires et les
+            articles d'affectation sont écartés : ils ne peuvent suggérer ni
+            portée ni sévérité, et leurs 1 300 à 2 300 caractères de tableau
+            noieraient le catalogue DSL dans le contexte d'un modèle de 7B.
+
+        Un échec de recherche ne fait jamais échouer la traduction : sans
+        corpus, on perd la citation, pas la règle.
+        """
+        if self._consigne is None:
+            return []
+
+        try:
+            resultats = await self._consigne.rechercher(request_text)
+        except Exception as exc:  # noqa: BLE001 — dégradation, pas panne
+            logger.warning("Recherche consigne indisponible : %s", exc)
+            return []
+
+        return [article for article, _ in resultats if article.portee]
 
     # ── génération ────────────────────────────────────────────────────────────
 
@@ -305,6 +472,64 @@ def _describe_schema(schema: dict) -> str:
     return "\n".join(lines)
 
 
+def _describe_articles(articles: list[ArticleConsigne]) -> str:
+    """
+    Rend les articles au modèle : numéro, page, portée et sévérité d'usage, texte.
+
+    La portée et la sévérité pré-mappées sont données EXPLICITEMENT plutôt que
+    laissées à déduire du texte. C'est tout l'intérêt d'avoir annoté le corpus :
+    un modèle de 7B lit « six heures par jour au maximum » et hésite entre
+    CLASS_DAY et TEACHER_DAY ; l'annotation tranche, et elle a été relue par un
+    humain, ce que la déduction du modèle ne sera jamais.
+
+    Le texte n'est pas tronqué : les articles font 250 à 450 caractères depuis
+    que le corpus sépare le texte normatif de notre analyse. Trois articles
+    ajoutent donc au plus ~1 200 caractères au prompt — assez peu pour ne pas
+    noyer le catalogue DSL, ce qui n'aurait pas été vrai en injectant les chunks
+    entiers.
+    """
+    blocs = []
+    for article in articles:
+        entete = f"§ {article.id} (p. {article.page})"
+        if article.portee:
+            entete += f" — portée d'usage : {article.portee}"
+        if article.severite:
+            entete += f", sévérité d'usage : {article.severite}"
+        blocs.append(f"{entete}\n  {article.texte}")
+    return "\n\n".join(blocs)
+
+
+def _sources(articles: list[ArticleConsigne], dsl: dict | None) -> list[dict]:
+    """
+    Les citations rendues à l'interface, avec leur degré de correspondance.
+
+    `concordance` est vrai quand la portée pré-mappée de l'article est celle que
+    la règle produite utilise réellement. La distinction n'est pas un détail
+    d'affichage : elle sépare « cette règle correspond à l'article II.2 » de
+    « voici les articles voisins ». Afficher la première formule pour un article
+    que la recherche a seulement remonté serait une citation décorative — et une
+    citation décorative dans un outil de traçabilité est pire que pas de citation
+    du tout, parce qu'elle a l'apparence d'une preuve.
+
+    `dsl` vaut None quand aucune règle n'a pu être produite : rien ne concorde
+    alors avec rien, et les articles sont rendus pour information seule.
+    """
+    scope = (dsl or {}).get("scope")
+    return [
+        {
+            "id": article.id,
+            "page": article.page,
+            "citation": article.citation,
+            "extrait": article.texte,
+            "extrait_ar": article.texte_ar,
+            "portee": article.portee,
+            "severite": article.severite,
+            "concordance": bool(scope) and article.portee == scope,
+        }
+        for article in articles
+    ]
+
+
 def _repair_instruction(errors: list[str]) -> str:
     return (
         "Ta réponse a été refusée par le validateur pour la ou les raisons suivantes :\n"
@@ -361,7 +586,11 @@ def _to_text(value: Any) -> str:
 
 
 def _proposal_from_analysis(
-    dsl: dict, analysis: dict, attempts: int, duration_ms: int
+    dsl: dict,
+    analysis: dict,
+    attempts: int,
+    duration_ms: int,
+    articles: list[ArticleConsigne],
 ) -> ConstraintProposal:
     conflicts = analysis.get("conflicts") or []
     feasible = analysis.get("feasible", True)
@@ -383,6 +612,7 @@ def _proposal_from_analysis(
         # une reformulation par le modèle : ce qui est affiché doit être ce qui
         # sera appliqué, au mot près.
         message=analysis.get("verdict") or analysis.get("summary") or "",
+        sources=_sources(articles, dsl),
     )
 
 

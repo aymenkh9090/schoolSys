@@ -2,6 +2,7 @@ import json
 
 import pytest
 
+from app.services.consigne_retrieval import ArticleConsigne
 from app.services.dsl_translator import (
     DslTranslator,
     _clean,
@@ -288,3 +289,279 @@ async def test_une_regle_infaisable_reste_valide_mais_signalee():
     assert proposal.valid is True
     assert proposal.feasible is False
     assert proposal.conflicts[0]["subject"] == "Enseignant Ahmed"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Ancrage sur la circulaire ministérielle
+# ─────────────────────────────────────────────────────────────────────────────
+#
+# Ce que ces tests protègent n'est pas la pertinence de la recherche — elle est
+# mesurée dans test_consigne_rag.py — mais deux propriétés du CHAÎNAGE, dont la
+# seconde est celle qui décide de la crédibilité de l'outil :
+#
+#   - les articles arrivent bien dans le prompt AVANT la génération, et non
+#     collés après coup à une règle déjà écrite ;
+#   - la citation rendue distingue l'article dont la portée concorde avec la
+#     règle produite de ceux qui ne font que voisiner.
+
+
+class FakeConsigne:
+    """Retriever de circulaire jouable : rend des articles préparés, ou lève."""
+
+    def __init__(self, articles=(), exception=None):
+        self._articles = list(articles)
+        self._exception = exception
+        self.questions = []
+
+    async def rechercher(self, question):
+        self.questions.append(question)
+        if self._exception is not None:
+            raise self._exception
+        return [(a, 0.7) for a in self._articles]
+
+
+def _article(identifiant, portee, severite, texte="Texte de l'article."):
+    return ArticleConsigne(
+        id=identifiant, page=2, section="Recommandations", texte=texte,
+        texte_ar="نصّ", portee=portee, severite=severite,
+    )
+
+
+ART_II_2 = _article(
+    "II.2", "TEACHER_DAY", "HARD",
+    "Les emplois du temps sont établis sur la base de six heures d'enseignement "
+    "par jour au maximum et de deux heures au minimum, matin ou après-midi.",
+)
+ART_III_2_C = _article(
+    "III.2.c", "LESSON", "MEDIUM",
+    "Les matières enseignées à raison de deux heures par semaine ne sont pas "
+    "programmées sur deux jours consécutifs.",
+)
+# Un tableau de volumes horaires : retrouvé par la recherche, mais sans portée,
+# donc inutilisable pour suggérer une contrainte.
+ART_TABLEAU = _article("T.1", None, None, "| Arabe | 2+1+1+1 |")
+
+
+@pytest.mark.asyncio
+async def test_les_articles_entrent_dans_le_prompt_avant_la_generation():
+    """
+    L'ordre est le fond du sujet. Une citation ajoutée après coup décrirait ce
+    que le modèle aurait PU lire, pas ce qu'il a lu — donc ne prouverait rien.
+    """
+    ollama = FakeOllama([json.dumps({"scope": "TEACHER_DAY"})])
+    backend = FakeBackend([VALID_ANALYSIS])
+    consigne = FakeConsigne([ART_II_2])
+
+    await DslTranslator(ollama, backend, consigne=consigne).translate(
+        "max 6h par jour pour un prof", "tok"
+    )
+
+    assert consigne.questions == ["max 6h par jour pour un prof"]
+    prompt = ollama.calls[0]["messages"][0]["content"]
+    assert "§ II.2" in prompt
+    assert "six heures d'enseignement" in prompt
+    # La portée annotée à la main est donnée explicitement : c'est tout
+    # l'intérêt d'avoir annoté le corpus plutôt que de laisser un 7B déduire
+    # CLASS_DAY ou TEACHER_DAY d'une phrase qui parle des deux.
+    assert "TEACHER_DAY" in prompt
+
+
+@pytest.mark.asyncio
+async def test_le_prompt_interdit_de_traduire_l_article_au_lieu_de_la_demande():
+    """
+    Le risque propre à l'ancrage : un petit modèle à qui on montre un article
+    traduit l'article. Le garde-fou doit être dans le prompt, pas dans l'espoir.
+    """
+    ollama = FakeOllama([json.dumps({"scope": "LESSON"})])
+    backend = FakeBackend([VALID_ANALYSIS])
+
+    await DslTranslator(ollama, backend, consigne=FakeConsigne([ART_II_2])).translate(
+        "pas de sport le vendredi après-midi", "tok"
+    )
+
+    # Espacement normalisé : le garde-fou est réparti sur plusieurs lignes dans
+    # le prompt, et c'est sa présence qui compte, pas sa mise en page.
+    prompt = " ".join(ollama.calls[0]["messages"][0]["content"].lower().split())
+    assert "tu traduis la phrase de l'utilisateur, et elle seule" in prompt
+    assert "n'ajoute jamais une condition" in prompt
+
+
+@pytest.mark.asyncio
+async def test_les_tableaux_de_volumes_ne_sont_jamais_injectes():
+    """
+    Sans portée, un tableau ne peut suggérer ni scope ni sévérité — et ses
+    milliers de caractères noieraient le catalogue DSL dans le contexte du 7B.
+    """
+    ollama = FakeOllama([json.dumps({"scope": "LESSON"})])
+    backend = FakeBackend([VALID_ANALYSIS])
+    consigne = FakeConsigne([ART_TABLEAU, ART_III_2_C])
+
+    proposal = await DslTranslator(ollama, backend, consigne=consigne).translate(
+        "combien d'heures d'arabe", "tok"
+    )
+
+    prompt = ollama.calls[0]["messages"][0]["content"]
+    assert "2+1+1+1" not in prompt
+    assert [s["id"] for s in proposal.sources] == ["III.2.c"]
+
+
+@pytest.mark.asyncio
+async def test_la_concordance_distingue_la_correspondance_du_voisinage():
+    """
+    C'est le test qui empêche la citation décorative. Un article remonté par la
+    recherche n'est pas pour autant celui que la règle applique : l'interface
+    n'a le droit d'écrire « cette règle correspond au § II.2 » que si la portée
+    produite est bien celle de l'article.
+    """
+    ollama = FakeOllama([json.dumps({"scope": "TEACHER_DAY"})])
+    backend = FakeBackend([VALID_ANALYSIS])
+    consigne = FakeConsigne([ART_II_2, ART_III_2_C])
+
+    proposal = await DslTranslator(ollama, backend, consigne=consigne).translate(
+        "max 6h par jour pour un prof", "tok"
+    )
+
+    par_id = {s["id"]: s for s in proposal.sources}
+    assert par_id["II.2"]["concordance"] is True       # TEACHER_DAY == TEACHER_DAY
+    assert par_id["III.2.c"]["concordance"] is False   # LESSON, seulement voisin
+
+
+@pytest.mark.asyncio
+async def test_la_citation_porte_la_page_et_le_texte_arabe():
+    """
+    Une citation sans page ne se vérifie pas, et sans l'original elle s'arrête à
+    notre traduction — c'est elle qu'il faudrait alors croire sur parole.
+    """
+    ollama = FakeOllama([json.dumps({"scope": "TEACHER_DAY"})])
+    backend = FakeBackend([VALID_ANALYSIS])
+
+    proposal = await DslTranslator(
+        ollama, backend, consigne=FakeConsigne([ART_II_2])
+    ).translate("max 6h par jour", "tok")
+
+    source = proposal.sources[0]
+    assert source["citation"] == "Circulaire n°66/2024, p. 2, § II.2"
+    assert source["page"] == 2
+    assert source["extrait_ar"] == "نصّ"
+
+
+@pytest.mark.asyncio
+async def test_une_regle_maison_ne_cite_aucun_article():
+    """
+    Le cas le plus fréquent, et il ne doit surtout pas être maquillé : « pas de
+    cours pour M. Ben Salah le mercredi » est une contrainte de personne, que le
+    ministère n'encadre pas. Zéro source, et l'interface peut le dire.
+    """
+    ollama = FakeOllama([json.dumps({"scope": "LESSON"})])
+    backend = FakeBackend([VALID_ANALYSIS])
+
+    proposal = await DslTranslator(
+        ollama, backend, consigne=FakeConsigne([])
+    ).translate("pas de cours pour Ben Salah le mercredi", "tok")
+
+    assert proposal.valid is True
+    assert proposal.sources == []
+    assert "CIRCULAIRE" not in ollama.calls[0]["messages"][0]["content"]
+
+
+@pytest.mark.asyncio
+async def test_un_corpus_indisponible_degrade_la_citation_pas_la_traduction():
+    """
+    Sans corpus — fichier absent, Ollama muet — on perd la citation, jamais la
+    règle. Une panne de traçabilité ne doit pas devenir une panne de service.
+    """
+    ollama = FakeOllama([json.dumps({"scope": "LESSON"})])
+    backend = FakeBackend([VALID_ANALYSIS])
+    consigne = FakeConsigne(exception=RuntimeError("Ollama injoignable"))
+
+    proposal = await DslTranslator(ollama, backend, consigne=consigne).translate(
+        "pas de maths le vendredi", "tok"
+    )
+
+    assert proposal.valid is True
+    assert proposal.sources == []
+
+
+@pytest.mark.asyncio
+async def test_sans_corpus_configure_la_traduction_reste_identique():
+    """Le service doit pouvoir tourner sans le fichier de circulaire."""
+    ollama = FakeOllama([json.dumps({"scope": "LESSON"})])
+    backend = FakeBackend([VALID_ANALYSIS])
+
+    proposal = await translator(ollama, backend).translate("pas de maths", "tok")
+
+    assert proposal.valid is True
+    assert proposal.sources == []
+
+
+@pytest.mark.asyncio
+async def test_les_articles_restent_cites_quand_aucune_regle_n_est_produite():
+    """
+    Un échec de traduction sur un sujet que la circulaire couvre doit quand même
+    dire ce que le ministère prévoit : c'est plus utile qu'un échec sec. Rien ne
+    concorde alors, puisqu'il n'y a pas de règle.
+    """
+    ollama = FakeOllama([json.dumps({"scope": "LESSON"})] * 2)
+    backend = FakeBackend([{"valid": False, "errors": ["toujours faux"]}] * 2)
+    consigne = FakeConsigne([ART_II_2])
+
+    proposal = await DslTranslator(ollama, backend, consigne=consigne).translate(
+        "max 6h par jour", "tok"
+    )
+
+    assert proposal.valid is False
+    assert proposal.dsl is None
+    assert [s["id"] for s in proposal.sources] == ["II.2"]
+    assert proposal.sources[0]["concordance"] is False
+
+
+@pytest.mark.asyncio
+async def test_le_prompt_interdit_aussi_d_omettre_une_condition_demandee():
+    """
+    Verrouille un correctif issu d'une régression MESURÉE, pas d'une intuition.
+
+    Avant lui, « de préférence des maths le matin » perdait sa condition
+    `period = MORNING` dès qu'on lui montrait le § III.2.a — l'article nuance en
+    « trois quarts le matin, un quart l'après-midi », et le modèle en concluait
+    qu'il ne fallait pas fixer la demi-journée. La règle récompensait alors
+    TOUTES les séances de maths, y compris celles de l'après-midi.
+
+    Le garde-fou d'origine n'interdisait que d'AJOUTER une condition absente de
+    la phrase. Le contre-exemple travaillé doit rester dans le prompt : sans
+    lui, la régression revient, et elle produit une règle valide au sens du
+    validateur — donc silencieuse.
+    """
+    ollama = FakeOllama([json.dumps({"scope": "LESSON"})])
+    backend = FakeBackend([VALID_ANALYSIS])
+
+    await DslTranslator(ollama, backend, consigne=FakeConsigne([ART_II_2])).translate(
+        "de préférence des maths le matin", "tok"
+    )
+
+    prompt = " ".join(ollama.calls[0]["messages"][0]["content"].lower().split())
+    assert "n'omets jamais un élément qui figure dans sa phrase" in prompt
+    assert "l'erreur à ne pas commettre" in prompt
+    assert '"value": "morning"' in prompt
+
+
+@pytest.mark.asyncio
+async def test_le_bloc_articles_supporte_des_exemples_json():
+    """
+    Le prompt de la circulaire contient des accolades (exemples de conditions).
+    Il est donc assemblé par concaténation, jamais par str.format — qui y
+    verrait des champs à substituer et lèverait KeyError à la première
+    traduction. Régression rencontrée, et invisible en test unitaire tant qu'on
+    n'exerce pas le chemin avec articles.
+    """
+    ollama = FakeOllama([json.dumps({"scope": "LESSON"})])
+    backend = FakeBackend([VALID_ANALYSIS])
+
+    proposal = await DslTranslator(
+        ollama, backend, consigne=FakeConsigne([ART_II_2, ART_III_2_C])
+    ).translate("une règle", "tok")
+
+    assert proposal.valid is True
+    prompt = ollama.calls[0]["messages"][0]["content"]
+    # Les deux articles ET le pied de prompt ont bien été assemblés.
+    assert "§ II.2" in prompt and "§ III.2.c" in prompt
+    assert prompt.index("§ II.2") < prompt.index("RÈGLE ABSOLUE SUR CES ARTICLES")

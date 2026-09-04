@@ -84,6 +84,22 @@ async def lifespan(app: FastAPI):
     handlers = ToolHandlers(metrics)
     assistant = AssistantService(ollama, handlers, settings.max_tool_iterations)
 
+    # Index de la circulaire ministérielle. Celui-ci EST préchargé, à l'inverse
+    # de l'index des cahiers, et l'écart est le point d'architecture à retenir :
+    # les cahiers sont des données d'établissement, dont le périmètre dépend du
+    # compte qui pose la question — les précharger exigerait un compte de service
+    # capable de lire les séances de tout le monde. La circulaire, elle, est un
+    # texte réglementaire public : rien à cloisonner, donc rien à attendre.
+    # Le corpus est lu ici : un fichier manquant doit se voir au démarrage.
+    consigne = ConsigneRetriever(
+        ollama,
+        settings.consigne_corpus_path,
+        top_k=settings.consigne_top_k,
+        plancher=settings.consigne_score_floor,
+        marge=settings.consigne_score_margin,
+        poids_lexical=settings.consigne_lexical_weight,
+        batch_size=settings.embedding_batch_size,
+    )
     translator = DslTranslator(
         ollama,
         backend,
@@ -91,6 +107,10 @@ async def lifespan(app: FastAPI):
         temperature=settings.dsl_temperature,
         num_predict=settings.dsl_num_predict,
         max_repair_attempts=settings.dsl_max_repair_attempts,
+        # Ancre la traduction sur la circulaire : la règle produite cite les
+        # articles qui l'encadrent, ou n'en cite aucun quand le ministère ne
+        # couvre pas le sujet.
+        consigne=consigne,
     )
     planning_assistant = PlanningAssistantService(
         ToolLoop(ollama, settings.max_tool_iterations), backend, translator
@@ -117,22 +137,6 @@ async def lifespan(app: FastAPI):
         ToolLoop(ollama, settings.max_tool_iterations), backend, retriever
     )
 
-    # Index de la circulaire ministérielle. Celui-ci EST préchargé, à l'inverse
-    # de l'index des cahiers, et l'écart est le point d'architecture à retenir :
-    # les cahiers sont des données d'établissement, dont le périmètre dépend du
-    # compte qui pose la question — les précharger exigerait un compte de service
-    # capable de lire les séances de tout le monde. La circulaire, elle, est un
-    # texte réglementaire public : rien à cloisonner, donc rien à attendre.
-    # Le corpus est lu ici : un fichier manquant doit se voir au démarrage.
-    consigne = ConsigneRetriever(
-        ollama,
-        settings.consigne_corpus_path,
-        top_k=settings.consigne_top_k,
-        plancher=settings.consigne_score_floor,
-        marge=settings.consigne_score_margin,
-        poids_lexical=settings.consigne_lexical_weight,
-        batch_size=settings.embedding_batch_size,
-    )
 
     state.update(
         prometheus=prometheus, actuator=actuator, ollama=ollama, backend=backend,
@@ -313,6 +317,7 @@ async def propose_constraint(
         examples=proposal.examples,
         attempts=proposal.attempts,
         duration_ms=proposal.duration_ms,
+        sources=proposal.sources,
         requires_confirmation=True,
     )
 

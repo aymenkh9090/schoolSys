@@ -110,6 +110,18 @@ class ConstraintProposalResponse(BaseModel):
     attempts: int = 0
     duration_ms: int = 0
 
+    # Articles de la circulaire n°66/2024 sur lesquels la proposition s'appuie.
+    # Chaque entrée porte {id, page, citation, extrait, extrait_ar, portee,
+    # severite, concordance}. `concordance` distingue l'article dont la portée
+    # est bien celle de la règle produite de ceux qui ne font que voisiner :
+    # l'interface doit écrire « cette règle correspond au § II.2 » dans le
+    # premier cas seulement.
+    #
+    # Liste vide = aucun article ne couvre cette demande. Ce n'est pas un échec,
+    # c'est le cas normal d'une règle propre à l'établissement, et l'interface
+    # gagne à le dire plutôt qu'à laisser croire à un fondement réglementaire.
+    sources: list[dict] = []
+
     # Toujours vrai tant que l'utilisateur n'a pas confirmé. Rendu explicite
     # dans la réponse pour que l'interface ne puisse pas se tromper d'état.
     requires_confirmation: bool = True
