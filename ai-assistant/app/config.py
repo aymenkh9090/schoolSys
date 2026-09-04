@@ -114,10 +114,19 @@ class Settings(BaseSettings):
     consigne_score_margin: float = 0.08
     # Poids du canal lexical dans le score final (dense + λ·lexical). MESURÉ :
     # 22 articles du même texte se ressemblent trop pour que le dense seul les
-    # départage — 6 bons articles en tête sur 12 sans lui, 9 avec. λ a un plateau
-    # entre 0,10 et 0,30, ce qui veut dire que le résultat ne tient pas à un
-    # réglage fin sur douze questions.
-    consigne_lexical_weight: float = 0.20
+    # départage — sur 16 questions, 6 bons articles en tête et 10 dans le top-3
+    # sans le canal lexical, contre 11 et 14 avec.
+    #
+    # Le balayage de λ est monotone croissant (0,7 donnerait 12 et 15) et
+    # n'introduit AUCUN bruit hors-sujet, puisque le plancher ne regarde que le
+    # score dense. On s'arrête néanmoins à 0,30, et c'est un choix, pas un
+    # optimum : quatre des seize questions sont des reformulations d'une même
+    # demande et partagent donc leur vocabulaire, si bien qu'un λ élevé se
+    # récompense lui-même sur cet échantillon. Surtout, pousser le lexical
+    # au-delà d'un tiers du poids reviendrait à transformer la recherche en
+    # correspondance de mots-clés — c'est-à-dire à perdre ce pour quoi un RAG
+    # existe : retrouver une paraphrase qui ne partage aucun terme avec le texte.
+    consigne_lexical_weight: float = 0.30
 
     # Rôles admis sur les routes du cahier de séance. Le périmètre réel (ses
     # propres séances ou tout l'établissement) est décidé par le BACKEND à partir

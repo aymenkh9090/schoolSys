@@ -40,12 +40,18 @@ d'heures et de classes.
 
 Un second canal, purement lexical (recouvrement de termes pondéré par l'IDF),
 tranche là où la sémantique hésite : « mathématiques » et « 8ᵉ » ne figurent
-littéralement que dans les tableaux. Le score final est
-`dense + λ · lexical`, avec λ = 0,20. Mesuré sur les 17 questions de
-`tests/test_consigne_rag.py` : 6 → **9 bons articles en tête sur 12**, et
-10 → **11 dans le top-3**. λ a un **plateau** entre 0,10 et 0,30 — le résultat
-ne dépend donc pas d'un réglage fin, ce qui est précisément ce qu'on veut
-pouvoir dire d'un hyperparamètre choisi sur douze questions.
+littéralement que dans les tableaux. Le score final est `dense + λ · lexical`,
+avec λ = 0,30. Mesuré sur seize questions : **6 → 11 bons articles en tête**, et
+**10 → 14 dans le top-3**.
+
+λ est monotone croissant sur cet échantillon (0,7 donnerait 12 et 15) et
+n'introduit aucun bruit, le plancher ne regardant que le dense. S'arrêter à 0,30
+est donc un choix délibéré : quatre des seize questions sont des reformulations
+d'une même demande et partagent leur vocabulaire, si bien qu'un λ élevé se
+récompense lui-même ; et laisser le lexical dépasser un tiers du poids
+transformerait la recherche en correspondance de mots-clés, ce qui reviendrait à
+perdre la seule chose qu'un RAG apporte — retrouver une paraphrase qui ne
+partage aucun terme avec le texte.
 
 **Le plancher, lui, reste appliqué au score dense seul.** Les deux canaux ne
 répondent pas à la même question : le dense dit *« le corpus a-t-il quelque
@@ -99,18 +105,95 @@ _MOTS_VIDES = frozenset(
 
 _MOT = re.compile(r"[a-z0-9]+")
 
+# Synonymes du domaine, appliqués des DEUX côtés — corpus et question. Ce n'est
+# pas une liste de commodité : chaque entrée corrige un écart mesuré entre la
+# langue de la circulaire et celle d'un directeur.
+#
+# « profs » en est l'exemple. Sur « les profs ne doivent pas dépasser 6 heures
+# par jour », la recherche remontait le § I.2 — la même règle, mais côté ÉLÈVE —
+# avant le § II.2 qui est celui de l'enseignant. Les deux articles portent les
+# mêmes chiffres et ne diffèrent que par un mot ; « profs » ne partageant aucun
+# terme avec « enseignant », le canal lexical ne pouvait pas trancher. C'est
+# précisément le cas qu'il est censé trancher.
+#
+# La table reste courte et vérifiable à l'œil. Elle s'applique APRÈS le repli
+# des pluriels, donc ses clés sont au singulier.
+_SYNONYMES = {
+    # Qui enseigne — la circulaire dit « mdrs / enseignant », l'usage dit « prof ».
+    "prof": "enseignant",
+    "professeur": "enseignant",
+    "instituteur": "enseignant",
+    "maitre": "enseignant",
+    # Qui apprend.
+    "etudiant": "eleve",
+    "apprenant": "eleve",
+    "ecolier": "eleve",
+    "collegien": "eleve",
+    # Matières abrégées à l'oral.
+    "math": "mathematique",
+    "maths": "mathematique",
+    "svt": "science de la vie et de la terre",
+    # Niveaux. Les tableaux écrivent « 7ᵉ », qui donne « 7e » après normalisation
+    # NFKD ; un directeur écrit « 7ème » ou « septième ».
+    "7eme": "7e",
+    "8eme": "8e",
+    "9eme": "9e",
+    "septieme": "7e",
+    "huitieme": "8e",
+    "neuvieme": "9e",
+}
+
+
+def _singulier(jeton: str) -> str:
+    """
+    Repli de pluriel minimal : un « s » final tombe au-delà de quatre lettres.
+
+    Volontairement naïf — pas de racinisation, pas de dictionnaire. La règle
+    étant appliquée des deux côtés, elle ne peut pas casser un appariement : au
+    pire elle produit une forme inexistante (« cours » → « cour »), mais la même
+    des deux côtés. Une racinisation Snowball apporterait peu sur un corpus de
+    vingt-deux articles et ajouterait une dépendance.
+    """
+    if len(jeton) > 4 and jeton.endswith("s") and not jeton.endswith("ss"):
+        return jeton[:-1]
+    return jeton
+
 
 def _jetons(texte: str) -> list[str]:
     """
-    Découpe en termes comparables : minuscules, accents retirés, mots vides ôtés.
+    Découpe en termes comparables : Unicode replié, mots vides ôtés, pluriels
+    repliés, synonymes du domaine canonisés.
 
-    Retirer les accents n'est pas cosmétique — un directeur écrit « mathematiques »
-    ou « 8eme » aussi souvent qu'avec les accents, et sans cette normalisation le
-    canal lexical ne servirait que les questions bien orthographiées.
+    La normalisation est en **NFKD** et non en NFD, et l'écart n'est pas
+    cosmétique : il décide de ce que les tableaux de volumes horaires exposent à
+    la recherche. En NFD, « 7ᵉ année » ne produisait que le chiffre isolé « 7 »,
+    écarté par la longueur minimale — les trois tableaux n'avaient donc AUCUN
+    jeton de niveau, et « combien d'heures de maths en 8ᵉ ? » ne pouvait
+    littéralement rien y trouver. NFKD replie « ᵉ » sur « e » et donne « 8e ».
+
+    NFKD replie aussi « ① » (séance de quinzaine) sur « 1 » — mais un caractère
+    isolé reste sous le plancher de longueur, donc la notation ne devient pas
+    interrogeable par son symbole. Elle l'est par la prose de la légende
+    (§ N.1), qui l'explique en toutes lettres, et c'est suffisant : personne ne
+    tape « ① » dans un champ de recherche.
+
+    Les jetons de deux caractères sont conservés quand ils contiennent un
+    chiffre — « 7e », « 8e », « 9e » sont les plus discriminants du corpus, et
+    les écarter pour la même règle qui écarte « de » et « la » serait perdre
+    l'essentiel pour éviter le bruit.
     """
-    plie = unicodedata.normalize("NFD", texte.lower())
+    plie = unicodedata.normalize("NFKD", texte.lower())
     plie = "".join(c for c in plie if unicodedata.category(c) != "Mn")
-    return [m for m in _MOT.findall(plie) if len(m) >= 3 and m not in _MOTS_VIDES]
+
+    jetons = []
+    for brut in _MOT.findall(plie):
+        if brut in _MOTS_VIDES:
+            continue
+        if len(brut) < 3 and not (len(brut) >= 2 and any(c.isdigit() for c in brut)):
+            continue
+        racine = _singulier(brut)
+        jetons.append(_SYNONYMES.get(racine, racine))
+    return jetons
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -412,7 +495,7 @@ class ConsigneRetriever:
         top_k: int = 3,
         plancher: float = 0.60,
         marge: float = 0.08,
-        poids_lexical: float = 0.20,
+        poids_lexical: float = 0.30,
         batch_size: int = 32,
     ):
         self._ollama = ollama

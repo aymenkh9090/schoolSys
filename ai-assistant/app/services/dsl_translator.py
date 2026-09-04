@@ -69,15 +69,20 @@ Trois garde-fous, donc :
      remonter un article proche serait exactement le genre de citation
      décorative qui décrédibilise un outil de traçabilité.
 
-**Limite connue.** Sur « les profs ne doivent pas dépasser 6 heures par jour »,
-la recherche remonte le § I.2 (même règle, côté ÉLÈVE) avant le § II.2 (côté
-enseignant) : les deux articles portent les mêmes chiffres et ne diffèrent que
-par un mot, et « profs » ne partage aucun terme avec « enseignant ». La règle
-produite reste juste — c'est le catalogue DSL qui la guide, pas l'article — et
-le drapeau `concordance` marque bien le § I.2 comme simplement voisin, donc
-l'interface ne citera pas à tort. Une table de synonymes du domaine
-(prof → enseignant, maths → mathématiques) dans le canal lexical fermerait
-l'écart ; elle n'est pas faite.
+**Ce que la citation vaut, et ce qu'elle ne vaut pas.** Sur « les profs ne
+doivent pas dépasser 6 heures par jour », le § II.2 (le bon : côté enseignant)
+sort désormais dans le top-3, la table de synonymes du canal lexical ayant
+rapproché « profs » de « enseignant ». Il n'en sort pas toujours PREMIER : le
+§ I.2 porte la même règle côté élève, avec les mêmes chiffres, et un seul mot
+les distingue. C'est exactement pour ce cas que `concordance` existe — I.2 est
+marqué voisin, II.2 concordant, et l'interface cite le bon.
+
+Une reformulation suffit d'ailleurs à faire basculer le classement : « un
+enseignant ne doit pas faire plus de 6 heures par jour » place le § II.2 en
+tête. La recherche reste sensible à la formulation, et il faut le dire plutôt
+que de laisser croire à une correspondance article ↔ règle qui serait exacte.
+Ce qui est garanti n'est pas que le bon article sorte premier, c'est qu'aucun
+article ne soit cité comme correspondant s'il ne l'est pas.
 """
 
 import json

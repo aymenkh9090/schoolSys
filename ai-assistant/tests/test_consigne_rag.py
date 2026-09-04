@@ -174,14 +174,71 @@ def test_les_jetons_ignorent_accents_casse_et_mots_vides():
     Sans repli des accents, le canal lexical ne servirait que les questions
     bien orthographiées.
     """
-    assert _jetons("Mathématiques") == _jetons("mathematiques") == ["mathematiques"]
+    assert _jetons("Mathématiques") == _jetons("mathematiques") == ["mathematique"]
     assert "combien" not in _jetons("Combien d'heures ?")
-    assert "heures" in _jetons("Combien d'heures ?")
+    assert "heure" in _jetons("Combien d'heures ?")
 
 
-def test_les_jetons_gardent_les_niveaux_ecrits_en_chiffres():
-    """« 8ème » doit produire un terme : c'est ce qui distingue les tableaux."""
-    assert "8eme" in _jetons("Combien d'heures de maths en 8ème année ?")
+def test_le_pluriel_est_replie_des_deux_cotes():
+    """
+    Repli naïf et symétrique. « cours » → « cour » est une forme inexistante,
+    et c'est sans conséquence : la même transformation s'applique au corpus,
+    donc l'appariement tient. Ce qui compterait serait une transformation
+    asymétrique.
+    """
+    assert _jetons("séances") == _jetons("séance") == ["seance"]
+    assert _jetons("cours") == ["cour"]
+    # La borne de longueur protège les mots courts : « bras » ne devient pas
+    # « bra », alors que « repas », plus long, perd son s. Asymétrie assumée —
+    # la règle est appliquée des deux côtés, donc elle n'invalide rien.
+    assert _jetons("bras") == ["bras"]
+    assert _jetons("repas") == ["repa"]
+
+
+def test_les_niveaux_scolaires_sont_normalises_en_unicode():
+    """
+    Le défaut le plus coûteux du canal lexical, et le plus invisible.
+
+    Les tableaux écrivent « 7ᵉ année » avec un MODIFIER LETTER SMALL E. En
+    normalisation NFD, ce caractère survit intact, l'expression ne laisse donc
+    que le chiffre « 7 » — écarté par la longueur minimale. Résultat : les trois
+    tableaux de volumes horaires n'avaient AUCUN jeton de niveau, et « combien
+    d'heures de maths en 8ᵉ ? » ne pouvait littéralement rien y trouver. NFKD
+    replie « ᵉ » sur « e ».
+    """
+    assert "7e" in _jetons("7ᵉ année")
+    assert "8e" in _jetons("Combien d'heures de maths en 8ème année ?")
+    assert "9e" in _jetons("neuvième année")
+
+
+def test_la_notation_symbolique_ne_produit_aucun_jeton():
+    """
+    Limite consignée, pas contournée. NFKD replie bien « ① » sur « 1 », mais un
+    caractère isolé reste sous le plancher de longueur : la notation du
+    ministère n'est donc PAS interrogeable par son symbole.
+
+    C'est acceptable parce que personne ne tape « ① » dans un champ de
+    recherche : la question réelle est « que veut dire (2) dans le tableau ? »,
+    et c'est la prose de la légende (§ N.1) qui y répond — elle sort d'ailleurs
+    en tête sur cette question. Le test existe pour que la limite reste
+    visible : si un jour quelqu'un s'étonne que « ① » ne trouve rien, la réponse
+    est ici.
+    """
+    assert _jetons("la séance ① est bimensuelle") == ["seance", "bimensuelle"]
+
+
+def test_les_synonymes_du_domaine_rapprochent_les_deux_vocabulaires():
+    """
+    Corrige un écart MESURÉ entre la langue de la circulaire et celle d'un
+    directeur. Sur « les profs ne doivent pas dépasser 6 heures par jour », la
+    recherche remontait le § I.2 — la même règle, mais côté ÉLÈVE — avant le
+    § II.2 qui est celui de l'enseignant : les deux articles portent les mêmes
+    chiffres et ne diffèrent que par un mot, et « profs » ne partageait aucun
+    terme avec « enseignant ».
+    """
+    assert _jetons("les profs") == _jetons("le professeur") == ["enseignant"]
+    assert _jetons("maths") == _jetons("mathématiques") == ["mathematique"]
+    assert _jetons("les étudiants") == ["eleve"]
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -219,7 +276,7 @@ def test_le_plancher_rejette_une_question_hors_sujet():
     # Équidistant des trois : le meilleur cosinus vaut 0,577.
     tiede = [0.577, 0.577, 0.577]
 
-    assert index.rechercher(tiede, "question", 3, 0.60, 0.08, 0.20) == []
+    assert index.rechercher(tiede, "question", 3, 0.60, 0.08, 0.30) == []
     assert index.rechercher(tiede, "question", 3, 0.50, 0.08, 0.20) != []
 
 
@@ -233,7 +290,7 @@ def test_le_plancher_ignore_le_canal_lexical():
 
     # « spécialisée » est un terme rare de l'article C : il ferait passer le
     # score combiné au-dessus du plancher s'il entrait dans la décision.
-    assert index.rechercher(tiede, "salle spécialisée", 3, 0.60, 0.08, 0.20) == []
+    assert index.rechercher(tiede, "salle spécialisée", 3, 0.60, 0.08, 0.30) == []
 
 
 def test_la_marge_ecarte_les_articles_qui_ont_seulement_passe_le_plancher():
@@ -241,7 +298,7 @@ def test_la_marge_ecarte_les_articles_qui_ont_seulement_passe_le_plancher():
     # Nettement plus proche de A que des deux autres.
     proche_de_a = [0.99, 0.10, 0.10]
 
-    resultats = index.rechercher(proche_de_a, "heures creuses", 3, 0.60, 0.08, 0.20)
+    resultats = index.rechercher(proche_de_a, "heures creuses", 3, 0.60, 0.08, 0.30)
 
     assert [a.id for a, _ in resultats] == ["A"]
 
@@ -256,7 +313,7 @@ def test_le_canal_lexical_departage_deux_articles_que_le_dense_confond():
     ambigu = [0.0, 0.707, 0.707]
 
     dense_seul = index.rechercher(ambigu, "travaux pratiques", 2, 0.60, 0.50, 0.0)
-    hybride = index.rechercher(ambigu, "travaux pratiques", 2, 0.60, 0.50, 0.20)
+    hybride = index.rechercher(ambigu, "travaux pratiques", 2, 0.60, 0.50, 0.30)
 
     # Sans lexical, l'ordre entre B et C ne tient qu'à l'ordre d'insertion.
     assert {a.id for a, _ in dense_seul} == {"B", "C"}
@@ -271,8 +328,8 @@ def test_l_idf_empeche_un_terme_omnipresent_de_decider():
     """
     index = _index_jouet()
 
-    assert index.idf["heures"] < index.idf["creuses"]
-    assert index.idf["heures"] < index.idf["pratiques"]
+    assert index.idf["heure"] < index.idf["creuse"]
+    assert index.idf["heure"] < index.idf["pratique"]
 
 
 def test_un_corpus_inconnu_ne_favorise_personne():
@@ -296,7 +353,7 @@ def test_le_top_k_borne_ce_qui_part_au_modele():
     index = _index_jouet()
     diffus = [0.99, 0.98, 0.97]
 
-    assert len(index.rechercher(diffus, "heures", 2, 0.50, 1.0, 0.20)) == 2
+    assert len(index.rechercher(diffus, "heures", 2, 0.50, 1.0, 0.30)) == 2
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -356,6 +413,7 @@ QUESTIONS = [
     ("Volume horaire des collèges techniques", "T.2"),
     ("Combien d'heures de maths en 8ème année ?", "T.1"),
     ("Combien de temps de coupure entre le matin et l'après-midi ?", "I.3"),
+    ("Les profs ne doivent pas dépasser 6 heures par jour", "II.2"),
 ]
 
 HORS_SUJET = [
@@ -406,7 +464,7 @@ def vectoriser():
 
 # Réglages de production, repris tels quels : un test qui mesurerait autre chose
 # que ce qui tourne ne mesurerait rien.
-TOP_K, PLANCHER, MARGE, POIDS_LEXICAL = 3, 0.60, 0.08, 0.20
+TOP_K, PLANCHER, MARGE, POIDS_LEXICAL = 3, 0.60, 0.08, 0.30
 
 
 @besoin_ollama
@@ -417,7 +475,7 @@ def test_la_question_retrouve_son_article(index, vectoriser, question, attendu):
     top-3 qui part au modèle : trois articles cités valent mieux qu'un seul
     article juste, dès lors que l'utilisateur voit les trois citations.
 
-    Mesuré sur ces douze questions : 9 en rang 1, 11 dans le top-3.
+    Mesuré sur ces treize questions : 9 en rang 1, 12 dans le top-3.
     """
     if attendu == "I.3":
         # Collision assumée : « coupure entre matin et après-midi » (§ I.3, deux
@@ -491,5 +549,5 @@ def test_le_canal_lexical_ameliore_le_classement(index, vectoriser):
     dense_seul = rang_un(0.0)
     hybride = rang_un(POIDS_LEXICAL)
 
-    assert hybride >= 9, f"hybride tombé à {hybride}/12"
+    assert hybride >= 9, f"hybride tombé à {hybride}/{len(QUESTIONS)}"
     assert hybride > dense_seul, f"le canal lexical n'apporte rien : {hybride} vs {dense_seul}"
