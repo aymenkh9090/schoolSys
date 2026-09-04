@@ -152,3 +152,18 @@ Sans cette étape, garde le mode développement (`uvicorn` sur l'hôte), où
 Page `/super-admin/monitoring` (`frontend/src/features/superadmin/monitoring/`).
 Le client axios `src/api/aiAssistant.api.ts` réutilise le même jeton Keycloak.
 ⚠️ Les champs sont en **snake_case** : Pydantic sérialise tel quel.
+
+## Installer une dépendance — attention au `pip` du venv
+
+Le `.venv` de ce dossier a été créé quand le projet s'appelait `~/sc-p`. Le
+chemin est **inscrit dans les scripts de `bin/`** : `.venv/bin/pip install`
+installe donc dans l'ancienne copie du projet, où rien ne le lira, et l'import
+échoue ensuite sans que `pip show` n'y trouve à redire. Passer par le module :
+
+```bash
+.venv/bin/python -m pip install <paquet>
+```
+
+`python -m pip` installe dans le préfixe de l'interpréteur qui l'exécute, lequel
+est déduit de l'emplacement réel du binaire — le renommage du dossier n'a alors
+plus d'effet.

@@ -7,7 +7,7 @@ Assemble les clients, expose les routes, gère le cycle de vie.
 import logging
 from contextlib import asynccontextmanager
 
-from fastapi import Depends, FastAPI, HTTPException
+from fastapi import Depends, FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.auth import (
@@ -24,6 +24,8 @@ from app.clients.prometheus import PrometheusClient
 from app.config import get_settings
 from app.models import (
     CahierChatRequest,
+    CoursChatRequest,
+    DocumentDepose,
     ConsigneArticlesResponse,
     ConsigneChatRequest,
     ConsigneChatResponse,
@@ -37,6 +39,10 @@ from app.models import (
 )
 from app.services.assistant import AssistantService, ToolLoop
 from app.services.cahier_assistant import CahierAssistantService
+from app.services.cours_document import (
+    CoursDocumentService,
+    PreparationImpossible,
+)
 from app.services.dsl_translator import DslTranslator
 from app.services.metrics import MetricsService
 from app.services.planning_assistant import PlanningAssistantService
@@ -147,11 +153,15 @@ async def lifespan(app: FastAPI):
     # décider s'il cherche n'ajouterait qu'une décision qu'il peut rater.
     consigne_assistant = ConsigneAssistantService(ollama, consigne)
 
+    # Cours déposés : aucune dépendance au backend Java. Les documents vivent en
+    # mémoire, rattachés au compte qui les a envoyés, et s'effacent d'eux-mêmes.
+    cours = CoursDocumentService(ollama)
+
     state.update(
         prometheus=prometheus, actuator=actuator, ollama=ollama, backend=backend,
         metrics=metrics, assistant=assistant, planning=planning_assistant,
         cahier=cahier_assistant, consigne=consigne,
-        consigne_assistant=consigne_assistant,
+        consigne_assistant=consigne_assistant, cours=cours,
     )
 
     if settings.auth_enabled:
@@ -446,3 +456,84 @@ async def cahier_chat(
     return await state["cahier"].ask(
         request.message, user.token, user.cache_key, direction
     )
+
+
+# ── Cours déposé, puis conversation à son sujet ─────────────────────────────
+
+# Taille maximale acceptée. Le document est lu en mémoire — il n'est jamais
+# écrit sur disque, et il s'efface tout seul : le service ne devient pas un
+# dépôt de documents, avec la conservation et les droits d'accès que cela
+# impliquerait.
+TAILLE_MAX_PDF = 10 * 1024 * 1024
+
+
+@app.post("/api/cours/document", response_model=DocumentDepose, tags=["cours"])
+async def deposer_cours(
+    fichier: UploadFile = File(..., description="Cours au format PDF"),
+    user: AuthenticatedUser = Depends(require_cahier_user),
+):
+    """
+    Dépose un cours et rend l'identifiant qui servira à en parler.
+
+    L'extraction a lieu ici, une fois. Renvoyer l'accusé de dépôt avant toute
+    génération est délibéré : un PDF scanné est refusé en une demi-seconde,
+    l'enseignant n'attend pas une minute pour apprendre que son fichier était
+    illisible.
+    """
+    contenu = await fichier.read()
+
+    if not contenu:
+        raise HTTPException(status_code=422, detail="Le fichier reçu est vide.")
+
+    if len(contenu) > TAILLE_MAX_PDF:
+        raise HTTPException(
+            status_code=413,
+            detail=(
+                f"Fichier trop volumineux ({len(contenu) // 1024 // 1024} Mo). "
+                f"Maximum accepté : {TAILLE_MAX_PDF // 1024 // 1024} Mo."
+            ),
+        )
+
+    logger.info(
+        "Dépôt de cours par %s : %s (%d octets)",
+        user.username, fichier.filename, len(contenu),
+    )
+
+    try:
+        return state["cours"].deposer(
+            user.cache_key, contenu, fichier.filename or "cours.pdf"
+        )
+    except PreparationImpossible as exc:
+        # 422 et non 500 : le service fonctionne, c'est le document qui ne
+        # permet pas d'aboutir. La distinction compte pour l'utilisateur — l'un
+        # se corrige en changeant de fichier, l'autre non.
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@app.post("/api/cours/chat", response_model=ChatResponse, tags=["cours"])
+async def cours_chat(
+    request: CoursChatRequest,
+    user: AuthenticatedUser = Depends(require_cahier_user),
+):
+    """
+    Demande libre à propos d'un cours déposé.
+
+    Résumé, explication d'un passage, exercices, QCM avec corrigé : le service
+    ne décide pas de ce qu'il faut produire, c'est l'enseignant qui le dit. La
+    seule contrainte imposée au modèle est de s'appuyer sur le cours fourni et
+    de signaler ce qui n'y figure pas.
+
+    Le document est retrouvé par `user.cache_key` : un identifiant deviné ne
+    donne pas accès au cours d'un collègue.
+    """
+    logger.info("Demande sur un cours de %s : %r", user.username, request.message)
+
+    try:
+        return await state["cours"].repondre(
+            user.cache_key,
+            request.document_id,
+            request.message,
+            [m.model_dump() for m in request.historique],
+        )
+    except PreparationImpossible as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc

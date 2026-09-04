@@ -44,6 +44,7 @@ class OllamaClient:
         tools: list[dict] | None = None,
         json_mode: bool = False,
         options: dict[str, Any] | None = None,
+        timeout: float | None = None,
     ) -> dict[str, Any]:
         """
         Un aller-retour avec le modèle.
@@ -60,6 +61,11 @@ class OllamaClient:
 
         `options` surcharge ponctuellement température et longueur, sans toucher
         aux réglages du client partagé.
+
+        `timeout` fait de même pour l'attente réseau. Le défaut du client est
+        taillé pour une réponse de chat ; une génération longue — un résumé de
+        cours et ses exercices — le dépasserait, et il serait absurde d'allonger
+        l'attente de TOUTES les routes pour la seule qui en a besoin.
         """
         payload: dict[str, Any] = {
             "model": self._model,
@@ -72,7 +78,9 @@ class OllamaClient:
         if json_mode:
             payload["format"] = "json"
 
-        response = await self._client.post("/api/chat", json=payload)
+        response = await self._client.post(
+            "/api/chat", json=payload, timeout=timeout or self._client.timeout
+        )
         response.raise_for_status()
         return response.json().get("message", {})
 

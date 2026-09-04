@@ -234,3 +234,40 @@ class CahierChatRequest(BaseModel):
     """
 
     message: str = Field(..., min_length=1, max_length=500)
+
+
+# ── Cours déposé et conversation autour de ce cours ─────────────────────────
+
+
+class DocumentDepose(BaseModel):
+    """
+    Accusé de dépôt : ce que le service a réellement lu du document.
+
+    `caracteres_lus` et `tronque` ne sont pas décoratifs — ils disent à
+    l'enseignant que la fin de son chapitre n'entrera pas dans les réponses.
+    Une troncature silencieuse serait un mensonge par omission.
+    """
+
+    document_id: str
+    nom_fichier: str
+    pages: int
+    caracteres_lus: int
+    tronque: bool
+
+
+class CoursChatMessage(BaseModel):
+    """Un tour de la conversation, renvoyé par le client pour le contexte."""
+
+    role: Literal["user", "assistant"]
+    content: str = Field(..., min_length=1, max_length=4000)
+
+
+class CoursChatRequest(BaseModel):
+    """Demande de l'enseignant à propos d'un cours qu'il a déposé."""
+
+    document_id: str = Field(..., min_length=1, max_length=64)
+    # Plus long que les 500 caractères des autres assistants : « fais un QCM de
+    # 10 questions sur la partie 3, avec le corrigé, niveau 8e » tient large,
+    # mais une consigne pédagogique détaillée peut être longue.
+    message: str = Field(..., min_length=1, max_length=1000)
+    historique: list[CoursChatMessage] = []

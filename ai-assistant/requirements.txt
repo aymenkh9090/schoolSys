@@ -5,3 +5,9 @@ pydantic-settings==2.7.0
 PyJWT[crypto]==2.10.1
 pytest==8.3.4
 pytest-asyncio==0.25.0
+
+# Extraction du texte d'un cours PDF (préparation de séance).
+# pypdf est pur Python : pas de binaire système à installer dans l'image.
+pypdf==6.17.0
+# Exigé par FastAPI pour lire un `UploadFile` multipart.
+python-multipart==0.0.32
