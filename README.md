@@ -1,12 +1,24 @@
-# SmartSchool
+# SchoolSys
 
-Plateforme SaaS de gestion scolaire (backend Spring Boot multi-module + frontend React/Vite), avec authentification déléguée à Keycloak.
+Plateforme SaaS de gestion scolaire : backend Spring Boot multi-module, frontend
+React/Vite, application mobile React Native pour les enseignants, et un
+microservice Python d'assistants IA. Authentification déléguée à Keycloak.
+
+> **Deux noms, un seul produit.** Le produit s'appelle **SchoolSys** — c'est le
+> nom porté par le frontend, par l'application mobile et par les coordonnées
+> Maven (`tn.schoolsys` / `schoolsys-*`). `smartschool` subsiste dans les
+> **identifiants techniques** : le dépôt GitHub, le realm Keycloak, la base de
+> données, les noms de conteneurs et le module `smartschool-api`. Les renommer
+> reviendrait à reconstruire le realm et la base pour un gain purement cosmétique
+> — ils restent donc tels quels, et toute commande de ce README les emploie
+> littéralement.
 
 ## Prérequis
 
 - Docker + Docker Compose
 - Java 21 + Maven
 - Node.js 20+ / npm
+- Pour le mobile : un téléphone avec **Expo Go**, sur le même Wi-Fi que le poste
 
 ## 1. Lancer l'infrastructure (Docker Compose)
 
@@ -165,6 +177,31 @@ VITE_KEYCLOAK_CLIENT_ID=smartschool-frontend
 ## 6. Se connecter
 
 Ouvrir http://localhost:5173 et se connecter avec l'utilisateur `superadmin` créé à l'étape 2.6 (rôle `PLATFORM_SUPER_ADMIN`).
+
+## 7. Application mobile (facultatif)
+
+L'espace enseignant sur téléphone : cours du jour, appel, cahier de séance,
+planning, classes, et un assistant qui répond sur les cahiers passés ou sur un
+cours PDF que l'on joint.
+
+```bash
+export LAN_HOST=$(ip -4 addr show | grep -oP '(?<=inet )192\.168\.[0-9.]+' | head -1)
+docker compose -f docker-compose.yml -f docker-compose.mobile.yml up -d
+cd mobile && npm install && npm start
+```
+
+Puis scanner le QR code avec **Expo Go**.
+
+> **La surcouche `docker-compose.mobile.yml` n'est pas optionnelle.** Un
+> téléphone ne peut pas joindre `localhost` : il demande son jeton à Keycloak par
+> l'IP du poste, et Keycloak en `start-dev` inscrit alors cette IP comme émetteur
+> — que l'API, qui attend `localhost`, rejette. La connexion réussit, puis
+> **tous** les écrans reçoivent 401 sans que rien n'explique pourquoi. La
+> surcouche fixe l'émetteur ; l'API doit être lancée avec le même
+> (`KEYCLOAK_ISSUER_URI`).
+
+La procédure complète — variables d'environnement, assistant sur le port 8001,
+tableau de dépannage — est dans **`mobile/README.md`**.
 
 ## Tester l'API sans le frontend (Postman/curl)
 
