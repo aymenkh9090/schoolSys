@@ -515,34 +515,42 @@ une conclusion honorable.
 
 ## 7. DevOps — CI/CD, JaCoCo, SonarCloud, Docker
 
-### 7.1 Étape zéro : il n'y a pas de dépôt git
+### 7.1 Dépôt git — ✅ FAIT
 
-**Constat vérifié : `~/pfe` n'est pas un dépôt git.** Aucune CI n'est possible
-avant de corriger cela. Première tâche du plan, 20 minutes.
+**Dépôt : https://github.com/aymenkh9090/smartschool — privé, branche `main`,
+650 fichiers, 1 commit.**
 
-```bash
-cd ~/pfe/schoolSys
-git init -b main
-cat > .gitignore <<'EOF'
-target/
-node_modules/
-dist/
-.venv/
-__pycache__/
-.pytest_cache/
-.idea/
-.env
-*.log
-EOF
-git add . && git commit -m "Initial commit — SmartSchool"
-gh repo create smartschool --private --source=. --push
-```
+Ce qui a été fait avant le premier push :
 
-> ⚠️ **`application.yml` contient un mot de passe de base en clair** et
-> `ai-assistant/.env` est présent sur le disque. Avant le premier `push` :
-> remplacer par `${DB_PASSWORD:...}` et vérifier que `.env` est bien ignoré.
-> Un secret dans l'historique d'un dépôt public est une remarque que le jury
-> peut faire, et elle est imparable.
+| Action | Détail |
+|---|---|
+| Secrets sortis du code | Le mot de passe PostgreSQL personnel était en clair dans `application.yml`, `application-dev.yml`, `application-demo.yml` et `docker-compose.yml`. Remplacé partout par `${DB_PASSWORD:smartschool}` (`${DB_PASSWORD:-smartschool}` côté compose). |
+| `.gitignore` | `target/`, `node_modules/`, `dist/`, `.venv/`, `__pycache__/`, `.pytest_cache/`, `.idea/`, `*.log`, et **`.env` / `.env.*` sauf `.env.example`**. |
+| `.env.example` | Documente `DB_PASSWORD`. Lu automatiquement par docker compose. |
+| Vérification avant commit | `git diff --cached` scanné : **0 occurrence** de mot de passe, de token `glpat-`/`ghp_` ou de clé privée. Seuls les `.env.example` sont versionnés. |
+
+> ⚠️ **Conséquence sur ton environnement local.** Le mot de passe de la base
+> applicative vaut désormais `smartschool` par défaut. Deux options :
+>
+> ```bash
+> # Option A (recommandée) — repartir d'une base propre, ce que le § 3.4
+> # demande de toute façon après la suppression des 4 modules :
+> docker compose down -v && docker compose up -d
+>
+> # Option B — garder la base existante avec l'ancien mot de passe :
+> export DB_PASSWORD='<ton ancien mot de passe>'
+> ```
+>
+> L'ancien mot de passe subsiste dans `backend/*/target/classes/*.yml`
+> (sortie de compilation, ignorée par git) — il disparaît au prochain
+> `mvn clean`. Il reste aussi celui de ta base PostgreSQL actuelle tant que
+> tu ne l'as pas recréée.
+
+> **Restent en clair, volontairement** : `keycloak_secret`, `admin/admin`
+> (Keycloak, Grafana) dans `docker-compose.yml`. Ce sont des identifiants de
+> développement local, sans valeur hors de la machine — pratique courante pour
+> un compose de dev. À mentionner si le jury pose la question, et à remplacer
+> par des variables d'environnement dans un vrai déploiement.
 
 ### 7.2 JaCoCo
 
