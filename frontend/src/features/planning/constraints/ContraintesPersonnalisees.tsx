@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { Loader2, Pencil, Plus, ScrollText, Sparkles, Trash2 } from 'lucide-react'
+import { Loader2, Pencil, ScrollText, SlidersHorizontal, Sparkles, Trash2 } from 'lucide-react'
 
 import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
@@ -17,6 +17,14 @@ interface Props {
   profileId: number
   schoolYearId?: number
 }
+
+// Exemples cliquables, repris de la modale : la même forme de demande produit
+// les mêmes résultats, autant la montrer là où la phrase se saisit désormais.
+const EXEMPLES = [
+  'Pas de sport le vendredi après-midi.',
+  'Aucun professeur ne doit avoir plus de 3 heures consécutives.',
+  'De préférence, les TP de physique le matin.',
+]
 
 /** Interrupteur accessible — même composant visuel que l'onglet Catalogue. */
 function Switch({ checked, onChange, label }: { checked: boolean; onChange: () => void; label: string }) {
@@ -57,6 +65,14 @@ export function ContraintesPersonnalisees({ profileId, schoolYearId }: Props) {
 
   const [editorOpen, setEditorOpen] = useState(false)
   const [assistantOpen, setAssistantOpen] = useState(false)
+  /** Ce qui est en cours de frappe dans le champ de l'écran. */
+  const [phrase, setPhrase] = useState('')
+  /**
+   * Ce qui a été soumis à l'assistant. Distinct de `phrase` à dessein : la
+   * modale se déclenche sur ce texte-là, et continuer à taper derrière elle ne
+   * doit pas relancer une traduction qui coûte de 5 à 30 s sur CPU.
+   */
+  const [demande, setDemande] = useState('')
   const [editing, setEditing] = useState<CustomConstraint | null>(null)
   const [seedRule, setSeedRule] = useState<ConstraintDsl | null>(null)
   const [seedName, setSeedName] = useState('')
@@ -111,34 +127,96 @@ export function ContraintesPersonnalisees({ profileId, schoolYearId }: Props) {
 
   const enabledCount = rules.filter((r) => r.enabled).length
 
+  /**
+   * Entrée par défaut : la phrase. Le constructeur champ par champ reste
+   * accessible, mais il n'est plus ce qu'on rencontre en premier.
+   *
+   * L'ordre compte davantage qu'il n'y paraît. Placés côte à côte, les deux
+   * boutons demandaient à l'utilisateur de choisir une méthode avant d'avoir
+   * formulé sa règle — un arbitrage technique posé avant le besoin. Un champ
+   * de texte, lui, ne demande rien : on y écrit ce qu'on voulait dire, et
+   * c'est la machine qui se charge de la mise en forme.
+   */
+  const lancerAssistant = () => {
+    const texte = phrase.trim()
+    if (!texte) return
+    setDemande(texte)
+    setAssistantOpen(true)
+  }
+
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <p className="text-sm font-semibold text-brand-text dark:text-slate-100">
-            Règles propres à votre établissement
-          </p>
-          <p className="mt-0.5 text-xs text-brand-textMuted dark:text-slate-400">
+      <div className="rounded-xl border border-brand-border bg-white p-4 dark:border-slate-700 dark:bg-slate-900">
+        <div className="flex flex-wrap items-baseline justify-between gap-2">
+          <label
+            htmlFor="regle-phrase"
+            className="text-sm font-semibold text-brand-text dark:text-slate-100"
+          >
+            Décrivez votre règle
+          </label>
+          <p className="text-xs text-brand-textMuted dark:text-slate-400">
             {rules.length === 0
               ? 'Aucune règle personnalisée pour l’instant.'
               : `${enabledCount} active${enabledCount > 1 ? 's' : ''} sur ${rules.length}.`}
           </p>
-          {/* Deux portes d'entrée pour la même chose : dire laquelle choisir
-              évite d'avoir à essayer les deux pour comprendre. */}
-          <p className="mt-1 max-w-xl text-xs leading-relaxed text-brand-textMuted dark:text-slate-500">
-            Décrivez la contrainte en une phrase, ou construisez-la pas à pas en répondant à
-            quelques questions. Dans les deux cas, vous la relisez et l’essayez avant qu’elle
-            ne compte.
-          </p>
         </div>
-        <div className="flex gap-2">
-          <Button variant="outline" onClick={() => setAssistantOpen(true)}>
-            <Sparkles size={16} /> Décrire la contrainte
-          </Button>
-          <Button onClick={openCreate}>
-            <Plus size={16} /> Construire pas à pas
-          </Button>
+
+        <textarea
+          id="regle-phrase"
+          value={phrase}
+          onChange={(e) => setPhrase(e.target.value)}
+          onKeyDown={(e) => {
+            // Entrée valide, Maj+Entrée passe à la ligne : la convention des
+            // champs de saisie courts, celle que l'utilisateur a déjà.
+            if (e.key === 'Enter' && !e.shiftKey) {
+              e.preventDefault()
+              lancerAssistant()
+            }
+          }}
+          rows={2}
+          maxLength={500}
+          placeholder="Pas de sport le vendredi après-midi."
+          className="mt-2 w-full rounded-lg border border-brand-border bg-white px-3 py-2 text-sm text-brand-text placeholder:text-brand-textMuted focus:border-transparent focus:outline-none focus:ring-2 focus:ring-brand-blue dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200 dark:placeholder:text-slate-500"
+        />
+
+        {/* Montrer la forme attendue vaut mieux que la décrire : sur un modèle
+            de 7B, une demande bien formée change le taux de réussite du tout
+            au tout, et l'utilisateur n'a aucun moyen de le deviner. */}
+        <div className="mt-2 flex flex-wrap gap-1.5">
+          {EXEMPLES.map((exemple) => (
+            <button
+              key={exemple}
+              type="button"
+              onClick={() => setPhrase(exemple)}
+              className="rounded-full border border-brand-border px-2.5 py-1 text-left text-xs text-brand-textMuted transition-colors hover:bg-brand-bgSecondary dark:border-slate-700 dark:text-slate-400 dark:hover:bg-slate-800"
+            >
+              {exemple}
+            </button>
+          ))}
         </div>
+
+        <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
+          <Button onClick={lancerAssistant} disabled={!phrase.trim()}>
+            <Sparkles size={16} /> Voir ce que ça donne
+          </Button>
+
+          {/* Le constructeur reste une porte de sortie, pas une alternative
+              mise sur le même plan : celui qui connaît le vocabulaire du DSL
+              saura le trouver, les autres n'ont pas à le rencontrer. */}
+          <button
+            type="button"
+            onClick={openCreate}
+            className="inline-flex items-center gap-1.5 rounded-lg px-2 py-1 text-xs text-brand-textMuted underline-offset-2 transition-colors hover:text-brand-text hover:underline dark:text-slate-400 dark:hover:text-slate-200"
+          >
+            <SlidersHorizontal size={13} /> Mode expert : construire champ par champ
+          </button>
+        </div>
+
+        <p className="mt-2 text-xs leading-relaxed text-brand-textMuted dark:text-slate-500">
+          Rien n’est enregistré tant que vous n’avez pas confirmé : la phrase est mise en forme,
+          vérifiée par le serveur, et son effet sur les cours de l’année vous est chiffré avant
+          que vous ne décidiez.
+        </p>
       </div>
 
       {isLoading ? (
@@ -146,24 +224,18 @@ export function ContraintesPersonnalisees({ profileId, schoolYearId }: Props) {
           <Loader2 size={16} className="animate-spin" /> Chargement des règles…
         </div>
       ) : rules.length === 0 ? (
+        /* L'état vide ne redemande pas l'action : le champ de saisie est juste
+           au-dessus. Il dit seulement à quoi sert cet onglet, et laisse le
+           regard remonter. */
         <div className="rounded-xl border border-dashed border-brand-border bg-white p-10 text-center dark:border-slate-700 dark:bg-slate-900">
           <ScrollText size={30} className="mx-auto mb-3 text-brand-textMuted dark:text-slate-500" />
           <p className="text-sm font-medium text-brand-text dark:text-slate-200">
             Une règle que le catalogue ne couvre pas ?
           </p>
           <p className="mx-auto mt-1 max-w-md text-xs leading-relaxed text-brand-textMuted dark:text-slate-400">
-            Écrivez-la en une phrase — « les classes de terminale ne doivent pas avoir de
-            mathématiques après 15h le vendredi » — ou construisez-la pas à pas en répondant à
-            quelques questions.
+            Écrivez-la dans le champ ci-dessus, comme vous la diriez à un collègue. Les règles
+            que vous ajoutez ici s’appliquent en plus de celles de la circulaire.
           </p>
-          <div className="mt-4 flex justify-center gap-2">
-            <Button variant="outline" onClick={() => setAssistantOpen(true)}>
-              <Sparkles size={16} /> Décrire la contrainte
-            </Button>
-            <Button onClick={openCreate}>
-              <Plus size={16} /> Construire pas à pas
-            </Button>
-          </div>
         </div>
       ) : (
         <ul className="divide-y divide-brand-border overflow-hidden rounded-xl border border-brand-border bg-white dark:divide-slate-700 dark:border-slate-700 dark:bg-slate-900">
@@ -262,6 +334,7 @@ export function ContraintesPersonnalisees({ profileId, schoolYearId }: Props) {
         onClose={() => setAssistantOpen(false)}
         profileId={profileId}
         schoolYearId={schoolYearId}
+        initialRequest={demande}
         onEditManually={editProposal}
       />
 
