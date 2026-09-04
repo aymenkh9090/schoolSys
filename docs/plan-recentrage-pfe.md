@@ -14,10 +14,16 @@
 
 ## 0. État d'avancement
 
-> **Point d'arrêt : vendredi 4 septembre, ~11 h 45.** Pause déjeuner, reprise
-> l'après-midi. Dépôt propre, rien en cours, `mvn` et `pytest` verts.
-> `main` = **4a73947**, **5 commits d'avance sur `origin/main`** — à pousser
-> à la reprise (`git push`).
+> **Point d'arrêt : vendredi 4 septembre, après-midi.** Dépôt propre, rien en
+> cours, `mvn` et `pytest` verts, `main` poussé sur `origin`.
+> `main` = **05e6546**.
+
+### Le § 5 est terminé.
+
+Le DSL se pilote désormais à la phrase. L'écran des règles maison s'ouvre sur
+un champ de texte, plus sur un formulaire ; le constructeur champ par champ
+subsiste sous « Mode expert », pour qui connaît le vocabulaire. Et l'impact
+d'une règle candidate se lit en français avant qu'on ne la valide.
 
 ### Le § 4 est terminé. La contribution du PFE existe de bout en bout.
 
@@ -47,6 +53,7 @@ répond à une question libre — chaque maillon citant sa page et son article.
 | `1642f65` | **NFKD, pluriels, synonymes du domaine** | rang 1 : 6 → 9 · top-3 : 10 → 12 |
 | `08bc7d5` | **Écran « Contraintes officielles »** + `GET /api/consigne/articles` | tsc + build verts |
 | `4a73947` | **`POST /api/consigne/chat`** + boîte de question dans l'onglet | 18 tests, 175 au total |
+| `05e6546` | **§5 — la phrase en entrée par défaut**, « Mode expert » pour le constructeur, impact chiffré en français | tsc, oxlint, build verts |
 
 **Chiffres à réutiliser tels quels dans le rapport et à la soutenance :**
 
@@ -99,19 +106,16 @@ intuition, et chacune est consignée dans le code à l'endroit qu'elle concerne.
 > rend le tout vérifiable ; l'humain confirme. Une règle fausse est refusée, pas
 > appliquée. »*
 
-### À reprendre après le déjeuner, dans cet ordre
+### À reprendre, dans cet ordre
 
-1. **`git push`** — 5 commits en attente, c'est la première chose à faire.
-2. **§5 — ergonomie du DSL (~1 h 30 restante, pas 2 h 30).** L'écran officiel a
-   déjà livré le point 4 (le catalogue) et une partie du point 2 (le DSL est
-   replié derrière un `<details>` dans `AssistantRuleModal`). Restent :
-   - inverser l'entrée par défaut : ouvrir sur le champ de phrase, le
-     constructeur devenant « Mode expert » (~45 min) ;
-   - impact chiffré en langage courant : `matched_lessons` / `total_lessons`
-     existent déjà dans la réponse, les afficher en clair (~45 min).
-3. **§6 — mobile React Native. Point de non-retour dimanche 14 h**, plan B au §6.3.
-4. **§7.3 — SonarCloud**, 3 clics : importer le dépôt, méthode *GitHub Actions*,
-   secret `SONAR_TOKEN`. L'étape est déjà écrite dans le pipeline.
+1. **§6 — mobile React Native. Point de non-retour dimanche 14 h**, plan B au §6.3.
+   C'est le seul chantier qui reste et le seul qui puisse échouer : le commencer
+   avant tout le reste, pour que la décision de samedi soir se prenne sur du
+   code qui tourne et non sur une estimation.
+2. **§7.3 — SonarCloud**, 3 clics : importer le dépôt, méthode *GitHub Actions*,
+   secret `SONAR_TOKEN`. L'étape est déjà écrite dans le pipeline. À caser dans
+   une attente de build, ça ne mérite pas une plage à soi.
+3. **README** : il annonce 3 conteneurs, `docker compose` en lance **6**.
 
 ### Bloqué, et ça ne dépend pas du code
 
@@ -587,31 +591,37 @@ avec l'extrait et la page. Réutilise `ToolLoop`, ~40 lignes.
 
 ---
 
-## 5. DSL — le rendre utilisable par un non-technicien
+## 5. DSL — le rendre utilisable par un non-technicien — ✅ FAIT
 
-Le socle est déjà là (`DslRuleBuilder`, `AssistantRuleModal`,
+Le socle était déjà là (`DslRuleBuilder`, `AssistantRuleModal`,
 `RuleAnalysisPanel`, `SuggestionsPanel`, `ConstraintDslValidator`,
-`PlanningConflictService`). Ce qui manque n'est pas du moteur, c'est de
-**l'ergonomie et de la formulation**. Quatre retouches, dans cet ordre :
+`PlanningConflictService`). Ce qui manquait n'était pas du moteur, c'était de
+**l'ergonomie et de la formulation**. Quatre retouches, toutes livrées :
 
-1. **Inverser l'entrée par défaut.** L'écran s'ouvre aujourd'hui sur le
-   constructeur de règle champ par champ. Il doit s'ouvrir sur **un champ de
-   phrase** — *« Décrivez votre règle : "pas de sport le vendredi
-   après-midi" »* — le constructeur devenant l'onglet « Mode expert ».
-   *(≈ 45 min, réagencement pur.)*
+1. **Inverser l'entrée par défaut.** ✅ `05e6546`. L'onglet
+   « Personnalisées » s'ouvre sur **un champ de phrase** — *« Décrivez votre
+   règle : "pas de sport le vendredi après-midi" »* — avec ses exemples
+   cliquables ; le constructeur champ par champ est passé sous « Mode expert ».
+   La demande transite par `initialRequest`, la même porte que l'activation
+   d'un article de la circulaire : la traduction se lance d'elle-même, et le
+   parcours en deux temps est inchangé — proposer n'écrit rien.
 
-2. **Résumé en français, jamais de JSON visible.** `CompiledConstraint`
-   produit déjà un résumé ; le remonter dans la carte de confirmation et
-   **masquer le DSL derrière un `<details>` « Voir la règle technique »**.
-   *(≈ 30 min.)*
+2. **Résumé en français, jamais de JSON visible.** ✅ `08bc7d5`. Le résumé
+   affiché est celui du compilateur Java — ce que le moteur appliquera, pas une
+   reformulation du modèle. Le seul `JSON.stringify` de tout le dossier
+   `constraints/` est replié derrière un `<details>` « Détail informatique
+   (réservé au support) ».
 
-3. **Impact chiffré en langage courant.** Les champs `matched_lessons` et
-   `total_lessons` existent déjà dans la réponse : les afficher en clair —
-   *« Cette règle concerne 42 séances sur 310 (13 %). 3 conflits avec des
-   règles déjà actives : … »*. C'est ce qui transforme une règle abstraite en
-   décision informée. *(≈ 45 min.)*
+3. **Impact chiffré en langage courant.** ✅ `05e6546`. La pastille
+   « 42 sur 310 » est devenue *« Cette règle concerne 42 séances sur 310
+   (13 %) »*, les conflits gardant leur bloc propre. **Le cas zéro est traité à
+   part**, en avertissement : une règle valide qui ne touche aucune séance est
+   presque toujours un critère trop étroit — une matière mal orthographiée, un
+   niveau absent de l'année — et « 0 sur 310 » se lit comme un chiffre bas, pas
+   comme un problème. C'est le même principe que le reste du parcours : la
+   valeur brute est exacte, seule sa formulation décide de ce qui sera compris.
 
-4. **Catalogue officiel** = l'écran § 4.5 ②. C'est le vrai déblocage :
+4. **Catalogue officiel** ✅ `08bc7d5` = l'écran § 4.5 ②. C'est le vrai déblocage :
    l'admin n'écrit pas de règle, il **active** celles que le ministère a déjà
    écrites, et n'utilise la saisie libre que pour ses règles maison.
 
@@ -861,6 +871,12 @@ qui est incertain en dernier avec une porte de sortie.
 | 18:00–20:00 | `consigne_retrieval.py` + chargement au démarrage + test | 8 questions → bon article |
 
 ### Samedi 5 — la contribution
+
+> **Ce tableau est en avance d'une journée.** Tout ce qu'il prévoit a été fait
+> le **vendredi** : le § 4 en entier, puis le § 5. Samedi s'ouvre donc
+> directement sur le mobile (§ 6), avec une journée pleine devant lui au lieu
+> d'une demi-journée — c'est la marge qui rend le point de non-retour de
+> dimanche 14 h nettement moins serré qu'annoncé.
 
 | Créneau | Tâche | Fait quand |
 |---|---|---|
