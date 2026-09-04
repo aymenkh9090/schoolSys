@@ -552,121 +552,112 @@ Ce qui a été fait avant le premier push :
 > un compose de dev. À mentionner si le jury pose la question, et à remplacer
 > par des variables d'environnement dans un vrai déploiement.
 
-### 7.2 JaCoCo
+### 7.2 JaCoCo — ✅ FAIT
 
-Base de départ solide : **46 classes de test** dans les modules conservés
-(organisation 23, planning 18, tenant 4, absence 1) + 5 modules de tests
-Python (dont `test_cahier_rag.py`). Il y a donc une vraie couverture à montrer.
+Le plugin est déclaré **une fois dans le pom parent**, dans `<build><plugins>` :
+tous les modules en héritent, aucun n'a besoin de le redéclarer.
 
-Dans `backend/pom.xml`, `<build><plugins>` :
+- `prepare-agent` (phase `initialize`) pose l'agent **avant** surefire. Sans
+  lui les tests tournent mais rien n'est mesuré — c'est l'erreur la plus
+  fréquente.
+- `report` (phase `verify`) écrit le XML que Sonar viendra lire.
 
-```xml
-<plugin>
-  <groupId>org.jacoco</groupId>
-  <artifactId>jacoco-maven-plugin</artifactId>
-  <version>0.8.12</version>
-  <executions>
-    <execution><id>prepare</id><goals><goal>prepare-agent</goal></goals></execution>
-    <execution><id>report</id><phase>verify</phase><goals><goal>report</goal></goals></execution>
-  </executions>
-</plugin>
-```
+**Un module `coverage-report` a été ajouté** pour l'agrégation. Il ne contient
+aucun code : ses `<dependencies>` ne servent qu'à indiquer à `report-aggregate`
+quels modules agréger. Sans lui, JaCoCo produit un rapport par module et il
+n'existe aucune vue d'ensemble — chaque module ignore les lignes que les tests
+d'un autre ont pourtant exécutées (le code de `common-module` traversé par les
+tests de `planning`, typiquement).
 
-Pour un **rapport agrégé** (le chiffre unique à montrer au jury), ajouter un
-petit module `coverage-report` avec `report-aggregate`. *Optionnel : si le
-temps manque, montrer les rapports par module suffit.*
+**Résultat mesuré — `mvn verify`, 562 tests :**
 
-### 7.3 SonarCloud
+| Métrique | Couverture | Détail |
+|---|---|---|
+| Lignes | **29,7 %** | 2 485 / 8 375 |
+| Branches | **27,3 %** | 919 / 3 372 |
+| Instructions | **30,1 %** | 11 783 / 39 170 |
+| Méthodes | **36,7 %** | 596 / 1 623 |
+| Classes | **40,0 %** | 88 / 220 |
 
-1. sonarcloud.io → connexion GitHub → importer le dépôt → **Analysis
-   Method : GitHub Actions** (surtout **pas** l'analyse automatique, qui
-   ignore la couverture).
-2. Ajouter le secret `SONAR_TOKEN` dans le dépôt GitHub.
-3. Dans `backend/pom.xml`, `<properties>` :
+Par module (lignes) :
 
-```xml
-<sonar.organization>VOTRE-ORG</sonar.organization>
-<sonar.host.url>https://sonarcloud.io</sonar.host.url>
-<sonar.coverage.jacoco.xmlReportPaths>
-  ${project.basedir}/../*/target/site/jacoco/jacoco.xml
-</sonar.coverage.jacoco.xmlReportPaths>
-```
+| Module | Couverture | Lecture |
+|---|---|---|
+| `tenant-business` | **67,4 %** | le socle SaaS est bien testé |
+| `smartschool-planning` | **49,2 %** | **le cœur scientifique** — DSL et solveur, 236 tests |
+| `organisation-business` | 29,0 % | beaucoup de CRUD, peu de logique |
+| `absence-business` | 7,9 % | **le point faible assumé** |
+| `security`, `common`, `api` | — | aucun test propre |
 
-> **Attendez-vous à un Quality Gate rouge au premier passage** — c'est normal
-> sur un projet existant. Ne pas tenter de le passer au vert avant dimanche.
-> **Le retourner en argument** : *« Sonar a relevé N code smells ; j'ai traité
-> les M blocants, voici les autres et pourquoi ils sont acceptés. »* Un jury
-> préfère un candidat qui lit son rapport qualité à un candidat qui l'a caché.
+> **À dire au jury, pas à cacher.** 29,7 % global n'est pas un bon chiffre dans
+> l'absolu, mais la répartition est la bonne : **c'est le module qui porte la
+> contribution (`planning`, 49 %) qui est le mieux couvert**, pas les écrans
+> CRUD. Un projet à 80 % de couverture obtenu sur des getters vaudrait moins.
+> Si le temps le permet dimanche, la cible utile est `absence-business` — 7,9 %
+> sur un module qui part en mobile, c'est le vrai trou.
 
-### 7.4 Docker
+### 7.3 SonarCloud — configuration écrite, secret à créer
 
-`ai-assistant/Dockerfile` existe. À écrire :
+Les propriétés sont dans le pom parent (`sonar.organization`,
+`sonar.projectKey`, `sonar.host.url`, `sonar.coverage.jacoco.xmlReportPaths`
+pointant vers le rapport **agrégé**, et `sonar.exclusions` pour les sources
+générées par MapStruct et les DTO). La version du plugin est figée
+(`5.0.0.4389`) pour que `mvn sonar:sonar` soit reproductible.
 
-**`backend/Dockerfile`** — multi-étages, cache Maven :
-```dockerfile
-FROM maven:3.9-eclipse-temurin-21 AS build
-WORKDIR /app
-COPY pom.xml .
-COPY */pom.xml ./
-RUN mvn -B dependency:go-offline -DskipTests || true
-COPY . .
-RUN mvn -B clean package -DskipTests
+**Il reste 3 gestes manuels, à faire dans le navigateur :**
 
-FROM eclipse-temurin:21-jre
-WORKDIR /app
-COPY --from=build /app/smartschool-api/target/schoolsys-api-*.jar app.jar
-EXPOSE 8080 9091
-ENTRYPOINT ["java","-jar","app.jar"]
-```
+1. sonarcloud.io → **Log in with GitHub** → importer `aymenkh9090/smartschool`.
+2. Choisir **Analysis Method : GitHub Actions** — *surtout pas* l'analyse
+   automatique, qui ignore les rapports de couverture.
+3. Copier le token dans le dépôt GitHub :
+   `Settings → Secrets and variables → Actions → New repository secret`,
+   nommé **`SONAR_TOKEN`**.
 
-**`frontend/Dockerfile`** — build Vite puis nginx statique.
+Puis vérifier que `sonar.organization` et `sonar.projectKey` du pom parent
+correspondent à ce que SonarCloud a réellement créé (les valeurs actuelles,
+`aymenkh9090` et `aymenkh9090_smartschool`, sont la convention par défaut à
+l'import GitHub, mais SonarCloud peut en proposer d'autres).
 
-Puis ajouter les services `api` et `web` au `docker-compose.yml` existant
-(qui gère déjà Keycloak, les deux PostgreSQL, Prometheus, l'assistant IA).
+> **L'étape Sonar du pipeline est conditionnée à l'existence du secret**
+> (`if: env.SONAR_TOKEN != ''`). Tant qu'il n'est pas créé, elle est
+> simplement sautée et **le pipeline reste vert** — c'est voulu : la capture
+> d'écran d'un pipeline vert ne doit pas dépendre d'une configuration externe.
 
-### 7.5 Le pipeline
+### 7.4 Docker — ✅ FAIT
 
-**`.github/workflows/ci.yml`** — quatre jobs parallèles, un job final :
+| Fichier | Contenu |
+|---|---|
+| `backend/Dockerfile` | Multi-étages `maven:3.9-eclipse-temurin-21` → `eclipse-temurin:21-jre`. Les poms sont copiés **avant** les sources : tant qu'aucune dépendance ne bouge, Docker réutilise la couche du dépôt Maven. Utilisateur non privilégié. Expose 8080 (API) et 9091 (actuator). |
+| `frontend/Dockerfile` + `nginx.conf` | `node:20-alpine` → `nginx:alpine`. Les `VITE_*` sont passées en **`ARG`** : Vite les substitue à la compilation, les définir dans le conteneur nginx n'aurait aucun effet. `try_files … /index.html` pour que le rafraîchissement d'une URL profonde ne renvoie pas un 404. |
+| `ai-assistant/Dockerfile` | Existait déjà. |
 
-```yaml
-name: CI
-on:
-  push: { branches: [main] }
-  pull_request:
+Chaque contexte a son `.dockerignore` (`target/`, `node_modules/`, `.git/`).
 
-jobs:
-  backend:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-        with: { fetch-depth: 0 }        # requis par Sonar (blame)
-      - uses: actions/setup-java@v4
-        with: { java-version: '21', distribution: 'temurin', cache: maven }
-      - run: mvn -B verify              # tests + JaCoCo
-        working-directory: backend
-      - run: mvn -B sonar:sonar -Dsonar.projectKey=<clé>
-        working-directory: backend
-        env: { SONAR_TOKEN: "${{ secrets.SONAR_TOKEN }}" }
-      - uses: actions/upload-artifact@v4
-        with: { name: jacoco, path: backend/*/target/site/jacoco/ }
+### 7.5 Le pipeline — ✅ FAIT
 
-  frontend:
-    # npm ci → npm run lint → npm run build
+**`.github/workflows/ci.yml`**, quatre jobs :
 
-  ai-assistant:
-    # pip install -r requirements.txt → pytest
+| Job | Contenu | Durée attendue |
+|---|---|---|
+| `backend` | Java 21 + cache Maven → `mvn -B verify` (562 tests + JaCoCo) → **résumé de couverture affiché dans l'onglet Actions** → rapports publiés en artefact → Sonar *si le secret existe* | ~3–5 min |
+| `frontend` | Node 20 + cache npm → `npm ci` → `npm run lint` → `npm run build` | ~1 min |
+| `ai-assistant` | Python 3.12 + cache pip → `pytest` (**106 tests**, aucun appel à Ollama ni au backend : les clients sont doublés) | ~30 s |
+| `docker` | Après les trois autres : construction des 3 images avec cache GitHub Actions, **sans publication** | ~4 min |
 
-  docker:
-    needs: [backend, frontend]
-    # docker build des 3 images (pas de push : la construction suffit à prouver)
-```
+Détails qui comptent :
 
-**Ce qui compte pour la soutenance** : une capture d'écran du pipeline **vert**
-et du tableau de bord SonarCloud. Le déploiement continu (push registry,
-serveur cible) est **hors périmètre** et s'annonce comme tel : *« la CI est en
-place, le CD est la suite naturelle »*.
+- `fetch-depth: 0` sur le checkout du job backend — sans l'historique complet,
+  Sonar ne peut pas attribuer les lignes et l'analyse « nouveau code » est
+  fausse.
+- `concurrency` avec `cancel-in-progress` : deux pushes rapprochés n'exécutent
+  pas deux fois la même vérification.
+- Le job `docker` **ne pousse rien** vers un registre. Prouver que les images
+  se construisent suffit ; publier demanderait des secrets et une politique de
+  versions hors périmètre. À annoncer ainsi : *« la CI est en place, le CD est
+  la suite naturelle »*.
 
----
+**Ce qu'il faut pour la soutenance** : une capture du pipeline vert (onglet
+Actions) et une du tableau de bord SonarCloud une fois le secret créé.
 
 ## 8. Calendrier — 3 jours
 

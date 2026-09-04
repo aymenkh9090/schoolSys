@@ -1,0 +1,178 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  # Permet de relancer le pipeline à la main depuis l'onglet Actions.
+  workflow_dispatch:
+
+# Un push qui suit de près un autre annule le pipeline précédent : inutile de
+# payer deux fois la même vérification sur une branche en cours.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ── Backend : tests + couverture + analyse qualité ────────────────────────
+  backend:
+    name: Backend (tests, JaCoCo, Sonar)
+    runs-on: ubuntu-latest
+    # Déclaré au niveau du job, et non du step : une variable `env` définie
+    # dans un step n'est pas lisible par le `if` de ce même step.
+    env:
+      SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Sonar a besoin de l'historique complet pour attribuer les lignes
+          # (blame) et distinguer le code neuf du code existant. Avec le
+          # fetch-depth par défaut (1), l'analyse « nouveau code » est fausse.
+          fetch-depth: 0
+
+      - name: Installer Java 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: temurin
+          cache: maven
+
+      - name: Tests et couverture
+        working-directory: backend
+        run: mvn -B verify
+
+      - name: Résumé de la couverture
+        if: always()
+        working-directory: backend
+        run: |
+          rapport=coverage-report/target/site/jacoco-aggregate/jacoco.xml
+          if [ ! -f "$rapport" ]; then echo "Pas de rapport agrégé."; exit 0; fi
+          python3 - "$rapport" <<'PY' >> "$GITHUB_STEP_SUMMARY"
+          import sys, xml.etree.ElementTree as ET
+          racine = ET.parse(sys.argv[1]).getroot()
+          compteurs = {c.get('type'): (int(c.get('missed')), int(c.get('covered')))
+                       for c in racine.findall('counter')}
+          print("## Couverture agrégée\n")
+          print("| Métrique | Couverture | Détail |")
+          print("|---|---|---|")
+          for cle in ('LINE', 'BRANCH', 'INSTRUCTION', 'METHOD', 'CLASS'):
+              if cle in compteurs:
+                  manques, couverts = compteurs[cle]
+                  total = manques + couverts
+                  taux = couverts / total * 100 if total else 0
+                  print(f"| {cle} | **{taux:.1f} %** | {couverts} / {total} |")
+          PY
+
+      - name: Publier les rapports JaCoCo
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: jacoco
+          path: |
+            backend/coverage-report/target/site/jacoco-aggregate/
+            backend/*/target/site/jacoco/
+          if-no-files-found: warn
+
+      # L'analyse ne tourne que si le secret est configuré : sans cette garde,
+      # le pipeline échouerait chez quiconque clone le dépôt sans compte
+      # SonarCloud, et la CI ne serait jamais verte avant la configuration.
+      - name: Analyse SonarCloud
+        if: env.SONAR_TOKEN != ''
+        working-directory: backend
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        # La version du plugin est figée dans le pom parent : sans cela Maven
+        # résoudrait LATEST, et le pipeline changerait de comportement sans
+        # qu'une seule ligne du dépôt ait bougé.
+        run: mvn -B sonar:sonar
+
+  # ── Front ─────────────────────────────────────────────────────────────────
+  frontend:
+    name: Front (lint, build)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Installer Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Installer les dépendances
+        working-directory: frontend
+        run: npm ci
+
+      - name: Lint
+        working-directory: frontend
+        run: npm run lint
+
+      # `tsc -b` fait partie du script build : une erreur de typage casse ici,
+      # ce qui en fait le vrai filet du projet — c'est lui qui a rattrapé les
+      # imports morts lors de la suppression des modules budget et pointage.
+      - name: Build
+        working-directory: frontend
+        run: npm run build
+
+  # ── Assistant IA ──────────────────────────────────────────────────────────
+  ai-assistant:
+    name: Assistant IA (pytest)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Installer Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: ai-assistant/requirements.txt
+
+      - name: Installer les dépendances
+        working-directory: ai-assistant
+        run: pip install -r requirements.txt
+
+      # Les tests n'appellent ni Ollama ni le backend : les clients sont
+      # remplacés par des doubles. C'est ce qui les rend exécutables en CI.
+      - name: Tests
+        working-directory: ai-assistant
+        run: pytest -q
+
+  # ── Images Docker ─────────────────────────────────────────────────────────
+  # Construction seule, sans publication : le but est de prouver que les trois
+  # images se construisent. Un push vers un registre demanderait des secrets et
+  # une politique de versions qui sortent du périmètre.
+  docker:
+    name: Images Docker
+    runs-on: ubuntu-latest
+    needs: [backend, frontend, ai-assistant]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Image backend
+        uses: docker/build-push-action@v6
+        with:
+          context: ./backend
+          push: false
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Image front
+        uses: docker/build-push-action@v6
+        with:
+          context: ./frontend
+          push: false
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Image assistant IA
+        uses: docker/build-push-action@v6
+        with:
+          context: ./ai-assistant
+          push: false
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

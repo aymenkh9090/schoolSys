@@ -23,6 +23,26 @@
     <java.version>21</java.version>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     <keycloak.version>26.0.0</keycloak.version>
+
+    <!-- ── Qualité ────────────────────────────────────────────────────────
+         jacoco.version est piloté ici pour que tous les modules mesurent la
+         couverture avec la même version de l'agent. -->
+    <jacoco.version>0.8.12</jacoco.version>
+    <sonar-maven-plugin.version>5.0.0.4389</sonar-maven-plugin.version>
+
+    <!-- SonarCloud. La clé de projet et l'organisation sont celles créées à
+         l'import du dépôt GitHub sur sonarcloud.io : les corriger ici si
+         SonarCloud en a proposé d'autres.
+         xmlReportPaths pointe vers TOUS les rapports de modules : sans cette
+         ligne, Sonar affiche 0 % de couverture — c'est l'oubli classique. -->
+    <sonar.organization>aymenkh9090</sonar.organization>
+    <sonar.projectKey>aymenkh9090_smartschool</sonar.projectKey>
+    <sonar.host.url>https://sonarcloud.io</sonar.host.url>
+    <sonar.coverage.jacoco.xmlReportPaths>
+      ${maven.multiModuleProjectDirectory}/coverage-report/target/site/jacoco-aggregate/jacoco.xml
+    </sonar.coverage.jacoco.xmlReportPaths>
+    <!-- Code généré (MapStruct) et DTO : mesurés, mais pas reprochés. -->
+    <sonar.exclusions>**/target/generated-sources/**,**/dto/**</sonar.exclusions>
   </properties>
 
   <modules>
@@ -33,6 +53,8 @@
     <module>smartschool-api</module>
     <module>smartschool-planning</module>
     <module>absence-business</module>
+    <!-- En dernier : il agrège la couverture des modules qui le précèdent. -->
+    <module>coverage-report</module>
   </modules>
 
   <dependencyManagement>
@@ -49,5 +71,46 @@
       </dependency>
     </dependencies>
   </dependencyManagement>
+
+  <build>
+    <pluginManagement>
+      <plugins>
+        <!-- Version figée pour que `mvn sonar:sonar` soit reproductible : sans
+             elle, Maven résout LATEST à chaque exécution. -->
+        <plugin>
+          <groupId>org.sonarsource.scanner.maven</groupId>
+          <artifactId>sonar-maven-plugin</artifactId>
+          <version>${sonar-maven-plugin.version}</version>
+        </plugin>
+      </plugins>
+    </pluginManagement>
+
+    <plugins>
+      <!-- ── JaCoCo ────────────────────────────────────────────────────────
+           prepare-agent pose l'agent AVANT surefire (phase initialize) : sans
+           lui, les tests tournent mais rien n'est mesuré. report écrit le XML
+           que Sonar viendra lire, en phase verify. -->
+      <plugin>
+        <groupId>org.jacoco</groupId>
+        <artifactId>jacoco-maven-plugin</artifactId>
+        <version>${jacoco.version}</version>
+        <executions>
+          <execution>
+            <id>prepare-agent</id>
+            <goals>
+              <goal>prepare-agent</goal>
+            </goals>
+          </execution>
+          <execution>
+            <id>report</id>
+            <phase>verify</phase>
+            <goals>
+              <goal>report</goal>
+            </goals>
+          </execution>
+        </executions>
+      </plugin>
+    </plugins>
+  </build>
 
 </project>

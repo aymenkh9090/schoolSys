@@ -1,0 +1,101 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>tn.schoolsys</groupId>
+        <artifactId>schoolsys-platform</artifactId>
+        <version>0.0.1-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>schoolsys-coverage-report</artifactId>
+    <packaging>pom</packaging>
+    <name>SchoolSys Coverage Report</name>
+    <description>
+        Agrège la couverture des modules en un rapport unique.
+
+        Ce module ne contient aucun code : il ne sert qu'à produire le chiffre
+        global. Sans lui, JaCoCo écrit un rapport PAR module et il n'existe
+        aucune vue d'ensemble — chaque module ignore les lignes que les tests
+        d'un autre module ont pourtant exécutées (typiquement le code de
+        common-module traversé par les tests de planning).
+
+        Les dépendances ci-dessous ne sont pas des dépendances de compilation :
+        elles disent à report-aggregate QUELS modules agréger. Il ne voit que
+        ce qui figure ici.
+    </description>
+
+    <dependencies>
+        <dependency>
+            <groupId>tn.schoolsys.security</groupId>
+            <artifactId>schoolsys-security-module</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>tn.schoolsys.common</groupId>
+            <artifactId>schoolsys-common-module</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>tn.schoolsys.tenant</groupId>
+            <artifactId>schoolsys-tenant-business</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>tn.schoolsys.org</groupId>
+            <artifactId>schoolsys-organisation-business</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>tn.schoolsys.planning</groupId>
+            <artifactId>schoolsys-planning</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>tn.schoolsys.absence</groupId>
+            <artifactId>schoolsys-absence-business</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>tn.schoolsys</groupId>
+            <artifactId>schoolsys-api</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.jacoco</groupId>
+                <artifactId>jacoco-maven-plugin</artifactId>
+                <version>${jacoco.version}</version>
+                <executions>
+                    <!-- Ce module n'a pas de test : l'exécution prepare-agent
+                         héritée du parent n'a rien à instrumenter. -->
+                    <execution>
+                        <id>prepare-agent</id>
+                        <phase>none</phase>
+                    </execution>
+                    <execution>
+                        <id>report</id>
+                        <phase>none</phase>
+                    </execution>
+                    <execution>
+                        <id>report-aggregate</id>
+                        <phase>verify</phase>
+                        <goals>
+                            <goal>report-aggregate</goal>
+                        </goals>
+                        <configuration>
+                            <title>SchoolSys — couverture agrégée</title>
+                            <outputDirectory>${project.build.directory}/site/jacoco-aggregate</outputDirectory>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
+
+</project>
