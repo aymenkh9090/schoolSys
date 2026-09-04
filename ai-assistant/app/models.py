@@ -146,6 +146,50 @@ class ConstraintConfirmRequest(BaseModel):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Circulaire ministérielle
+# ─────────────────────────────────────────────────────────────────────────────
+
+class ConsigneArticle(BaseModel):
+    """
+    Un article de la circulaire n°66/2024, tel que l'écran le montre.
+
+    `texte` est la traduction de l'article — c'est lui qui s'affiche en grand et
+    lui seul qui est vectorisé. `commentaire` est NOTRE lecture, celle qui
+    explique le rattachement au solveur : l'écran doit la présenter comme telle
+    et jamais comme une parole du ministère.
+    """
+
+    id: str
+    page: int
+    section: str
+    texte: str
+    texte_ar: str
+    commentaire: str
+
+    # Non nuls seulement pour les articles qui se traduisent en contrainte de
+    # solveur. Les tableaux de volumes horaires, la légende et les articles
+    # d'affectation restent consultables mais ne proposent aucune règle : leur
+    # « activer » n'aurait rien à activer.
+    portee: str | None = None
+    severite: str | None = None
+
+    citation: str
+
+
+class ConsigneArticlesResponse(BaseModel):
+    """
+    Le corpus entier, en une fois.
+
+    Vingt-deux articles tiennent dans une seule réponse : paginer un texte
+    réglementaire que l'utilisateur veut parcourir de bout en bout coûterait des
+    allers-retours sans rien économiser.
+    """
+
+    reference: str
+    articles: list[ConsigneArticle]
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Cahier de séance
 # ─────────────────────────────────────────────────────────────────────────────
 

@@ -24,6 +24,7 @@ from app.clients.prometheus import PrometheusClient
 from app.config import get_settings
 from app.models import (
     CahierChatRequest,
+    ConsigneArticlesResponse,
     ChatRequest,
     ChatResponse,
     ConstraintConfirmRequest,
@@ -359,6 +360,36 @@ async def confirm_constraint(
 
     logger.info("Contrainte %s créée par %s", request.code, user.username)
     return created
+
+
+# ── Circulaire ministérielle (protégé — direction) ──────────────────────────
+#
+# Lecture seule d'un texte réglementaire public. La route est néanmoins
+# authentifiée comme les autres : le corpus n'est pas secret, mais exposer une
+# route ouverte sur un service qui en porte de sensibles élargirait la surface
+# sans raison. Aucun cloisonnement par tenant en revanche — la circulaire est le
+# même texte pour tous les établissements du pays, et un filtrage par
+# établissement n'aurait rien à filtrer.
+
+
+@app.get("/api/consigne/articles", response_model=ConsigneArticlesResponse, tags=["consigne"])
+async def consigne_articles(user: AuthenticatedUser = Depends(require_planning_user)):
+    """
+    Les articles de la circulaire n°66/2024, dans l'ordre du document.
+
+    Sert l'écran « Contraintes officielles » : le directeur y lit du français,
+    voit l'arabe d'origine, et active en un clic les règles que le ministère a
+    déjà écrites. Les articles porteurs d'une `portee` sont ceux qui se
+    traduisent en contrainte de solveur ; les autres — tableaux de volumes,
+    légende, règles d'affectation — restent consultables et citables.
+
+    Lu depuis l'index déjà chargé en mémoire : aucun accès disque par appel.
+    """
+    consigne = state["consigne"]
+    return ConsigneArticlesResponse(
+        reference="Circulaire n°66 du 04/09/2024 — ministère de l'Éducation (Tunisie)",
+        articles=[a.to_dict() for a in consigne.articles],
+    )
 
 
 # ── Cahier de séance (protégé — enseignant ou direction) ────────────────────

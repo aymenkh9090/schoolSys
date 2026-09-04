@@ -86,6 +86,31 @@ export const aiAssistantApi = {
 // écran ne les enchaîne automatiquement — c'est ce qui garantit qu'une règle
 // n'entre jamais en base sans avoir été relue.
 
+/**
+ * Un article de la circulaire cité au bas d'une proposition de règle.
+ *
+ * `concordance` est la seule information qui autorise à écrire « cette règle
+ * correspond à l'article X » : elle est vraie quand la portée pré-annotée de
+ * l'article est bien celle que la règle produite utilise. Les autres articles
+ * ont été remontés par la recherche sans que la règle les applique — les
+ * présenter comme correspondants serait une citation décorative, c'est-à-dire
+ * une apparence de preuve.
+ *
+ * Nommée `ConsigneSource` et non `ConstraintSource` : ce dernier existe déjà
+ * dans planning.api et désigne l'ORIGINE d'une règle (manuelle, IA), pas sa
+ * source réglementaire.
+ */
+export interface ConsigneSource {
+  id: string
+  page: number
+  citation: string
+  extrait: string
+  extrait_ar: string
+  portee: string | null
+  severite: string | null
+  concordance: boolean
+}
+
 export interface ConstraintProposal {
   valid: boolean
   dsl: ConstraintDsl | null
@@ -102,6 +127,12 @@ export interface ConstraintProposal {
   examples: string[]
   attempts: number
   duration_ms: number
+  /**
+   * Articles de la circulaire retrouvés pour cette demande. Liste vide quand le
+   * ministère ne couvre pas le sujet — le cas normal d'une règle propre à
+   * l'établissement, que l'écran a intérêt à dire plutôt qu'à taire.
+   */
+  sources: ConsigneSource[]
   requires_confirmation: boolean
 }
 
@@ -153,6 +184,40 @@ export const planningAssistantApi = {
     aiClient
       .post('/api/planning/assistant/constraints/confirm', payload)
       .then((r) => r.data),
+}
+
+// ── Circulaire ministérielle ────────────────────────────────────────────────
+//
+// Lecture seule d'un texte réglementaire public : pas d'en-tête de tenant, pas
+// de paramètre d'établissement. La circulaire est le même texte pour tous les
+// collèges du pays — il n'y a rien à cloisonner, et prétendre le contraire
+// ferait croire à un périmètre qui n'existe pas.
+
+export interface ConsigneArticle {
+  id: string
+  page: number
+  section: string
+  /** Traduction de l'article. C'est la parole du ministère. */
+  texte: string
+  /** Texte arabe d'origine, cité tel quel. */
+  texte_ar: string
+  /** NOTRE lecture du rattachement au solveur — à ne jamais présenter comme officielle. */
+  commentaire: string
+  /** Non nul seulement pour les articles qui se traduisent en contrainte. */
+  portee: string | null
+  severite: string | null
+  citation: string
+}
+
+export interface ConsigneArticlesResponse {
+  reference: string
+  articles: ConsigneArticle[]
+}
+
+export const consigneApi = {
+  /** Les 22 articles, dans l'ordre du document. Corpus statique : mis en cache long. */
+  listArticles: () =>
+    aiClient.get<ConsigneArticlesResponse>('/api/consigne/articles').then((r) => r.data),
 }
 
 // ── Assistant Cahier de séance ──────────────────────────────────────────────

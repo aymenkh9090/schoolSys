@@ -1,12 +1,16 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { Loader2, Sparkles, Wand2 } from 'lucide-react'
+import { BookMarked, CheckCircle2, Loader2, Sparkles, Wand2 } from 'lucide-react'
 
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { Modal } from '@/components/ui/Modal'
-import { planningAssistantApi, type ConstraintProposal } from '@/api/aiAssistant.api'
+import {
+  planningAssistantApi,
+  type ConsigneSource,
+  type ConstraintProposal,
+} from '@/api/aiAssistant.api'
 import type { DslAnalysis } from '@/api/planning.api'
 import { RuleAnalysisPanel } from './RuleAnalysisPanel'
 import { slugifyCode } from './dslLabels'
@@ -18,6 +22,18 @@ interface Props {
   schoolYearId?: number
   /** Ouvre le formulaire sur la règle proposée, pour la modifier avant d'enregistrer. */
   onEditManually: (proposal: ConstraintProposal, name: string) => void
+  /**
+   * Demande pré-remplie, quand la modale est ouverte depuis un article de la
+   * circulaire. La traduction se lance alors d'elle-même : l'utilisateur a déjà
+   * choisi la règle en cliquant « Activer », lui demander de cliquer une
+   * seconde fois n'ajouterait aucune décision.
+   *
+   * Cela ne raccourcit pas le parcours en deux temps pour autant — proposer
+   * n'écrit rien, et la confirmation reste un geste séparé.
+   */
+  initialRequest?: string
+  /** Numéro d'article d'origine (« II.2 »), affiché en bandeau. */
+  originArticle?: string
 }
 
 // Exemples cliquables. Avec un modèle de 7B tournant sur CPU, montrer la forme
@@ -42,7 +58,15 @@ const EXAMPLES = [
  * phrase du modèle : l'utilisateur relit donc ce que le moteur appliquera
  * réellement, et non ce que l'IA croit avoir compris.
  */
-export function AssistantRuleModal({ open, onClose, profileId, schoolYearId, onEditManually }: Props) {
+export function AssistantRuleModal({
+  open,
+  onClose,
+  profileId,
+  schoolYearId,
+  onEditManually,
+  initialRequest,
+  originArticle,
+}: Props) {
   const qc = useQueryClient()
 
   const [request, setRequest] = useState('')
@@ -50,23 +74,34 @@ export function AssistantRuleModal({ open, onClose, profileId, schoolYearId, onE
   const [name, setName] = useState('')
   const [code, setCode] = useState('')
 
+  // Garde de la traduction automatique : une seule par ouverture. Nécessaire
+  // parce qu'en développement React invoque les effets deux fois, et qu'une
+  // génération coûte de 5 à 30 s sur CPU — la payer en double se verrait.
+  const lancee = useRef<string | null>(null)
+
   useEffect(() => {
     if (open) return
     setRequest('')
     setProposal(null)
     setName('')
     setCode('')
+    lancee.current = null
   }, [open])
 
   const proposeMutation = useMutation({
     mutationFn: (text: string) =>
       planningAssistantApi.propose(text, { schoolYearId, profileId }),
-    onSuccess: (result) => {
+    onSuccess: (result, text) => {
       setProposal(result)
       if (result.valid) {
         // Nom par défaut dérivé de la demande : l'utilisateur le corrige s'il veut,
         // mais il n'a pas à inventer un intitulé pour une règle qu'il vient d'écrire.
-        const suggested = defaultName(request)
+        // On repart du texte RÉELLEMENT envoyé, et non de l'état `request` : lors
+        // d'un lancement automatique depuis un article, celui-ci n'est pas encore
+        // à jour au moment où la réponse arrive.
+        const suggested = originArticle
+          ? `Circulaire § ${originArticle}`
+          : defaultName(text)
         setName(suggested)
         setCode(slugifyCode(suggested))
       }
@@ -74,6 +109,17 @@ export function AssistantRuleModal({ open, onClose, profileId, schoolYearId, onE
     onError: () =>
       toast.error("L'assistant est injoignable. Vérifiez que le service IA est démarré."),
   })
+
+  // Déclaré après `proposeMutation`, qu'il appelle : l'ordre de lecture doit
+  // suivre l'ordre des dépendances.
+  useEffect(() => {
+    if (!open || !initialRequest || lancee.current === initialRequest) return
+    lancee.current = initialRequest
+    setRequest(initialRequest)
+    proposeMutation.mutate(initialRequest)
+    // proposeMutation est stable pour la durée de vie de la modale.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, initialRequest])
 
   const confirmMutation = useMutation({
     mutationFn: () =>
@@ -113,8 +159,27 @@ export function AssistantRuleModal({ open, onClose, profileId, schoolYearId, onE
   const canConfirm = Boolean(proposal?.valid && proposal.dsl && name.trim() && code.trim())
 
   return (
-    <Modal open={open} onClose={onClose} title="Décrire la contrainte" size="xl">
+    <Modal
+      open={open}
+      onClose={onClose}
+      title={originArticle ? `Activer l’article § ${originArticle}` : 'Décrire la contrainte'}
+      size="xl"
+    >
       <div className="space-y-5">
+        {originArticle && (
+          <div className="flex items-start gap-2.5 rounded-lg border border-brand-blue/30 bg-brand-blue/5 p-3">
+            <BookMarked size={16} className="mt-0.5 shrink-0 text-brand-blue" />
+            <p className="text-xs leading-relaxed text-brand-textMuted dark:text-slate-400">
+              Le texte de l’article a été repris tel quel comme demande. Il est mis en forme,
+              vérifié, et son effet sur les cours de l’année est mesuré — exactement comme une
+              règle que vous auriez écrite vous-même.{' '}
+              <strong className="text-brand-text dark:text-slate-200">
+                Rien n’est enregistré tant que vous n’avez pas confirmé.
+              </strong>
+            </p>
+          </div>
+        )}
+
         <div className="flex items-start gap-2.5 rounded-lg border border-brand-border bg-brand-bgSecondary/50 p-3 dark:border-slate-700 dark:bg-slate-800/40">
           <Sparkles size={16} className="mt-0.5 shrink-0 text-brand-blue" />
           <p className="text-xs leading-relaxed text-brand-textMuted dark:text-slate-400">
@@ -180,6 +245,8 @@ export function AssistantRuleModal({ open, onClose, profileId, schoolYearId, onE
           <section className="space-y-4 border-t border-brand-border pt-4 dark:border-slate-700">
             <RuleAnalysisPanel analysis={analysis} />
 
+            <PanneauSources sources={proposal.sources} valide={proposal.valid} />
+
             {!proposal.valid && proposal.message && (
               <p className="text-xs leading-relaxed text-brand-textMuted dark:text-slate-400">
                 {proposal.message}
@@ -241,6 +308,79 @@ export function AssistantRuleModal({ open, onClose, profileId, schoolYearId, onE
         </div>
       </div>
     </Modal>
+  )
+}
+
+/**
+ * Le fondement réglementaire de la règle proposée — ou son absence.
+ *
+ * Deux niveaux d'affirmation, et l'écart entre les deux est tout le sujet. Un
+ * article CONCORDANT est celui dont la portée est bien celle que la règle
+ * applique : on peut dire qu'elle en découle. Les autres ont été retrouvés par
+ * la recherche sans que la règle les applique — les présenter comme
+ * correspondants serait une citation décorative, et une citation décorative
+ * dans un outil de traçabilité est pire que pas de citation du tout, parce
+ * qu'elle a l'apparence d'une preuve.
+ *
+ * L'absence de source est affichée, pas tue : la plupart des règles d'un
+ * établissement sont des règles maison, et le dire évite de laisser croire à un
+ * fondement réglementaire qui n'existe pas.
+ */
+function PanneauSources({ sources, valide }: { sources: ConsigneSource[]; valide: boolean }) {
+  if (!valide) return null
+
+  if (sources.length === 0) {
+    return (
+      <p className="rounded-lg border border-brand-border p-2.5 text-xs leading-relaxed text-brand-textMuted dark:border-slate-700 dark:text-slate-400">
+        Aucun article de la circulaire n’encadre cette demande : c’est une règle propre à votre
+        établissement. Elle sera appliquée comme les autres.
+      </p>
+    )
+  }
+
+  const concordants = sources.filter((s) => s.concordance)
+  const voisins = sources.filter((s) => !s.concordance)
+
+  return (
+    <section className="rounded-lg border border-brand-border p-3 dark:border-slate-700">
+      <h4 className="flex items-center gap-1.5 text-xs font-semibold text-brand-text dark:text-slate-200">
+        <BookMarked size={13} className="text-brand-blue" /> Fondement réglementaire
+      </h4>
+
+      <ul className="mt-2 space-y-2">
+        {concordants.map((source) => (
+          <li key={source.id} className="flex items-start gap-2">
+            <CheckCircle2 size={13} className="mt-0.5 shrink-0 text-emerald-600 dark:text-emerald-400" />
+            <div className="min-w-0">
+              <p className="text-xs font-medium text-brand-text dark:text-slate-200">
+                Cette règle relève de l’article § {source.id} — {source.citation}
+              </p>
+              <p className="mt-0.5 text-xs leading-relaxed text-brand-textMuted dark:text-slate-400">
+                {source.extrait}
+              </p>
+            </div>
+          </li>
+        ))}
+      </ul>
+
+      {voisins.length > 0 && (
+        <details className="mt-2">
+          <summary className="cursor-pointer text-xs text-brand-textMuted dark:text-slate-400">
+            {concordants.length === 0
+              ? `${voisins.length} article(s) proche(s), qu’elle n’applique pas`
+              : `Voir ${voisins.length} article(s) voisin(s)`}
+          </summary>
+          <ul className="mt-2 space-y-2">
+            {voisins.map((source) => (
+              <li key={source.id} className="text-xs text-brand-textMuted dark:text-slate-400">
+                <span className="font-medium">§ {source.id}</span> — {source.citation}
+                <p className="mt-0.5 leading-relaxed">{source.extrait}</p>
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
+    </section>
   )
 }
 

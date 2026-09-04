@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { Plus, Settings, Trash2, GraduationCap, Users, BookOpen, DoorOpen, Sparkles, ShieldCheck, Scale, Heart, Library, ScrollText, Lightbulb, CheckCircle2 } from 'lucide-react'
+import { Plus, Settings, Trash2, GraduationCap, Users, BookOpen, DoorOpen, Sparkles, ShieldCheck, Scale, Heart, Library, ScrollText, Lightbulb, CheckCircle2, BookMarked } from 'lucide-react'
 
 import { PageHeader } from '@/components/ui/PageHeader'
 import { Button } from '@/components/ui/Button'
@@ -13,21 +13,32 @@ import { Tabs, type TabItem } from '@/components/ui/Tabs'
 import { organisationApi } from '@/api/organisation.api'
 import { planningApi, type ConstraintProfile, type ConstraintType, type ImportanceLevel, type ConstraintCategory, type ConstraintDsl, type ConstraintSuggestion } from '@/api/planning.api'
 import { cn } from '@/lib/utils'
+import type { ConsigneArticle, ConstraintProposal } from '@/api/aiAssistant.api'
 import { ContraintesPersonnalisees } from './constraints/ContraintesPersonnalisees'
+import { ContraintesOfficielles } from './constraints/ContraintesOfficielles'
+import { AssistantRuleModal } from './constraints/AssistantRuleModal'
 import { CustomConstraintModal } from './constraints/CustomConstraintModal'
 import { SuggestionsPanel } from './constraints/SuggestionsPanel'
 import { slugifyCode } from './constraints/dslLabels'
 
 /**
- * Les trois facettes de la configuration, dans l'ordre où on les rencontre :
- * ce que le produit fournit, ce que l'école ajoute, ce que l'analyse suggère.
+ * Les quatre facettes de la configuration, dans l'ordre où on les rencontre :
+ * ce que la loi impose, ce que le produit fournit, ce que l'école ajoute, ce
+ * que l'analyse suggère.
+ *
+ * « Officielles » vient en PREMIER, et c'est un choix. L'ordre d'un jeu
+ * d'onglets se lit comme un ordre de préséance : une réglementation nationale
+ * placée après les réglages maison suggérerait qu'on s'en occupe une fois le
+ * reste fait. C'est aussi le seul onglet où l'administrateur n'a rien à
+ * rédiger — il lit du français et active.
  *
  * L'assistant conversationnel a sa propre entrée dans le menu Planning : on
  * l'ouvre pour comprendre un planning, pas pour en régler la configuration.
  */
-type ConstraintTab = 'catalogue' | 'custom' | 'suggestions'
+type ConstraintTab = 'officielles' | 'catalogue' | 'custom' | 'suggestions'
 
 const CONSTRAINT_TABS: TabItem<ConstraintTab>[] = [
+  { key: 'officielles', label: 'Officielles', icon: BookMarked },
   { key: 'catalogue', label: 'Catalogue', icon: Library },
   { key: 'custom', label: 'Règles personnalisées', icon: ScrollText },
   { key: 'suggestions', label: 'Suggestions', icon: Lightbulb },
@@ -135,7 +146,14 @@ export default function ConfigurationContraintes() {
   const [createProfileOpen, setCreateProfileOpen] = useState(false)
   const [profileName, setProfileName] = useState('')
   const [deleteProfileTarget, setDeleteProfileTarget] = useState<ConstraintProfile | null>(null)
-  const [tab, setTab] = useState<ConstraintTab>('catalogue')
+  const [tab, setTab] = useState<ConstraintTab>('officielles')
+
+  // Article de la circulaire en cours d'activation. Il ouvre l'assistant
+  // pré-rempli avec le texte de l'article : celui-ci repasse par la traduction,
+  // la validation du backend et l'analyse d'impact, exactement comme une règle
+  // écrite à la main. Un article officiel n'est pas une règle déjà valide — il
+  // est écrit pour des humains, pas pour un solveur.
+  const [articleActive, setArticleActive] = useState<ConsigneArticle | null>(null)
 
   // Règle issue d'une suggestion, en attente de relecture dans l'éditeur.
   // Elle transite par cet état plutôt que d'être créée directement : une
@@ -298,6 +316,10 @@ export default function ConfigurationContraintes() {
       {profile && (
         <>
           <Tabs tabs={CONSTRAINT_TABS} value={tab} onChange={setTab} />
+
+          {tab === 'officielles' && (
+            <ContraintesOfficielles onActivate={setArticleActive} />
+          )}
 
           {tab === 'catalogue' && (
         <>
@@ -487,6 +509,27 @@ export default function ConfigurationContraintes() {
             />
           )}
         </>
+      )}
+
+      {/* Activer un article officiel emprunte le MÊME chemin qu'une règle
+          dictée : proposition, vérification, puis confirmation explicite.
+          Écrire directement en base parce que le texte vient du ministère
+          serait confondre « conforme » et « applicable à cet établissement ». */}
+      {profile && articleActive && (
+        <AssistantRuleModal
+          open
+          onClose={() => setArticleActive(null)}
+          profileId={profile.idConstraintProfile}
+          schoolYearId={profile.academicYearId}
+          initialRequest={articleActive.texte}
+          originArticle={articleActive.id}
+          onEditManually={(proposal: ConstraintProposal) => {
+            if (proposal.dsl) {
+              setAdopted({ dsl: proposal.dsl, name: `Circulaire § ${articleActive.id}` })
+            }
+            setArticleActive(null)
+          }}
+        />
       )}
 
       {/* Une suggestion adoptée ouvre l'éditeur pré-rempli : elle est relue et
