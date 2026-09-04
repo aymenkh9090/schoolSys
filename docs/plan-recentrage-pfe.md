@@ -659,6 +659,49 @@ Détails qui comptent :
 **Ce qu'il faut pour la soutenance** : une capture du pipeline vert (onglet
 Actions) et une du tableau de bord SonarCloud une fois le secret créé.
 
+#### Résultat réel — run #2, ✅ tout vert
+
+https://github.com/aymenkh9090/smartschool/actions/runs/33824065706
+
+| Job | Résultat | Durée |
+|---|---|---|
+| Backend (562 tests + JaCoCo) | ✅ | 2 min 01 s |
+| Front (lint + build) | ✅ | 41 s |
+| Assistant IA (106 tests pytest) | ✅ | 13 s |
+| Images Docker (×3) | ✅ | 6 min 04 s |
+
+Artefact `jacoco` publié : 2,3 Mo de rapports HTML + XML, téléchargeables
+depuis l'onglet Actions. L'étape SonarCloud est **sautée** comme prévu, faute
+de secret `SONAR_TOKEN`.
+
+#### Le run #1 avait échoué — la cause vaut d'être racontée
+
+`mvn verify` mourait sur le runner avec :
+
+```
+[ERROR] Could not create local repository at /home/aymen/.m2/repo-schoolsys
+```
+
+`backend/.mvn/maven.config` était versionné et figeait `-Dmaven.repo.local`
+sur un **chemin absolu du poste de développement**. Maven applique ce fichier
+avant toute autre configuration : l'échec survenait avant même la compilation.
+Le build passait en local précisément parce que le répertoire y existe.
+
+Corrigé en retirant le fichier du suivi git (il reste sur le poste : c'est une
+préférence de machine, pas un réglage de projet). La CI retrouve ainsi le
+dépôt Maven par défaut, celui que le cache de `setup-java` sait mettre en
+cache. L'isolation que ce fichier apportait n'a plus d'objet depuis le renommage
+des coordonnées en `tn.schoolsys`.
+
+> **Piège `.gitignore` rencontré au passage** : le motif `.mvn/maven.config`
+> ne fonctionne pas. Un motif contenant une barre oblique est **ancré à la
+> racine** du dépôt et ne couvre donc pas `backend/.mvn/`. Il faut
+> `**/.mvn/maven.config`.
+
+> **Bon exemple pour le rapport** : c'est exactement le type de défaut qu'une
+> CI existe pour attraper — une configuration qui ne marche que sur la machine
+> de son auteur. Aucun test unitaire ne l'aurait révélé.
+
 ## 8. Calendrier — 3 jours
 
 Ordonné par **risque décroissant** : ce qui est cheap et visible d'abord, ce
