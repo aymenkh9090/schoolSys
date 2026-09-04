@@ -28,7 +28,12 @@ spring:
     oauth2:
       resourceserver:
         jwt:
-          issuer-uri: http://localhost:8081/realms/smartschool
+          # Externalise pour la demonstration mobile : un telephone ne peut pas
+          # joindre "localhost", il obtient donc son jeton aupres de Keycloak par
+          # l'IP du reseau local. L'emetteur inscrit dans le jeton est alors cette
+          # IP, et la validation echoue si l'API en attend une autre. Les deux
+          # cotes doivent designer Keycloak par la MEME URL — d'ou la variable.
+          issuer-uri: ${KEYCLOAK_ISSUER_URI:http://localhost:8081/realms/smartschool}
   # ── Envoi d'email (mot de passe temporaire à la création de compte) ────────
   mail:
     host: smtp.gmail.com
@@ -58,7 +63,7 @@ app:
 #   manage-users, view-users dans realm-management.
 keycloak:
   admin:
-    server-url: http://localhost:8081
+    server-url: ${KEYCLOAK_SERVER_URL:http://localhost:8081}
     realm: smartschool
     client-id: smartschool-backend
     client-secret: ${KC_CLIENT_SECRET}
