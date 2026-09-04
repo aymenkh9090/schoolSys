@@ -34,3 +34,8 @@ __pycache__/
 # ── Divers ───────────────────────────────────────────────────────────────────
 *.log
 .DS_Store
+
+# Préférence de dépôt Maven locale à la machine (chemin absolu) : elle ne doit
+# pas partir dans le dépôt, sinon la CI tente de créer /home/<qqun>/.m2/... et
+# échoue. Le poste de dev garde son fichier, il n'est simplement plus versionné.
+**/.mvn/maven.config

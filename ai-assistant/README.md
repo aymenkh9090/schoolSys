@@ -9,7 +9,7 @@ figée (`app/tools/`), et le code exécute une requête écrite à la main.
 ## Démarrage en développement (recommandé)
 
 ```bash
-cd /home/aymen/sc-p/ai-assistant
+cd <racine-du-dépôt>/ai-assistant
 python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 cp .env.example .env        # puis passer AUTH_ENABLED=false pour tester sans Keycloak
@@ -120,7 +120,7 @@ source .venv/bin/activate && pytest -q
 ## Docker
 
 ```bash
-cd /home/aymen/sc-p
+cd <racine-du-dépôt>
 docker compose up -d --build ai-assistant
 ```
 
