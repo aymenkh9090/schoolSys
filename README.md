@@ -16,18 +16,36 @@ Depuis la racine du dépôt :
 docker compose up -d
 ```
 
-Cela démarre 3 conteneurs (voir `docker-compose.yml`) :
+Cela démarre **6 conteneurs** (voir `docker-compose.yml`) :
 
-| Service | Rôle | Port |
-|---|---|---|
-| `keycloak-db` | PostgreSQL dédié à Keycloak | interne |
-| `keycloak` | Serveur Keycloak (mode dev) | http://localhost:8081 |
-| `app-db` | PostgreSQL de l'application (`smartschool`) | localhost:5432 |
+| Service | Conteneur | Rôle | Accès |
+|---|---|---|---|
+| `keycloak-db` | `keycloak-db-ss` | PostgreSQL dédié à Keycloak | interne |
+| `keycloak` | `keycloak-ss` | Serveur Keycloak (mode dev) | http://localhost:8081 |
+| `app-db` | `smartschool-dbss` | PostgreSQL de l'application (`smartschool`) | localhost:5432 |
+| `prometheus` | `prometheuss` | Collecte des métriques de l'API | http://localhost:9090 |
+| `grafana` | `grafana-ss` | Tableaux de bord des métriques | http://localhost:3001 |
+| `ai-assistant` | `ai-assistant-ss` | Microservice Python (assistants IA) | http://localhost:8000 |
 
-Vérifier que Keycloak est démarré (~30s) :
+Les trois derniers ne sont **pas nécessaires** pour lancer l'application : sans
+eux, le backend et le frontend fonctionnent, seuls la supervision et les
+assistants sont indisponibles.
+
+> **Le conteneur `ai-assistant` ne sert pas le chat.** Il expose le tableau de
+> bord de supervision, mais Ollama n'écoute que sur le `127.0.0.1` de l'hôte,
+> hors de sa portée. Pour les assistants, lancer l'instance de développement :
+> `cd ai-assistant && uvicorn app.main:app --port 8001` (voir
+> `ai-assistant/README.md`).
+
+Le port hôte de Grafana est **3001** et non 3000 : ce dernier est pris par le
+serveur de développement du frontend.
+
+Vérifier que Keycloak est démarré (~30 s) — le nom du conteneur est
+`keycloak-ss`, pas `keycloak` :
 
 ```bash
-docker logs keycloak --tail=20
+docker compose ps
+docker logs keycloak-ss --tail=20
 ```
 
 Console d'admin Keycloak : **http://localhost:8081** → `admin` / `admin`
