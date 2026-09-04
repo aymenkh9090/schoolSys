@@ -1,0 +1,114 @@
+databaseChangeLog:
+  - changeSet:
+      id: 001-create-tenant-sequence
+      author: smartschool
+      changes:
+        - createSequence:
+            sequenceName: tenant_seq
+            startValue: 1
+            incrementBy: 1
+
+  - changeSet:
+      id: 001-create-tenant-table
+      author: smartschool
+      changes:
+        - createTable:
+            tableName: tenants
+            columns:
+              - column:
+                  name: tenant_id
+                  type: BIGINT
+                  constraints:
+                    primaryKey: true
+                    primaryKeyName: pk_tenant
+                    nullable: false
+              - column:
+                  name: code
+                  type: VARCHAR(50)
+                  constraints:
+                    nullable: false
+                    unique: true
+                    uniqueConstraintName: uk_tenant_code
+              - column:
+                  name: name
+                  type: VARCHAR(150)
+                  constraints:
+                    nullable: false
+                    unique: true
+                    uniqueConstraintName: uk_tenant_name
+              - column:
+                  name: type
+                  type: VARCHAR(20)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: active
+                  type: BOOLEAN
+                  defaultValueBoolean: true
+                  constraints:
+                    nullable: false
+              - column:
+                  name: status
+                  type: VARCHAR(20)
+                  defaultValue: ACTIVE
+                  constraints:
+                    nullable: false
+              - column:
+                  name: plan
+                  type: VARCHAR(20)
+                  defaultValue: FREE
+                  constraints:
+                    nullable: false
+              - column:
+                  name: address
+                  type: VARCHAR(255)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: phone
+                  type: VARCHAR(20)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: logo
+                  type: VARCHAR(255)
+              - column:
+                  name: created_at
+                  type: TIMESTAMP
+                  defaultValueComputed: CURRENT_TIMESTAMP
+                  constraints:
+                    nullable: false
+              - column:
+                  name: updated_at
+                  type: TIMESTAMP
+                  defaultValueComputed: CURRENT_TIMESTAMP
+                  constraints:
+                    nullable: false
+              - column:
+                  name: created_by
+                  type: VARCHAR(120)
+                  defaultValue: system
+                  constraints:
+                    nullable: false
+              - column:
+                  name: updated_by
+                  type: VARCHAR(120)
+                  defaultValue: system
+                  constraints:
+                    nullable: false
+              - column:
+                  name: version
+                  type: INTEGER
+                  defaultValueNumeric: 0
+        - createIndex:
+            tableName: tenants
+            indexName: idx_tenant_status
+            columns:
+              - column:
+                  name: status
+        - createIndex:
+            tableName: tenants
+            indexName: idx_tenant_active
+            columns:
+              - column:
+                  name: active

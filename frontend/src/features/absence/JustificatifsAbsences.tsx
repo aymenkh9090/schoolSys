@@ -1,0 +1,477 @@
+import { useMemo, useState } from 'react'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { toast } from 'sonner'
+import {
+  CheckCircle,
+  Clock,
+  FileText,
+  Inbox,
+  Search,
+  UserSearch,
+  XCircle,
+} from 'lucide-react'
+
+import { PageHeader } from '@/components/ui/PageHeader'
+import { Button } from '@/components/ui/Button'
+import { Modal } from '@/components/ui/Modal'
+import { Input } from '@/components/ui/Input'
+import { Badge } from '@/components/ui/Badge'
+import { Select } from '@/components/ui/Select'
+import { StatCard } from '@/components/ui/StatCard'
+import { Tabs } from '@/components/ui/Tabs'
+import { DataTable, type Column } from '@/components/ui/DataTable'
+import {
+  absenceApi,
+  type AbsenceEleveReponse,
+  type JustificatifReponse,
+  type StatutJustificatif,
+} from '@/api/absence.api'
+import type { Eleve } from '@/api/organisation.api'
+import { formatDate } from '@/lib/utils'
+import { SoumettreJustificatifModal } from './SoumettreJustificatifModal'
+import {
+  STATUT_JUSTIFICATIF_LABELS,
+  STATUT_JUSTIFICATIF_VARIANTS,
+  STATUT_PRESENCE_LABELS,
+  STATUT_PRESENCE_VARIANTS,
+  TYPE_JUSTIFICATIF_LABELS,
+  formatJour,
+  isoIlYA,
+  libelleEleve,
+  todayIso,
+  useReferentielScolaire,
+} from './absenceLabels'
+
+type Onglet = 'file' | 'dossier'
+
+/**
+ * Justificatifs d'absence des élèves : la file d'attente que la vie scolaire
+ * traite au quotidien, et le dossier d'un élève pour déposer un justificatif sur
+ * une absence précise. Aucun identifiant technique n'est saisi : les absences et
+ * les justificatifs sont choisis dans des listes.
+ */
+export default function JustificatifsAbsences() {
+  const qc = useQueryClient()
+  const ref = useReferentielScolaire()
+
+  const [onglet, setOnglet] = useState<Onglet>('file')
+  const [filtreStatut, setFiltreStatut] = useState<StatutJustificatif | ''>('EN_ATTENTE')
+
+  // Dossier élève
+  const [saisieEleve, setSaisieEleve] = useState('')
+  const [eleve, setEleve] = useState<Eleve | null>(null)
+  const [debut, setDebut] = useState(isoIlYA(60))
+  const [fin, setFin] = useState(todayIso())
+
+  const [aJustifier, setAJustifier] = useState<{ ligneAppelId: number; eleveNom: string; contexte: string } | null>(null)
+  const [decision, setDecision] = useState<{ justif: JustificatifReponse; approuver: boolean } | null>(null)
+  const [notes, setNotes] = useState('')
+
+  // ── Données ────────────────────────────────────────────────────────────────
+  const { data: file = [], isLoading: fileLoading } = useQuery({
+    queryKey: ['justificatifs', 'file', filtreStatut],
+    queryFn: () => absenceApi.justificatifs.list(filtreStatut ? { statut: filtreStatut } : undefined),
+  })
+
+  const { data: justificatifsEleve = [], isLoading: justifsEleveLoading } = useQuery({
+    queryKey: ['justificatifs', 'eleve', eleve?.idEleve],
+    queryFn: () => absenceApi.justificatifs.list({ eleveId: eleve!.idEleve }),
+    enabled: eleve !== null,
+  })
+
+  const { data: absences = [], isLoading: absencesLoading } = useQuery({
+    queryKey: ['absences-eleve', eleve?.idEleve, debut, fin],
+    queryFn: () => absenceApi.appel.absencesEleve(eleve!.idEleve, { debut, fin }),
+    enabled: eleve !== null,
+  })
+
+  // ── Traitement ─────────────────────────────────────────────────────────────
+  const traiter = useMutation({
+    mutationFn: ({ justif, approuver }: { justif: JustificatifReponse; approuver: boolean }) =>
+      approuver
+        ? absenceApi.justificatifs.approuver(justif.id, notes.trim() || undefined)
+        : absenceApi.justificatifs.refuser(justif.id, notes.trim() || undefined),
+    onSuccess: (_, { approuver }) => {
+      toast.success(approuver ? 'Justificatif validé — absence justifiée' : 'Justificatif refusé')
+      qc.invalidateQueries({ queryKey: ['justificatifs'] })
+      qc.invalidateQueries({ queryKey: ['absences-eleve'] })
+      setDecision(null)
+      setNotes('')
+    },
+    onError: (e: { response?: { data?: { message?: string } } }) =>
+      toast.error(e.response?.data?.message ?? 'Le traitement a échoué'),
+  })
+
+  function rechercherEleve() {
+    const trouve = ref.eleves.find((e) => libelleEleve(e) === saisieEleve.trim())
+    if (!trouve) {
+      toast.error('Élève introuvable — choisissez un nom dans la liste proposée')
+      return
+    }
+    setEleve(trouve)
+  }
+
+  const compte = (s: StatutJustificatif) => file.filter((j) => j.statut === s).length
+
+  // ── Colonnes : file d'attente ──────────────────────────────────────────────
+  function colonnesJustificatifs(avecEleve: boolean): Column<JustificatifReponse>[] {
+    const colonnes: Column<JustificatifReponse>[] = []
+
+    if (avecEleve) {
+      colonnes.push({
+        key: 'eleve',
+        header: 'Élève',
+        render: (j) => (
+          <div>
+            <p className="font-medium text-brand-text dark:text-slate-200">{ref.nomEleve(j.eleveId)}</p>
+            <p className="text-xs text-brand-textMuted dark:text-slate-400">Classe {ref.classeEleve(j.eleveId)}</p>
+          </div>
+        ),
+      })
+    }
+
+    colonnes.push(
+      {
+        key: 'seance',
+        header: 'Séance',
+        render: (j) => (
+          <div>
+            <p className="text-sm text-brand-text dark:text-slate-200">{formatJour(j.dateSeance)}</p>
+            <p className="text-xs text-brand-textMuted dark:text-slate-400">
+              {ref.nomClasse(j.groupeClasseId)} · {ref.nomMatiere(j.matiereId)}
+            </p>
+          </div>
+        ),
+      },
+      {
+        key: 'typeDocument',
+        header: 'Document',
+        render: (j) => (
+          <div>
+            <p className="text-sm text-brand-text dark:text-slate-200">{TYPE_JUSTIFICATIF_LABELS[j.typeDocument]}</p>
+            <p className="text-xs text-brand-textMuted dark:text-slate-400">{j.referenceDocument || 'Sans référence'}</p>
+          </div>
+        ),
+      },
+      {
+        key: 'soumisAt',
+        header: 'Déposé le',
+        render: (j) => <span className="text-sm text-brand-textMuted dark:text-slate-400">{formatDate(j.soumisAt)}</span>,
+      },
+      {
+        key: 'statut',
+        header: 'Statut',
+        render: (j) => (
+          <div className="space-y-1">
+            <Badge variant={STATUT_JUSTIFICATIF_VARIANTS[j.statut]}>{STATUT_JUSTIFICATIF_LABELS[j.statut]}</Badge>
+            {j.notesAdmin && <p className="text-xs text-brand-textMuted dark:text-slate-400">{j.notesAdmin}</p>}
+          </div>
+        ),
+      },
+      {
+        key: 'actions',
+        header: '',
+        className: 'w-px whitespace-nowrap',
+        render: (j) =>
+          j.statut === 'EN_ATTENTE' ? (
+            <div className="flex gap-1">
+              <Button size="sm" variant="outline" onClick={() => { setDecision({ justif: j, approuver: true }); setNotes('') }}>
+                <CheckCircle size={13} /> Valider
+              </Button>
+              <Button size="sm" variant="outline" onClick={() => { setDecision({ justif: j, approuver: false }); setNotes('') }}>
+                <XCircle size={13} /> Refuser
+              </Button>
+            </div>
+          ) : (
+            <span className="text-xs text-brand-textMuted dark:text-slate-400">
+              {j.traiteAt ? `Traité le ${formatDate(j.traiteAt)}` : '—'}
+            </span>
+          ),
+      }
+    )
+
+    return colonnes
+  }
+
+  // ── Colonnes : absences de l'élève ─────────────────────────────────────────
+  const colonnesAbsences: Column<AbsenceEleveReponse>[] = [
+    {
+      key: 'dateSeance',
+      header: 'Jour',
+      render: (a) => <span className="text-sm font-medium text-brand-text dark:text-slate-200">{formatJour(a.dateSeance)}</span>,
+    },
+    {
+      key: 'contexte',
+      header: 'Séance',
+      render: (a) => (
+        <div>
+          <p className="text-sm text-brand-text dark:text-slate-200">
+            {ref.nomClasse(a.groupeClasseId)} · {ref.nomMatiere(a.matiereId)}
+          </p>
+          <p className="text-xs text-brand-textMuted dark:text-slate-400">{ref.nomEnseignant(a.enseignantId)}</p>
+        </div>
+      ),
+    },
+    {
+      key: 'statut',
+      header: 'Statut',
+      render: (a) => (
+        <div className="space-y-1">
+          <Badge variant={STATUT_PRESENCE_VARIANTS[a.statut]}>{STATUT_PRESENCE_LABELS[a.statut]}</Badge>
+          {a.statut === 'RETARD' && a.minutesRetard ? (
+            <p className="text-xs text-brand-textMuted dark:text-slate-400">{a.minutesRetard} min</p>
+          ) : null}
+          {a.raisonExclusion && <p className="text-xs text-brand-textMuted dark:text-slate-400">{a.raisonExclusion}</p>}
+        </div>
+      ),
+    },
+    {
+      key: 'justification',
+      header: 'Justification',
+      render: (a) =>
+        a.estJustifie ? (
+          <Badge variant="success">Justifiée</Badge>
+        ) : a.statutJustificatif ? (
+          <Badge variant={STATUT_JUSTIFICATIF_VARIANTS[a.statutJustificatif]}>
+            {STATUT_JUSTIFICATIF_LABELS[a.statutJustificatif]}
+          </Badge>
+        ) : (
+          <Badge variant="danger">Non justifiée</Badge>
+        ),
+    },
+    {
+      key: 'actions',
+      header: '',
+      className: 'w-px whitespace-nowrap',
+      render: (a) =>
+        // Le serveur n'accepte un justificatif que sur une absence : un retard se
+        // régularise en corrigeant l'appel, pas par un dépôt de document.
+        a.statut !== 'ABSENT' ? (
+          <span className="text-xs text-brand-textMuted dark:text-slate-400">—</span>
+        ) : a.statutJustificatif === 'EN_ATTENTE' ? (
+          <span className="text-xs text-brand-textMuted dark:text-slate-400">Dépôt en cours</span>
+        ) : (
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() =>
+              setAJustifier({
+                ligneAppelId: a.ligneAppelId,
+                eleveNom: ref.nomEleve(a.eleveId),
+                contexte: `${formatJour(a.dateSeance)} · ${ref.nomClasse(a.groupeClasseId)} · ${ref.nomMatiere(a.matiereId)}`,
+              })
+            }
+          >
+            <FileText size={13} /> Justifier
+          </Button>
+        ),
+    },
+  ]
+
+  const statsEleve = useMemo(() => {
+    const absencesSeules = absences.filter((a) => a.statut === 'ABSENT')
+    return {
+      total: absencesSeules.length,
+      nonJustifiees: absencesSeules.filter((a) => !a.estJustifie).length,
+      retards: absences.filter((a) => a.statut === 'RETARD').length,
+      enAttente: justificatifsEleve.filter((j) => j.statut === 'EN_ATTENTE').length,
+    }
+  }, [absences, justificatifsEleve])
+
+  return (
+    <div className="space-y-6">
+      <PageHeader
+        title="Justificatifs d'absence"
+        subtitle="Traitez les justificatifs déposés et régularisez les absences élève par élève"
+      />
+
+      <Tabs
+        value={onglet}
+        onChange={setOnglet}
+        tabs={[
+          { key: 'file', label: "File d'attente", icon: Inbox },
+          { key: 'dossier', label: 'Dossier élève', icon: UserSearch },
+        ]}
+      />
+
+      {onglet === 'file' ? (
+        <>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+            <StatCard title="En attente" value={compte('EN_ATTENTE')} icon={Clock} color="yellow" />
+            <StatCard title="Validés" value={compte('VALIDE')} icon={CheckCircle} color="green" />
+            <StatCard title="Refusés" value={compte('REFUSE')} icon={XCircle} color="red" />
+          </div>
+
+          <div className="w-56">
+            <Select
+              label="Statut"
+              value={filtreStatut}
+              onChange={(e) => setFiltreStatut(e.target.value as StatutJustificatif | '')}
+              options={[
+                { value: 'EN_ATTENTE', label: 'En attente' },
+                { value: 'VALIDE', label: 'Validés' },
+                { value: 'REFUSE', label: 'Refusés' },
+                { value: '', label: 'Tous' },
+              ]}
+            />
+          </div>
+
+          <DataTable
+            columns={colonnesJustificatifs(true)}
+            data={file}
+            keyField="id"
+            loading={fileLoading}
+            emptyMessage={
+              filtreStatut === 'EN_ATTENTE'
+                ? 'Aucun justificatif en attente — tout est traité.'
+                : 'Aucun justificatif pour ce filtre.'
+            }
+          />
+        </>
+      ) : (
+        <>
+          <div className="flex flex-wrap items-end gap-3">
+            <div className="w-80">
+              <label className="mb-1 block text-sm font-medium text-brand-text dark:text-slate-200">Élève</label>
+              <input
+                list="eleves-justificatifs"
+                value={saisieEleve}
+                onChange={(e) => setSaisieEleve(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && rechercherEleve()}
+                placeholder="Tapez un nom, un prénom ou un code…"
+                className="w-full rounded-lg border border-brand-border bg-white px-3 py-2 text-sm text-brand-text focus:outline-none focus:ring-2 focus:ring-brand-blue/30 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200"
+              />
+              <datalist id="eleves-justificatifs">
+                {ref.eleves.map((e) => (
+                  <option key={e.idEleve} value={libelleEleve(e)} />
+                ))}
+              </datalist>
+            </div>
+            <div className="w-40">
+              <label className="mb-1 block text-sm font-medium text-brand-text dark:text-slate-200">Du</label>
+              <input
+                type="date"
+                value={debut}
+                max={fin}
+                onChange={(e) => setDebut(e.target.value)}
+                className="w-full rounded-lg border border-brand-border bg-white px-3 py-2 text-sm text-brand-text focus:outline-none focus:ring-2 focus:ring-brand-blue/30 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200"
+              />
+            </div>
+            <div className="w-40">
+              <label className="mb-1 block text-sm font-medium text-brand-text dark:text-slate-200">Au</label>
+              <input
+                type="date"
+                value={fin}
+                min={debut}
+                onChange={(e) => setFin(e.target.value)}
+                className="w-full rounded-lg border border-brand-border bg-white px-3 py-2 text-sm text-brand-text focus:outline-none focus:ring-2 focus:ring-brand-blue/30 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200"
+              />
+            </div>
+            <Button onClick={rechercherEleve}>
+              <Search size={16} /> Ouvrir le dossier
+            </Button>
+          </div>
+
+          {eleve === null ? (
+            <div className="rounded-xl border border-brand-border bg-white p-12 text-center dark:border-slate-700 dark:bg-slate-900">
+              <UserSearch size={32} className="mx-auto mb-3 text-brand-textMuted dark:text-slate-400" />
+              <p className="text-sm text-brand-textMuted dark:text-slate-400">
+                Recherchez un élève pour voir ses absences et déposer un justificatif.
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-6">
+              <p className="text-sm text-brand-textMuted dark:text-slate-400">
+                Dossier de{' '}
+                <span className="font-medium text-brand-text dark:text-slate-200">
+                  {eleve.nom} {eleve.prenom}
+                </span>{' '}
+                — classe {eleve.classeCode}
+              </p>
+
+              <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+                <StatCard title="Absences" value={statsEleve.total} icon={XCircle} color="red" />
+                <StatCard title="Non justifiées" value={statsEleve.nonJustifiees} icon={FileText} color="amber" />
+                <StatCard title="Retards" value={statsEleve.retards} icon={Clock} color="yellow" />
+                <StatCard title="Dépôts en attente" value={statsEleve.enAttente} icon={Inbox} color="blue" />
+              </div>
+
+              <section className="space-y-3">
+                <h2 className="text-sm font-semibold text-brand-text dark:text-slate-100">Absences sur la période</h2>
+                <DataTable
+                  columns={colonnesAbsences}
+                  data={absences}
+                  keyField="ligneAppelId"
+                  loading={absencesLoading}
+                  emptyMessage="Aucune absence sur cette période."
+                />
+              </section>
+
+              <section className="space-y-3">
+                <h2 className="text-sm font-semibold text-brand-text dark:text-slate-100">
+                  Justificatifs de cet élève
+                </h2>
+                <DataTable
+                  columns={colonnesJustificatifs(false)}
+                  data={justificatifsEleve}
+                  keyField="id"
+                  loading={justifsEleveLoading}
+                  emptyMessage="Aucun justificatif déposé pour cet élève."
+                />
+              </section>
+            </div>
+          )}
+        </>
+      )}
+
+      <SoumettreJustificatifModal cible={aJustifier} onClose={() => setAJustifier(null)} />
+
+      <Modal
+        open={decision !== null}
+        onClose={() => { setDecision(null); setNotes('') }}
+        title={decision?.approuver ? 'Valider le justificatif' : 'Refuser le justificatif'}
+        size="md"
+      >
+        {decision && (
+          <form
+            onSubmit={(e) => {
+              e.preventDefault()
+              traiter.mutate(decision)
+            }}
+            className="space-y-4"
+          >
+            <div className="rounded-lg border border-brand-border bg-brand-bgSecondary p-3 text-sm dark:border-slate-700 dark:bg-slate-800">
+              <p className="font-medium text-brand-text dark:text-slate-100">{ref.nomEleve(decision.justif.eleveId)}</p>
+              <p className="text-brand-textMuted dark:text-slate-400">
+                {formatJour(decision.justif.dateSeance)} · {TYPE_JUSTIFICATIF_LABELS[decision.justif.typeDocument]}
+                {decision.justif.referenceDocument ? ` · ${decision.justif.referenceDocument}` : ''}
+              </p>
+            </div>
+
+            <p className="text-sm text-brand-textMuted dark:text-slate-400">
+              {decision.approuver
+                ? "La validation marque l'absence comme justifiée dans la feuille d'appel."
+                : "Le refus laisse l'absence non justifiée ; indiquez le motif pour la famille."}
+            </p>
+
+            <Input
+              label={decision.approuver ? 'Note (optionnelle)' : 'Motif du refus'}
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              autoFocus
+            />
+
+            <div className="flex justify-end gap-2 border-t border-brand-border pt-4 dark:border-slate-700">
+              <Button variant="outline" type="button" onClick={() => { setDecision(null); setNotes('') }}>
+                Annuler
+              </Button>
+              <Button type="submit" variant={decision.approuver ? 'primary' : 'danger'} loading={traiter.isPending}>
+                {decision.approuver ? 'Valider' : 'Refuser'}
+              </Button>
+            </div>
+          </form>
+        )}
+      </Modal>
+    </div>
+  )
+}

@@ -1,0 +1,51 @@
+databaseChangeLog:
+  # Jusqu'ici `active` etait force a TRUE a la creation et jamais remis a FALSE :
+  # tous les profils d'un tenant s'affichaient « actif », et le solveur, qui prend
+  # le profil actif de l'annee quand la generation n'en precise aucun, retenait en
+  # pratique le dernier profil cree. On retablit l'invariant : un seul profil actif
+  # par (tenant, annee scolaire).
+  - changeSet:
+      id: 012-deactivate-duplicate-active-profiles
+      author: planning
+      changes:
+        - sql:
+            comment: >-
+              Ne garde actif que le profil le plus recent de chaque couple
+              (tenant, annee scolaire). COALESCE : les profils sans annee
+              forment leur propre groupe.
+            splitStatements: false
+            sql: |
+              UPDATE constraint_profile p
+                 SET active = FALSE
+               WHERE p.active = TRUE
+                 AND p.id_constraint_profile <> (
+                       SELECT MAX(q.id_constraint_profile)
+                         FROM constraint_profile q
+                        WHERE q.tenant_id = p.tenant_id
+                          AND COALESCE(q.academic_year_id, -1) = COALESCE(p.academic_year_id, -1)
+                          AND q.active = TRUE
+                     );
+      rollback:
+        - sql:
+            sql: UPDATE constraint_profile SET active = TRUE;
+
+  # dbms: postgresql — l'index unique partiel sur expression n'existe qu'en
+  # PostgreSQL (le seul SGBD cible ; H2 ne sert qu'au test du changelog, qui
+  # verifie le schema, pas cette garantie).
+  - changeSet:
+      id: 012-unique-active-constraint-profile
+      author: planning
+      dbms: postgresql
+      changes:
+        - sql:
+            comment: >-
+              Index unique partiel : l'invariant tient meme si un futur chemin
+              d'ecriture oublie de desactiver les autres profils.
+            splitStatements: false
+            sql: |
+              CREATE UNIQUE INDEX IF NOT EXISTS ux_constraint_profile_active_year
+                  ON constraint_profile (tenant_id, COALESCE(academic_year_id, -1))
+               WHERE active;
+      rollback:
+        - sql:
+            sql: DROP INDEX IF EXISTS ux_constraint_profile_active_year;

@@ -1,0 +1,97 @@
+databaseChangeLog:
+  - changeSet:
+      id: 001-create-planning-sequence
+      author: planning
+      changes:
+        - createSequence:
+            sequenceName: seq_planning
+            startValue: 1000
+            incrementBy: 1
+
+  - changeSet:
+      id: 001-create-constraint-definition
+      author: planning
+      changes:
+        - createTable:
+            tableName: constraint_definition
+            columns:
+              - column:
+                  name: id_constraint_definition
+                  type: BIGINT
+                  constraints:
+                    primaryKey: true
+                    primaryKeyName: pk_constraint_definition
+                    nullable: false
+              - column:
+                  name: code
+                  type: VARCHAR(100)
+                  constraints:
+                    nullable: false
+                    unique: true
+                    uniqueConstraintName: uk_constraint_definition_code
+              - column:
+                  name: name
+                  type: VARCHAR(150)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: description
+                  type: TEXT
+              - column:
+                  name: category
+                  type: VARCHAR(40)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: type
+                  type: VARCHAR(20)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: default_importance
+                  type: VARCHAR(20)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: default_enabled
+                  type: BOOLEAN
+                  defaultValueBoolean: true
+                  constraints:
+                    nullable: false
+              - column:
+                  name: parameter_schema
+                  type: TEXT
+              - column:
+                  name: created_at
+                  type: TIMESTAMP
+                  defaultValueComputed: CURRENT_TIMESTAMP
+                  constraints:
+                    nullable: false
+              - column:
+                  name: updated_at
+                  type: TIMESTAMP
+                  defaultValueComputed: CURRENT_TIMESTAMP
+                  constraints:
+                    nullable: false
+              - column:
+                  name: created_by
+                  type: VARCHAR(120)
+                  defaultValue: system
+                  constraints:
+                    nullable: false
+              - column:
+                  name: updated_by
+                  type: VARCHAR(120)
+                  defaultValue: system
+                  constraints:
+                    nullable: false
+              - column:
+                  name: version
+                  type: INTEGER
+                  defaultValueNumeric: 0
+        - createIndex:
+            tableName: constraint_definition
+            indexName: idx_constraint_definition_category
+            columns:
+              - column:
+                  name: category

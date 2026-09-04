@@ -1,0 +1,159 @@
+databaseChangeLog:
+  - changeSet:
+      id: 005-create-generated-timetable
+      author: planning
+      changes:
+        # Table de résultat global d'un emploi du temps généré.
+        # Créée quand le solver termine (SOLVED). Lie TimetableJob à ses TimetableSessions.
+        - createTable:
+            tableName: planning_generated_timetable
+            columns:
+              - column:
+                  name: id_generated_timetable
+                  type: BIGINT
+                  constraints:
+                    primaryKey: true
+                    primaryKeyName: pk_generated_timetable
+                    nullable: false
+
+              # ── tenant isolation ──────────────────────────────────────────────
+              - column:
+                  name: tenant_id
+                  type: VARCHAR(100)
+                  constraints:
+                    nullable: false
+
+              # ── lien vers le job solver ───────────────────────────────────────
+              - column:
+                  name: job_id
+                  type: BIGINT
+                  constraints:
+                    nullable: false
+
+              # ── contexte académique ───────────────────────────────────────────
+              - column:
+                  name: academic_year_id
+                  type: BIGINT
+                  constraints:
+                    nullable: false
+
+              - column:
+                  name: constraint_profile_id
+                  type: BIGINT
+
+              # ── score Timefold (ex : "0hard/0medium/-5soft") ─────────────────
+              - column:
+                  name: score_achieved
+                  type: VARCHAR(60)
+
+              - column:
+                  name: feasible
+                  type: BOOLEAN
+                  defaultValueBoolean: false
+                  constraints:
+                    nullable: false
+
+              # ── cycle de vie : DRAFT | PUBLISHED | ARCHIVED ───────────────────
+              - column:
+                  name: status
+                  type: VARCHAR(20)
+                  defaultValue: DRAFT
+                  constraints:
+                    nullable: false
+
+              - column:
+                  name: published_at
+                  type: TIMESTAMP
+
+              # ── statistiques snapshot ─────────────────────────────────────────
+              - column:
+                  name: total_sessions
+                  type: INTEGER
+                  defaultValueNumeric: 0
+                  constraints:
+                    nullable: false
+
+              - column:
+                  name: hard_violations
+                  type: INTEGER
+                  defaultValueNumeric: 0
+                  constraints:
+                    nullable: false
+
+              - column:
+                  name: medium_violations
+                  type: INTEGER
+                  defaultValueNumeric: 0
+                  constraints:
+                    nullable: false
+
+              # ── audit ─────────────────────────────────────────────────────────
+              - column:
+                  name: created_at
+                  type: TIMESTAMP
+                  defaultValueComputed: CURRENT_TIMESTAMP
+                  constraints:
+                    nullable: false
+              - column:
+                  name: updated_at
+                  type: TIMESTAMP
+                  defaultValueComputed: CURRENT_TIMESTAMP
+                  constraints:
+                    nullable: false
+              - column:
+                  name: created_by
+                  type: VARCHAR(120)
+                  defaultValue: system
+                  constraints:
+                    nullable: false
+              - column:
+                  name: updated_by
+                  type: VARCHAR(120)
+                  defaultValue: system
+                  constraints:
+                    nullable: false
+              - column:
+                  name: version
+                  type: INTEGER
+                  defaultValueNumeric: 0
+
+        # ── contrainte référentielle : un résultat par job ────────────────────
+        - addForeignKeyConstraint:
+            baseTableName: planning_generated_timetable
+            baseColumnNames: job_id
+            constraintName: fk_generated_timetable_job
+            referencedTableName: planning_timetable_job
+            referencedColumnNames: id_timetable_job
+            onDelete: CASCADE
+
+        # ── un seul résultat enregistré par job ───────────────────────────────
+        - addUniqueConstraint:
+            tableName: planning_generated_timetable
+            constraintName: uk_generated_timetable_job
+            columnNames: job_id
+
+        # ── index ─────────────────────────────────────────────────────────────
+        - createIndex:
+            tableName: planning_generated_timetable
+            indexName: idx_generated_timetable_tenant
+            columns:
+              - column:
+                  name: tenant_id
+
+        - createIndex:
+            tableName: planning_generated_timetable
+            indexName: idx_generated_timetable_year
+            columns:
+              - column:
+                  name: tenant_id
+              - column:
+                  name: academic_year_id
+
+        - createIndex:
+            tableName: planning_generated_timetable
+            indexName: idx_generated_timetable_status
+            columns:
+              - column:
+                  name: tenant_id
+              - column:
+                  name: status

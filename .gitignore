@@ -1,0 +1,36 @@
+# ── Java / Maven ─────────────────────────────────────────────────────────────
+target/
+*.jar
+*.war
+!.mvn/wrapper/maven-wrapper.jar
+.mvn/timing.properties
+
+# ── Node / front ─────────────────────────────────────────────────────────────
+node_modules/
+dist/
+dist-ssr/
+*.local
+.vite/
+
+# ── Python / assistant IA ────────────────────────────────────────────────────
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# ── Secrets et configuration locale ──────────────────────────────────────────
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# ── IDE ──────────────────────────────────────────────────────────────────────
+.idea/
+*.iml
+.vscode/
+
+# ── Divers ───────────────────────────────────────────────────────────────────
+*.log
+.DS_Store

@@ -1,0 +1,159 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 738 768" width="738" height="768" role="img" aria-label="">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#8b5cf6"/>
+      <stop offset="0.45" stop-color="#6d28d9"/>
+      <stop offset="1" stop-color="#3b1a80"/>
+    </linearGradient>
+    <radialGradient id="glow">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.45"/>
+      <stop offset="1" stop-color="#ffffff" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="glowCyan">
+      <stop offset="0" stop-color="#67e8f9" stop-opacity="0.55"/>
+      <stop offset="1" stop-color="#67e8f9" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="glass" x1="0" y1="0" x2="0.6" y2="1">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.26"/>
+      <stop offset="1" stop-color="#ffffff" stop-opacity="0.10"/>
+    </linearGradient>
+    <linearGradient id="glassSoft" x1="0" y1="0" x2="0.6" y2="1">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.20"/>
+      <stop offset="1" stop-color="#ffffff" stop-opacity="0.06"/>
+    </linearGradient>
+    <linearGradient id="bar" x1="0" y1="1" x2="0" y2="0">
+      <stop offset="0" stop-color="#a5f3fc" stop-opacity="0.55"/>
+      <stop offset="1" stop-color="#ffffff" stop-opacity="0.95"/>
+    </linearGradient>
+    <linearGradient id="shieldFill" x1="0" y1="0" x2="0.4" y2="1">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#ddd6fe"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Fond violet de la plateforme -->
+  <rect width="738" height="768" fill="url(#bg)"/>
+  <circle cx="520" cy="180" r="300" fill="url(#glow)"/>
+  <circle cx="420" cy="430" r="240" fill="url(#glowCyan)" opacity="0.5"/>
+  <circle cx="300" cy="700" r="180" fill="url(#glow)" opacity="0.4"/>
+
+  <!-- Vague claire du bord gauche : raccord invisible avec le fond du formulaire -->
+  <path d="M0 0 H136 C 118 150 44 246 56 384 C 68 522 174 626 152 768 H0 Z" fill="#f4f8f9"/>
+
+  <!-- Réseau reliant les établissements à la console -->
+  <g stroke="#ffffff" stroke-opacity="0.45" stroke-width="1.5" fill="none">
+    <path d="M414 214 V276"/>
+    <path d="M250 300 H206 V466"/>
+    <path d="M584 330 H624 V236"/>
+    <path d="M300 528 V612 H246"/>
+    <path d="M520 528 V612 H592"/>
+    <path d="M414 528 V648"/>
+  </g>
+  <g fill="#ffffff">
+    <circle cx="414" cy="245" r="4" fill-opacity="0.9"/>
+    <circle cx="206" cy="380" r="4" fill-opacity="0.75"/>
+    <circle cx="624" cy="282" r="4" fill-opacity="0.75"/>
+    <circle cx="414" cy="600" r="4" fill-opacity="0.75"/>
+    <circle cx="470" cy="210" r="3" fill-opacity="0.5"/>
+    <circle cx="352" cy="596" r="3" fill-opacity="0.5"/>
+  </g>
+  <circle cx="596" cy="470" r="5" fill="#fbbf24" fill-opacity="0.9"/>
+  <circle cx="232" cy="252" r="4" fill="#67e8f9" fill-opacity="0.9"/>
+
+  <!-- Bouclier : accès super administrateur -->
+  <g transform="translate(414 148)">
+    <path d="M0 -66 L58 -42 V6 C58 44 30 66 0 78 C-30 66 -58 44 -58 6 V-42 Z" fill="url(#shieldFill)"/>
+    <path d="M0 -66 L58 -42 V6 C58 44 30 66 0 78 C-30 66 -58 44 -58 6 V-42 Z" fill="none" stroke="#ffffff" stroke-opacity="0.6" stroke-width="2"/>
+    <path d="M-24 4 L-7 22 L26 -18" fill="none" stroke="#6d28d9" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+
+  <!-- Console d'administration -->
+  <g>
+    <rect x="236" y="276" width="360" height="252" rx="26" fill="url(#glass)" stroke="#ffffff" stroke-opacity="0.5" stroke-width="2"/>
+    <g fill="#ffffff">
+      <circle cx="266" cy="308" r="5" fill-opacity="0.85"/>
+      <circle cx="284" cy="308" r="5" fill-opacity="0.55"/>
+      <circle cx="302" cy="308" r="5" fill-opacity="0.35"/>
+      <rect x="322" y="302" width="128" height="12" rx="6" fill-opacity="0.35"/>
+    </g>
+
+    <!-- Indicateurs -->
+    <g>
+      <rect x="260" y="334" width="100" height="56" rx="14" fill="url(#glassSoft)"/>
+      <rect x="274" y="350" width="44" height="8" rx="4" fill="#ffffff" fill-opacity="0.45"/>
+      <rect x="274" y="366" width="66" height="12" rx="6" fill="#ffffff" fill-opacity="0.9"/>
+
+      <rect x="370" y="334" width="100" height="56" rx="14" fill="url(#glassSoft)"/>
+      <rect x="384" y="350" width="44" height="8" rx="4" fill="#ffffff" fill-opacity="0.45"/>
+      <rect x="384" y="366" width="52" height="12" rx="6" fill="#a5f3fc" fill-opacity="0.95"/>
+
+      <rect x="480" y="334" width="92" height="56" rx="14" fill="url(#glassSoft)"/>
+      <rect x="494" y="350" width="40" height="8" rx="4" fill="#ffffff" fill-opacity="0.45"/>
+      <rect x="494" y="366" width="58" height="12" rx="6" fill="#ffffff" fill-opacity="0.9"/>
+    </g>
+
+    <!-- Histogramme -->
+    <g>
+      <line x1="260" y1="494" x2="572" y2="494" stroke="#ffffff" stroke-opacity="0.35" stroke-width="2"/>
+      <rect x="268" y="452" width="26" height="42" rx="7" fill="url(#bar)"/>
+      <rect x="312" y="430" width="26" height="64" rx="7" fill="url(#bar)"/>
+      <rect x="356" y="444" width="26" height="50" rx="7" fill="url(#bar)"/>
+      <rect x="400" y="410" width="26" height="84" rx="7" fill="url(#bar)"/>
+      <rect x="444" y="424" width="26" height="70" rx="7" fill="url(#bar)"/>
+      <rect x="488" y="398" width="26" height="96" rx="7" fill="url(#bar)"/>
+      <rect x="532" y="438" width="26" height="56" rx="7" fill="url(#bar)"/>
+      <path d="M281 440 L325 418 L369 432 L413 398 L457 412 L501 386 L545 426" fill="none" stroke="#fbbf24" stroke-opacity="0.85" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+    </g>
+  </g>
+
+  <!-- Baies serveurs : la plateforme mutualisée -->
+  <g transform="translate(596 190)">
+    <rect x="0" y="0" width="104" height="92" rx="16" fill="url(#glass)" stroke="#ffffff" stroke-opacity="0.45" stroke-width="2"/>
+    <g>
+      <rect x="14" y="16" width="76" height="18" rx="6" fill="#ffffff" fill-opacity="0.28"/>
+      <circle cx="26" cy="25" r="4" fill="#67e8f9"/>
+      <rect x="14" y="40" width="76" height="18" rx="6" fill="#ffffff" fill-opacity="0.28"/>
+      <circle cx="26" cy="49" r="4" fill="#a5f3fc"/>
+      <rect x="14" y="64" width="76" height="18" rx="6" fill="#ffffff" fill-opacity="0.28"/>
+      <circle cx="26" cy="73" r="4" fill="#fbbf24"/>
+    </g>
+  </g>
+
+  <!-- Liste des établissements gérés -->
+  <g transform="translate(140 466)">
+    <rect x="0" y="0" width="132" height="104" rx="18" fill="url(#glass)" stroke="#ffffff" stroke-opacity="0.45" stroke-width="2"/>
+    <g fill="#ffffff">
+      <rect x="16" y="18" width="46" height="8" rx="4" fill-opacity="0.4"/>
+      <rect x="16" y="38" width="100" height="10" rx="5" fill-opacity="0.85"/>
+      <rect x="16" y="58" width="80" height="10" rx="5" fill-opacity="0.6"/>
+      <rect x="16" y="78" width="92" height="10" rx="5" fill-opacity="0.4"/>
+    </g>
+  </g>
+
+  <!-- Établissements connectés -->
+  <g fill="#ffffff">
+    <g transform="translate(210 612)" fill-opacity="0.9">
+      <path d="M0 22 L26 2 L52 22 Z" />
+      <rect x="8" y="22" width="36" height="34" rx="5"/>
+      <rect x="20" y="36" width="12" height="20" rx="3" fill="#6d28d9" fill-opacity="0.55"/>
+    </g>
+    <g transform="translate(386 648)" fill-opacity="1">
+      <path d="M0 26 L32 2 L64 26 Z"/>
+      <rect x="10" y="26" width="44" height="42" rx="6"/>
+      <rect x="25" y="44" width="14" height="24" rx="3" fill="#6d28d9" fill-opacity="0.55"/>
+      <rect x="30" y="-16" width="4" height="18" rx="2" fill-opacity="0.8"/>
+      <path d="M34 -14 L52 -9 L34 -4 Z" fill="#fbbf24"/>
+    </g>
+    <g transform="translate(560 612)" fill-opacity="0.9">
+      <path d="M0 22 L26 2 L52 22 Z"/>
+      <rect x="8" y="22" width="36" height="34" rx="5"/>
+      <rect x="20" y="36" width="12" height="20" rx="3" fill="#6d28d9" fill-opacity="0.55"/>
+    </g>
+  </g>
+
+  <!-- Engrenage : configuration de la plateforme -->
+  <g transform="translate(238 214)" fill="#ffffff" fill-opacity="0.85">
+    <path d="M-4 -30 H4 L6 -20 L14 -16 L22 -21 L28 -15 L23 -7 L27 1 L37 3 V11 L27 13 L23 21 L28 29 L22 35 L14 30 L6 34 L4 44 H-4 L-6 34 L-14 30 L-22 35 L-28 29 L-23 21 L-27 13 L-37 11 V3 L-27 1 L-23 -7 L-28 -15 L-22 -21 L-14 -16 L-6 -20 Z" transform="translate(0 -2) scale(0.9)"/>
+    <circle cx="0" cy="5" r="9" fill="#6d28d9" fill-opacity="0.9"/>
+  </g>
+</svg>

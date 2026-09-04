@@ -1,0 +1,697 @@
+package tn.wtm.school.planning.solver.service;
+
+import ai.timefold.solver.core.api.score.buildin.hardmediumsoft.HardMediumSoftScore;
+import ai.timefold.solver.core.api.solver.SolutionManager;
+import ai.timefold.solver.core.api.solver.SolverManager;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
+import org.mockito.Captor;
+import org.mockito.InOrder;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.test.util.ReflectionTestUtils;
+import org.springframework.transaction.support.TransactionCallback;
+import org.springframework.transaction.support.TransactionTemplate;
+import tn.wtm.school.planning.solver.builder.TimetableProblemBuilder;
+import tn.wtm.school.planning.solver.domain.Lesson;
+import tn.wtm.school.planning.solver.domain.TimetableSolution;
+import tn.wtm.school.planning.solver.domain.TimetableSession;
+import tn.wtm.school.planning.solver.entity.GeneratedTimetable;
+import tn.wtm.school.planning.solver.entity.TimetableJob;
+import tn.wtm.school.planning.solver.enums.RoomType;
+import tn.wtm.school.planning.solver.enums.SessionType;
+import tn.wtm.school.planning.solver.enums.SolverStatus;
+import tn.wtm.school.planning.solver.port.SolverProgressPublisher;
+import tn.wtm.school.planning.solver.port.SolverProgressPublisher.SolverProgress;
+import tn.wtm.school.planning.solver.ref.RoomRef;
+import tn.wtm.school.planning.solver.ref.TeacherRef;
+import tn.wtm.school.planning.solver.ref.TimeSlotRef;
+import tn.wtm.school.planning.solver.repository.GeneratedTimetableRepository;
+import tn.wtm.school.planning.solver.repository.TimetableJobRepository;
+import tn.wtm.school.planning.solver.repository.TimetableSessionRepository;
+
+import java.time.DayOfWeek;
+import java.time.Instant;
+import java.time.LocalTime;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.stream.Stream;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.*;
+import static org.mockito.Mockito.doAnswer;
+
+/**
+ * Tests unitaires pour {@link TimetableSolverService#persistResult}.
+ *
+ * Méthode {@code protected} → test dans le même package.
+ * {@code @Transactional} inopérant sans Spring context : les appels repo sont directs.
+ *
+ * Scénarios couverts :
+ *   1. Statut du job  — SOLVED / INFEASIBLE selon la faisabilité du score
+ *   2. Champs du job  — finishedAt, scoreAchieved
+ *   3. Sessions       — suppression préalable, filtrage des leçons non placées, mapping
+ *   4. GeneratedTimetable — create vs upsert, tous les champs, préservation du statut
+ *   5. Cache mémoire  — priorité et nettoyage de bestSolutions
+ *   6. Job introuvable — aucun effet de bord
+ */
+@ExtendWith(MockitoExtension.class)
+class TimetableSolverServicePersistResultTest {
+
+    // ── dépendances mockées ───────────────────────────────────────────────────
+
+    @Mock private TimetableProblemBuilder       problemBuilder;
+    @Mock private TimetableJobRepository        jobRepository;
+    @Mock private TimetableSessionRepository    sessionRepository;
+    @Mock private GeneratedTimetableRepository  generatedTimetableRepository;
+    @SuppressWarnings("unchecked")
+    @Mock private SolverManager<TimetableSolution, Long> solverManager;
+    @SuppressWarnings("unchecked")
+    @Mock private SolutionManager<TimetableSolution, HardMediumSoftScore> solutionManager;
+    @Mock private TransactionTemplate txTemplate;
+    @Mock private SolverProgressPublisher progressPublisher;
+    @SuppressWarnings("unchecked")
+    @Mock private ObjectProvider<SolverProgressPublisher> progressPublisherProvider;
+
+    @Captor private ArgumentCaptor<SolverProgress>     progressCaptor;
+    @Captor private ArgumentCaptor<TimetableJob>       jobCaptor;
+    @Captor private ArgumentCaptor<GeneratedTimetable> timetableCaptor;
+    @SuppressWarnings("rawtypes")
+    @Captor private ArgumentCaptor<Iterable>           sessionsCaptor;
+
+    // ── constantes ────────────────────────────────────────────────────────────
+
+    private static final String TENANT     = "school-1";
+    private static final Long   JOB_ID     = 42L;
+    private static final Long   YEAR_ID    = 2026L;
+    private static final Long   PROFILE_ID = 1L;
+
+    private static final HardMediumSoftScore FEASIBLE_SCORE   = HardMediumSoftScore.of(0, 0, -5);
+    private static final HardMediumSoftScore INFEASIBLE_SCORE = HardMediumSoftScore.of(-2, -1, 0);
+
+    // ── service sous test ─────────────────────────────────────────────────────
+
+    private TimetableSolverService service;
+
+    @BeforeEach
+    void setUp() {
+        service = new TimetableSolverService(
+                problemBuilder, jobRepository, sessionRepository,
+                generatedTimetableRepository, solverManager, solutionManager, txTemplate,
+                progressPublisherProvider);
+
+        // orderedStream() est réévalué à chaque diffusion : on renvoie un flux neuf
+        // par appel, un Stream étant à usage unique.
+        lenient().when(progressPublisherProvider.orderedStream())
+                .thenAnswer(inv -> Stream.of(progressPublisher));
+
+        // TransactionTemplate exécute le callback directement (pas de vrai contexte tx).
+        doAnswer(inv -> {
+            TransactionCallback<?> cb = inv.getArgument(0);
+            cb.doInTransaction(null);
+            return null;
+        }).when(txTemplate).execute(any());
+
+        // Par défaut : aucun GeneratedTimetable existant (create path).
+        // lenient() car les tests "job introuvable" n'atteignent jamais ce stub.
+        lenient().when(generatedTimetableRepository.findByJobIdAndTenantId(JOB_ID, TENANT))
+                .thenReturn(Optional.empty());
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════
+    // 1. Statut du job
+    // ══════════════════════════════════════════════════════════════════════════
+
+    @Test
+    void feasibleScore_setsJobStatusToSOLVED() {
+        stubJobFound();
+        TimetableSolution sol = solution(FEASIBLE_SCORE, List.of());
+
+        persist(sol);
+
+        verify(jobRepository).save(jobCaptor.capture());
+        assertThat(jobCaptor.getValue().getStatus()).isEqualTo(SolverStatus.SOLVED);
+    }
+
+    @Test
+    void nonFeasibleScore_setsJobStatusToINFEASIBLE() {
+        stubJobFound();
+        TimetableSolution sol = solution(INFEASIBLE_SCORE, List.of());
+
+        persist(sol);
+
+        verify(jobRepository).save(jobCaptor.capture());
+        assertThat(jobCaptor.getValue().getStatus()).isEqualTo(SolverStatus.INFEASIBLE);
+    }
+
+    @Test
+    void nullScore_setsJobStatusToINFEASIBLE() {
+        stubJobFound();
+        TimetableSolution sol = solution(null, List.of());
+
+        persist(sol);
+
+        verify(jobRepository).save(jobCaptor.capture());
+        assertThat(jobCaptor.getValue().getStatus()).isEqualTo(SolverStatus.INFEASIBLE);
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════
+    // 2. Champs du job — finishedAt et scoreAchieved
+    // ══════════════════════════════════════════════════════════════════════════
+
+    @Test
+    void finishedAtIsAlwaysSetOnJob() {
+        stubJobFound();
+        Instant before = Instant.now();
+
+        persist(solution(FEASIBLE_SCORE, List.of()));
+
+        verify(jobRepository).save(jobCaptor.capture());
+        assertThat(jobCaptor.getValue().getFinishedAt())
+                .isNotNull()
+                .isAfterOrEqualTo(before);
+    }
+
+    @Test
+    void scoreAchievedIsSetOnJobWhenScorePresent() {
+        stubJobFound();
+        persist(solution(FEASIBLE_SCORE, List.of()));
+
+        verify(jobRepository).save(jobCaptor.capture());
+        assertThat(jobCaptor.getValue().getScoreAchieved())
+                .isEqualTo(FEASIBLE_SCORE.toString());
+    }
+
+    @Test
+    void scoreAchievedIsNotSetWhenScoreIsNull() {
+        stubJobFound();
+        persist(solution(null, List.of()));
+
+        verify(jobRepository).save(jobCaptor.capture());
+        // Le setter n'est pas appelé : scoreAchieved reste à sa valeur initiale (null)
+        assertThat(jobCaptor.getValue().getScoreAchieved()).isNull();
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════
+    // 3. Sessions
+    // ══════════════════════════════════════════════════════════════════════════
+
+    @Test
+    void existingSessionsAreDeletedBeforeSavingNewOnes() {
+        stubJobFound();
+        persist(solution(FEASIBLE_SCORE, List.of(placedLesson(1L))));
+
+        InOrder order = inOrder(sessionRepository);
+        order.verify(sessionRepository).deleteByJobIdAndTenantId(JOB_ID, TENANT);
+        order.verify(sessionRepository).saveAll(any());
+    }
+
+    @Test
+    void onlyFullyPlacedLessonsAreSaved() {
+        stubJobFound();
+        // 2 placées, 1 sans timeSlot, 1 sans room
+        List<Lesson> lessons = List.of(
+                placedLesson(1L),
+                placedLesson(2L),
+                lessonWithoutTimeSlot(3L),
+                lessonWithoutRoom(4L));
+
+        persist(solution(FEASIBLE_SCORE, lessons));
+
+        assertThat(capturedSessions()).hasSize(2);
+    }
+
+    @Test
+    void whenAllLessonsUnplaced_noSessionIsSaved() {
+        stubJobFound();
+        List<Lesson> lessons = List.of(lessonWithoutTimeSlot(1L), lessonWithoutRoom(2L));
+
+        persist(solution(FEASIBLE_SCORE, lessons));
+
+        assertThat(capturedSessions()).isEmpty();
+    }
+
+    @Test
+    void sessionFieldsAreMappedFromLesson() {
+        stubJobFound();
+        Lesson lesson = placedLesson(1L);
+
+        persist(solution(FEASIBLE_SCORE, List.of(lesson)));
+
+        TimetableSession session = capturedSessions().getFirst();
+        assertThat(session.getJobId()).isEqualTo(JOB_ID);
+        assertThat(session.getAcademicYearId()).isEqualTo(YEAR_ID);
+        assertThat(session.getSubjectCode()).isEqualTo(lesson.getSubjectCode());
+        assertThat(session.getSubjectName()).isEqualTo(lesson.getSubjectName());
+        assertThat(session.getStudentClassName()).isEqualTo(lesson.getStudentClassName());
+        assertThat(session.getTeacherCode()).isEqualTo(lesson.getTeacher().getCode());
+        assertThat(session.getTeacherName()).isEqualTo(lesson.getTeacher().getName());
+        assertThat(session.getRoomCode()).isEqualTo(lesson.getRoom().getCode());
+        assertThat(session.getRoomType()).isEqualTo(lesson.getRoom().getType());
+        assertThat(session.getDay()).isEqualTo(lesson.getTimeSlot().getDay());
+        assertThat(session.getStartTime()).isEqualTo(lesson.getStartTime());
+        assertThat(session.getEndTime()).isEqualTo(lesson.getEndTime());   // startTime + durationSlots×30min
+        assertThat(session.getSessionType()).isEqualTo(lesson.getSessionType());
+        assertThat(session.getGroupIndex()).isEqualTo(lesson.getGroupIndex());
+    }
+
+    @Test
+    void sessionTenantIdIsSetFromParameter() {
+        stubJobFound();
+        persist(solution(FEASIBLE_SCORE, List.of(placedLesson(1L))));
+
+        assertThat(capturedSessions().getFirst().getTenantId()).isEqualTo(TENANT);
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════
+    // 4. GeneratedTimetable — create
+    // ══════════════════════════════════════════════════════════════════════════
+
+    @Test
+    void generatedTimetableIsAlwaysSaved() {
+        stubJobFound();
+        persist(solution(FEASIBLE_SCORE, List.of()));
+
+        verify(generatedTimetableRepository).save(any(GeneratedTimetable.class));
+    }
+
+    @Test
+    void generatedTimetable_feasibleTrueWhenScoreFeasible() {
+        stubJobFound();
+        persist(solution(FEASIBLE_SCORE, List.of()));
+
+        assertThat(capturedTimetable().isFeasible()).isTrue();
+    }
+
+    @Test
+    void generatedTimetable_feasibleFalseWhenHardViolations() {
+        stubJobFound();
+        persist(solution(INFEASIBLE_SCORE, List.of()));
+
+        assertThat(capturedTimetable().isFeasible()).isFalse();
+    }
+
+    @Test
+    void generatedTimetable_feasibleFalseWhenNullScore() {
+        stubJobFound();
+        persist(solution(null, List.of()));
+
+        assertThat(capturedTimetable().isFeasible()).isFalse();
+    }
+
+    @Test
+    void generatedTimetable_hardViolationsIsAbsoluteValueOfHardScore() {
+        stubJobFound();
+        // INFEASIBLE_SCORE = HardMediumSoftScore.of(-2, -1, 0) → 2 hard violations
+        persist(solution(INFEASIBLE_SCORE, List.of()));
+
+        assertThat(capturedTimetable().getHardViolations()).isEqualTo(2);
+    }
+
+    @Test
+    void generatedTimetable_mediumViolationsIsAbsoluteValueOfMediumScore() {
+        stubJobFound();
+        // INFEASIBLE_SCORE = HardMediumSoftScore.of(-2, -1, 0) → 1 medium violation
+        persist(solution(INFEASIBLE_SCORE, List.of()));
+
+        assertThat(capturedTimetable().getMediumViolations()).isEqualTo(1);
+    }
+
+    @Test
+    void generatedTimetable_violationsAreZeroWhenNullScore() {
+        stubJobFound();
+        persist(solution(null, List.of()));
+
+        GeneratedTimetable gt = capturedTimetable();
+        assertThat(gt.getHardViolations()).isZero();
+        assertThat(gt.getMediumViolations()).isZero();
+    }
+
+    @Test
+    void generatedTimetable_totalSessionsMatchesPlacedLessonsCount() {
+        stubJobFound();
+        List<Lesson> lessons = List.of(
+                placedLesson(1L), placedLesson(2L), placedLesson(3L),
+                lessonWithoutTimeSlot(4L)); // exclu du comptage
+
+        persist(solution(FEASIBLE_SCORE, lessons));
+
+        assertThat(capturedTimetable().getTotalSessions()).isEqualTo(3);
+    }
+
+    @Test
+    void generatedTimetable_statusIsDraftOnFirstCreate() {
+        stubJobFound();
+        persist(solution(FEASIBLE_SCORE, List.of()));
+
+        assertThat(capturedTimetable().getStatus()).isEqualTo("DRAFT");
+    }
+
+    @Test
+    void generatedTimetable_coreFieldsFromJob() {
+        stubJobFound();
+        persist(solution(FEASIBLE_SCORE, List.of()));
+
+        GeneratedTimetable gt = capturedTimetable();
+        assertThat(gt.getJobId()).isEqualTo(JOB_ID);
+        assertThat(gt.getAcademicYearId()).isEqualTo(YEAR_ID);
+        assertThat(gt.getConstraintProfileId()).isEqualTo(PROFILE_ID);
+        assertThat(gt.getScoreAchieved()).isEqualTo(FEASIBLE_SCORE.toString());
+    }
+
+    @Test
+    void generatedTimetable_tenantIdIsSet() {
+        stubJobFound();
+        persist(solution(FEASIBLE_SCORE, List.of()));
+
+        assertThat(capturedTimetable().getTenantId()).isEqualTo(TENANT);
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════
+    // 5. GeneratedTimetable — upsert (enregistrement existant)
+    // ══════════════════════════════════════════════════════════════════════════
+
+    @Test
+    void whenGeneratedTimetableAlreadyExists_itIsUpdatedNotDuplicated() {
+        stubJobFound();
+        GeneratedTimetable existing = existingTimetable("DRAFT");
+        when(generatedTimetableRepository.findByJobIdAndTenantId(JOB_ID, TENANT))
+                .thenReturn(Optional.of(existing));
+
+        persist(solution(FEASIBLE_SCORE, List.of(placedLesson(1L))));
+
+        // save appelé exactement une fois avec l'objet existant mis à jour
+        verify(generatedTimetableRepository).save(timetableCaptor.capture());
+        assertThat(timetableCaptor.getValue()).isSameAs(existing);
+    }
+
+    @Test
+    void whenExistingGeneratedTimetableIsPublished_statusIsPreserved() {
+        stubJobFound();
+        GeneratedTimetable published = existingTimetable("PUBLISHED");
+        when(generatedTimetableRepository.findByJobIdAndTenantId(JOB_ID, TENANT))
+                .thenReturn(Optional.of(published));
+
+        persist(solution(FEASIBLE_SCORE, List.of()));
+
+        // Le statut PUBLISHED ne doit pas être écrasé par DRAFT
+        assertThat(capturedTimetable().getStatus()).isEqualTo("PUBLISHED");
+    }
+
+    @Test
+    void whenExistingGeneratedTimetableHasNullStatus_draftIsApplied() {
+        stubJobFound();
+        GeneratedTimetable withNullStatus = existingTimetable(null);
+        when(generatedTimetableRepository.findByJobIdAndTenantId(JOB_ID, TENANT))
+                .thenReturn(Optional.of(withNullStatus));
+
+        persist(solution(FEASIBLE_SCORE, List.of()));
+
+        assertThat(capturedTimetable().getStatus()).isEqualTo("DRAFT");
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════
+    // 6. Cache mémoire bestSolutions
+    // ══════════════════════════════════════════════════════════════════════════
+
+    @Test
+    void inMemorySolutionIsPreferredOverParameterSolution() {
+        stubJobFound();
+        // Solution en cache avec 3 leçons placées
+        TimetableSolution cached = solution(FEASIBLE_SCORE,
+                List.of(placedLesson(1L), placedLesson(2L), placedLesson(3L)));
+        putInCache(JOB_ID, cached);
+
+        // Paramètre sans leçons (ignoré si le cache est prioritaire)
+        TimetableSolution param = solution(INFEASIBLE_SCORE, List.of());
+
+        persist(param);
+
+        // Le score utilisé doit être celui du cache (FEASIBLE → SOLVED)
+        verify(jobRepository).save(jobCaptor.capture());
+        assertThat(jobCaptor.getValue().getStatus()).isEqualTo(SolverStatus.SOLVED);
+        assertThat(capturedSessions()).hasSize(3);
+    }
+
+    @Test
+    void bestSolutionIsRetainedInCacheAfterPersist() {
+        stubJobFound();
+        putInCache(JOB_ID, solution(FEASIBLE_SCORE, List.of()));
+
+        persist(solution(FEASIBLE_SCORE, List.of()));
+
+        // Volontairement conservée : /score-explanation doit rester utilisable après
+        // la fin du job (notamment pour les jobs INFEASIBLE).
+        Map<Long, TimetableSolution> cache = getBestSolutionsCache();
+        assertThat(cache).containsKey(JOB_ID);
+    }
+
+    @Test
+    void whenNoCachedSolution_parameterSolutionIsUsed() {
+        stubJobFound();
+        // Aucune entrée en cache : bestSolutions est vide
+        TimetableSolution param = solution(FEASIBLE_SCORE,
+                List.of(placedLesson(1L), placedLesson(2L)));
+
+        persist(param);
+
+        assertThat(capturedSessions()).hasSize(2);
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════
+    // 7. Job introuvable — aucun effet de bord
+    // ══════════════════════════════════════════════════════════════════════════
+
+    @Test
+    void whenJobNotFound_noSessionsAreSaved() {
+        when(jobRepository.findById(JOB_ID)).thenReturn(Optional.empty());
+
+        persist(solution(FEASIBLE_SCORE, List.of(placedLesson(1L))));
+
+        verifyNoInteractions(sessionRepository);
+    }
+
+    @Test
+    void whenJobNotFound_noGeneratedTimetableIsSaved() {
+        when(jobRepository.findById(JOB_ID)).thenReturn(Optional.empty());
+
+        persist(solution(FEASIBLE_SCORE, List.of()));
+
+        verify(generatedTimetableRepository, never()).save(any());
+    }
+
+    @Test
+    void whenJobNotFound_jobRepositorySaveIsNeverCalled() {
+        when(jobRepository.findById(JOB_ID)).thenReturn(Optional.empty());
+
+        persist(solution(FEASIBLE_SCORE, List.of()));
+
+        verify(jobRepository, never()).save(any());
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════
+    // 8. Diffusion temps réel de la progression
+    // ══════════════════════════════════════════════════════════════════════════
+
+    @Test
+    void publishesFinalProgressWithStatusAndSessionCounts() {
+        stubJobFound();
+
+        persist(solution(FEASIBLE_SCORE, List.of(placedLesson(1L), lessonWithoutRoom(2L))));
+
+        verify(progressPublisher).publish(eq(TENANT), progressCaptor.capture());
+        SolverProgress published = progressCaptor.getValue();
+        assertThat(published.jobId()).isEqualTo(JOB_ID);
+        assertThat(published.status()).isEqualTo(SolverStatus.SOLVED);
+        assertThat(published.score()).isEqualTo(FEASIBLE_SCORE.toString());
+        assertThat(published.feasible()).isTrue();
+        // Seule la leçon complètement placée compte, sur un total de deux.
+        assertThat(published.placedSessions()).isEqualTo(1);
+        assertThat(published.totalSessions()).isEqualTo(2);
+    }
+
+    @Test
+    void publishesINFEASIBLEWhenScoreHasHardViolations() {
+        stubJobFound();
+
+        persist(solution(INFEASIBLE_SCORE, List.of()));
+
+        verify(progressPublisher).publish(eq(TENANT), progressCaptor.capture());
+        assertThat(progressCaptor.getValue().status()).isEqualTo(SolverStatus.INFEASIBLE);
+        assertThat(progressCaptor.getValue().feasible()).isFalse();
+    }
+
+    @Test
+    void whenJobNotFound_noProgressIsPublished() {
+        when(jobRepository.findById(JOB_ID)).thenReturn(Optional.empty());
+
+        persist(solution(FEASIBLE_SCORE, List.of()));
+
+        verifyNoInteractions(progressPublisher);
+    }
+
+    @Test
+    void whenNoPublisherRegistered_persistStillCompletes() {
+        stubJobFound();
+        when(progressPublisherProvider.orderedStream()).thenAnswer(inv -> Stream.empty());
+
+        persist(solution(FEASIBLE_SCORE, List.of(placedLesson(1L))));
+
+        verify(jobRepository).save(jobCaptor.capture());
+        assertThat(jobCaptor.getValue().getStatus()).isEqualTo(SolverStatus.SOLVED);
+    }
+
+    @Test
+    void whenOnePublisherThrows_theOthersStillReceiveTheEvent() {
+        stubJobFound();
+        SolverProgressPublisher enPanne = mock(SolverProgressPublisher.class);
+        doThrow(new IllegalStateException("broker indisponible"))
+                .when(enPanne).publish(any(), any());
+        when(progressPublisherProvider.orderedStream())
+                .thenAnswer(inv -> Stream.of(enPanne, progressPublisher));
+
+        persist(solution(FEASIBLE_SCORE, List.of(placedLesson(1L))));
+
+        // Le second adaptateur reçoit l'événement malgré l'échec du premier.
+        verify(progressPublisher).publish(eq(TENANT), progressCaptor.capture());
+        assertThat(progressCaptor.getValue().status()).isEqualTo(SolverStatus.SOLVED);
+    }
+
+    @Test
+    void whenPublisherThrows_persistIsNotAffected() {
+        stubJobFound();
+        doThrow(new IllegalStateException("broker indisponible"))
+                .when(progressPublisher).publish(any(), any());
+
+        persist(solution(FEASIBLE_SCORE, List.of(placedLesson(1L))));
+
+        // La génération reste persistée : l'échec de diffusion est absorbé.
+        verify(jobRepository).save(jobCaptor.capture());
+        assertThat(jobCaptor.getValue().getStatus()).isEqualTo(SolverStatus.SOLVED);
+        verify(generatedTimetableRepository).save(any());
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════
+    // Helpers — invocation
+    // ══════════════════════════════════════════════════════════════════════════
+
+    private void persist(TimetableSolution sol) {
+        service.persistResult(JOB_ID, TENANT, sol);
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════
+    // Helpers — stubs
+    // ══════════════════════════════════════════════════════════════════════════
+
+    private void stubJobFound() {
+        when(jobRepository.findById(JOB_ID)).thenReturn(Optional.of(makeJob()));
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════
+    // Helpers — fixtures
+    // ══════════════════════════════════════════════════════════════════════════
+
+    private TimetableJob makeJob() {
+        TimetableJob job = TimetableJob.builder()
+                .academicYearId(YEAR_ID)
+                .constraintProfileId(PROFILE_ID)
+                .status(SolverStatus.RUNNING)
+                .build();
+        job.setIdTimetableJob(JOB_ID);
+        job.setTenantId(TENANT);
+        return job;
+    }
+
+    private TimetableSolution solution(HardMediumSoftScore score, List<Lesson> lessons) {
+        return TimetableSolution.builder()
+                .tenantId(TENANT).academicYearId(YEAR_ID).constraintProfileId(PROFILE_ID)
+                .lessons(lessons)
+                .score(score)
+                .build();
+    }
+
+    private Lesson placedLesson(Long id) {
+        return Lesson.builder()
+                .id(id)
+                .subjectCode("MATH").subjectName("Mathématiques")
+                .studentClassName("7A")
+                .teachingAssignmentId(id)
+                .sessionType(SessionType.COURS)
+                .groupIndex(0).classStudentCount(30)
+                .teacher(TeacherRef.builder()
+                        .id(1L).code("T1").name("Mr. Dupont").maxHoursPerDay(6).build())
+                .room(RoomRef.builder()
+                        .id(1L).code("A1").type(RoomType.NORMALE).capacity(30).build())
+                .timeSlot(TimeSlotRef.builder()
+                        .id(id).day(DayOfWeek.MONDAY).orderIndex(1)
+                        .startTime(LocalTime.of(8, 0)).endTime(LocalTime.of(9, 0))
+                        .active(true).build())
+                .build();
+    }
+
+    private Lesson lessonWithoutTimeSlot(Long id) {
+        return Lesson.builder()
+                .id(id).subjectCode("PHYS").studentClassName("7B")
+                .sessionType(SessionType.COURS)
+                .room(RoomRef.builder().id(2L).code("B1").type(RoomType.NORMALE).capacity(30).build())
+                // timeSlot intentionnellement absent
+                .build();
+    }
+
+    private Lesson lessonWithoutRoom(Long id) {
+        return Lesson.builder()
+                .id(id).subjectCode("FRAN").studentClassName("7C")
+                .sessionType(SessionType.COURS)
+                .timeSlot(TimeSlotRef.builder()
+                        .id(id).day(DayOfWeek.TUESDAY).orderIndex(2)
+                        .startTime(LocalTime.of(9, 0)).endTime(LocalTime.of(10, 0))
+                        .active(true).build())
+                // room intentionnellement absent
+                .build();
+    }
+
+    private GeneratedTimetable existingTimetable(String status) {
+        GeneratedTimetable gt = new GeneratedTimetable();
+        gt.setIdGeneratedTimetable(99L);
+        gt.setJobId(JOB_ID);
+        gt.setTenantId(TENANT);
+        gt.setAcademicYearId(YEAR_ID);
+        gt.setStatus(status);
+        return gt;
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════
+    // Helpers — capture
+    // ══════════════════════════════════════════════════════════════════════════
+
+    private GeneratedTimetable capturedTimetable() {
+        verify(generatedTimetableRepository).save(timetableCaptor.capture());
+        return timetableCaptor.getValue();
+    }
+
+    @SuppressWarnings("unchecked")
+    private List<TimetableSession> capturedSessions() {
+        verify(sessionRepository).saveAll(sessionsCaptor.capture());
+        return (List<TimetableSession>) sessionsCaptor.getValue();
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════
+    // Helpers — cache mémoire (ReflectionTestUtils)
+    // ══════════════════════════════════════════════════════════════════════════
+
+    @SuppressWarnings("unchecked")
+    private Map<Long, TimetableSolution> getBestSolutionsCache() {
+        return (Map<Long, TimetableSolution>)
+                ReflectionTestUtils.getField(service, "bestSolutions");
+    }
+
+    private void putInCache(Long jobId, TimetableSolution sol) {
+        getBestSolutionsCache().put(jobId, sol);
+    }
+}

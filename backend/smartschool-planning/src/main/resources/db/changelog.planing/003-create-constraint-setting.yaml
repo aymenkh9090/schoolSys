@@ -1,0 +1,105 @@
+databaseChangeLog:
+  - changeSet:
+      id: 003-create-constraint-setting
+      author: planning
+      changes:
+        - createTable:
+            tableName: constraint_setting
+            columns:
+              - column:
+                  name: id_constraint_setting
+                  type: BIGINT
+                  constraints:
+                    primaryKey: true
+                    primaryKeyName: pk_constraint_setting
+                    nullable: false
+              - column:
+                  name: tenant_id
+                  type: VARCHAR(100)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: constraint_profile_id
+                  type: BIGINT
+                  constraints:
+                    nullable: false
+              - column:
+                  name: constraint_definition_id
+                  type: BIGINT
+                  constraints:
+                    nullable: false
+              - column:
+                  name: enabled
+                  type: BOOLEAN
+                  defaultValueBoolean: true
+                  constraints:
+                    nullable: false
+              - column:
+                  name: importance
+                  type: VARCHAR(20)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: weight
+                  type: INTEGER
+                  constraints:
+                    nullable: false
+              - column:
+                  name: parameters_json
+                  type: TEXT
+              - column:
+                  name: created_at
+                  type: TIMESTAMP
+                  defaultValueComputed: CURRENT_TIMESTAMP
+                  constraints:
+                    nullable: false
+              - column:
+                  name: updated_at
+                  type: TIMESTAMP
+                  defaultValueComputed: CURRENT_TIMESTAMP
+                  constraints:
+                    nullable: false
+              - column:
+                  name: created_by
+                  type: VARCHAR(120)
+                  defaultValue: system
+                  constraints:
+                    nullable: false
+              - column:
+                  name: updated_by
+                  type: VARCHAR(120)
+                  defaultValue: system
+                  constraints:
+                    nullable: false
+              - column:
+                  name: version
+                  type: INTEGER
+                  defaultValueNumeric: 0
+        - addForeignKeyConstraint:
+            baseTableName: constraint_setting
+            baseColumnNames: constraint_profile_id
+            constraintName: fk_constraint_setting_profile
+            referencedTableName: constraint_profile
+            referencedColumnNames: id_constraint_profile
+        - addForeignKeyConstraint:
+            baseTableName: constraint_setting
+            baseColumnNames: constraint_definition_id
+            constraintName: fk_constraint_setting_definition
+            referencedTableName: constraint_definition
+            referencedColumnNames: id_constraint_definition
+        - addUniqueConstraint:
+            tableName: constraint_setting
+            constraintName: uk_constraint_setting_profile_definition
+            columnNames: constraint_profile_id,constraint_definition_id
+        - createIndex:
+            tableName: constraint_setting
+            indexName: idx_constraint_setting_tenant
+            columns:
+              - column:
+                  name: tenant_id
+        - createIndex:
+            tableName: constraint_setting
+            indexName: idx_constraint_setting_profile
+            columns:
+              - column:
+                  name: constraint_profile_id

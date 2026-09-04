@@ -1,0 +1,136 @@
+databaseChangeLog:
+  - changeSet:
+      id: 007-create-timetable-session
+      author: planning
+      changes:
+        - createTable:
+            tableName: planning_timetable_session
+            columns:
+              - column:
+                  name: id_timetable_session
+                  type: BIGINT
+                  constraints:
+                    primaryKey: true
+                    primaryKeyName: pk_timetable_session
+                    nullable: false
+              - column:
+                  name: tenant_id
+                  type: VARCHAR(100)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: job_id
+                  type: BIGINT
+                  constraints:
+                    nullable: false
+              - column:
+                  name: academic_year_id
+                  type: BIGINT
+                  constraints:
+                    nullable: false
+              - column:
+                  name: teaching_assignment_id
+                  type: BIGINT
+              - column:
+                  name: subject_code
+                  type: VARCHAR(30)
+              - column:
+                  name: subject_name
+                  type: VARCHAR(100)
+              - column:
+                  name: student_class_name
+                  type: VARCHAR(30)
+              - column:
+                  name: teacher_code
+                  type: VARCHAR(20)
+              - column:
+                  name: teacher_name
+                  type: VARCHAR(120)
+              - column:
+                  name: room_code
+                  type: VARCHAR(20)
+              - column:
+                  name: room_type
+                  type: VARCHAR(20)
+              - column:
+                  name: day
+                  type: VARCHAR(15)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: start_time
+                  type: TIME
+                  constraints:
+                    nullable: false
+              - column:
+                  name: end_time
+                  type: TIME
+                  constraints:
+                    nullable: false
+              - column:
+                  name: session_type
+                  type: VARCHAR(20)
+              - column:
+                  name: group_index
+                  type: INTEGER
+                  defaultValueNumeric: 0
+                  constraints:
+                    nullable: false
+              - column:
+                  name: created_at
+                  type: TIMESTAMP
+                  defaultValueComputed: CURRENT_TIMESTAMP
+                  constraints:
+                    nullable: false
+              - column:
+                  name: updated_at
+                  type: TIMESTAMP
+                  defaultValueComputed: CURRENT_TIMESTAMP
+                  constraints:
+                    nullable: false
+              - column:
+                  name: created_by
+                  type: VARCHAR(120)
+                  defaultValue: system
+                  constraints:
+                    nullable: false
+              - column:
+                  name: updated_by
+                  type: VARCHAR(120)
+                  defaultValue: system
+                  constraints:
+                    nullable: false
+              - column:
+                  name: version
+                  type: INTEGER
+                  defaultValueNumeric: 0
+        - addForeignKeyConstraint:
+            baseTableName: planning_timetable_session
+            baseColumnNames: job_id
+            constraintName: fk_session_job
+            referencedTableName: planning_timetable_job
+            referencedColumnNames: id_timetable_job
+        - createIndex:
+            tableName: planning_timetable_session
+            indexName: idx_session_tenant
+            columns:
+              - column:
+                  name: tenant_id
+        - createIndex:
+            tableName: planning_timetable_session
+            indexName: idx_session_job
+            columns:
+              - column:
+                  name: tenant_id
+              - column:
+                  name: job_id
+        - createIndex:
+            tableName: planning_timetable_session
+            indexName: idx_session_class_day
+            columns:
+              - column:
+                  name: tenant_id
+              - column:
+                  name: student_class_name
+              - column:
+                  name: day

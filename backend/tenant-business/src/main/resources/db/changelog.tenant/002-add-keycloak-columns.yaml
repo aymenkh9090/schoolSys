@@ -1,0 +1,38 @@
+databaseChangeLog:
+  - changeSet:
+      id: 002-add-keycloak-columns-to-tenant
+      author: smartschool
+      preConditions:
+        - onFail: MARK_RAN
+        - not:
+            - columnExists:
+                tableName: tenants
+                columnName: keycloak_group_id
+      changes:
+        - addColumn:
+            tableName: tenants
+            columns:
+              - column:
+                  name: keycloak_group_id
+                  type: VARCHAR(100)
+                  constraints:
+                    nullable: true
+              - column:
+                  name: admin_keycloak_id
+                  type: VARCHAR(100)
+                  constraints:
+                    nullable: true
+              - column:
+                  name: admin_email
+                  type: VARCHAR(150)
+                  constraints:
+                    nullable: true
+
+  - changeSet:
+      id: 002-add-pending-status-comment
+      author: smartschool
+      changes:
+        - sql:
+            sql: "COMMENT ON COLUMN tenants.keycloak_group_id IS 'UUID du groupe Keycloak representant ce tenant';"
+        - sql:
+            sql: "COMMENT ON COLUMN tenants.admin_keycloak_id IS 'UUID Keycloak de l''admin de l''etablissement';"

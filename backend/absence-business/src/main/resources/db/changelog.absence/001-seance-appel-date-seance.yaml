@@ -1,0 +1,61 @@
+databaseChangeLog:
+  # Une séance du planning est hebdomadaire : la contrainte d'unicité initiale
+  # (tenant_id, seance_planning_id) empêchait d'ouvrir plus d'un appel par
+  # créneau pour toute l'année scolaire. On introduit le jour de cours
+  # (date_seance) comme partie de la clé métier.
+  - changeSet:
+      id: 001-absence-seance-appel-date-seance
+      author: smartschool
+      preConditions:
+        - onFail: MARK_RAN
+        - onFailMessage: >-
+            Table seance_appel absente : elle sera créée par Hibernate avec le
+            mapping à jour (date_seance + index unique), changeset sans objet.
+        - tableExists:
+            tableName: seance_appel
+      changes:
+        - addColumn:
+            tableName: seance_appel
+            columns:
+              - column:
+                  name: date_seance
+                  type: DATE
+                  remarks: Jour de cours concerné — clé métier avec seance_planning_id
+
+        # Reprise des séances existantes : le jour de cours est celui de l'ouverture.
+        - sql:
+            sql: UPDATE seance_appel SET date_seance = ouverture_at::date WHERE date_seance IS NULL
+
+        - addNotNullConstraint:
+            tableName: seance_appel
+            columnName: date_seance
+            columnDataType: DATE
+
+        # Hibernate avait matérialisé l'ancienne unicité en contrainte ; selon les
+        # environnements elle peut aussi exister sous forme d'index simple.
+        - sql:
+            splitStatements: true
+            sql: |
+              ALTER TABLE seance_appel DROP CONSTRAINT IF EXISTS uk_seance_appel_tenant_planning;
+              DROP INDEX IF EXISTS uk_seance_appel_tenant_planning;
+
+        - createIndex:
+            tableName: seance_appel
+            indexName: uk_seance_appel_tenant_planning_date
+            unique: true
+            columns:
+              - column:
+                  name: tenant_id
+              - column:
+                  name: seance_planning_id
+              - column:
+                  name: date_seance
+
+        - createIndex:
+            tableName: seance_appel
+            indexName: idx_seance_appel_date
+            columns:
+              - column:
+                  name: tenant_id
+              - column:
+                  name: date_seance

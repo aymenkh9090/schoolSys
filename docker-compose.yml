@@ -1,0 +1,178 @@
+version: "3.8"
+name: sc-p
+
+services:
+
+  # ── Base de données Keycloak ───────────────────────────────────────────────
+  keycloak-db:
+    image: postgres:16
+    container_name: keycloak-db-ss
+    environment:
+      POSTGRES_DB: keycloak
+      POSTGRES_USER: keycloak
+      POSTGRES_PASSWORD: keycloak_secret
+    volumes:
+      - keycloak_pg_data:/var/lib/postgresql/data
+    networks:
+      - smartschool-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U keycloak"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── Keycloak ───────────────────────────────────────────────────────────────
+  # Accès Admin Console : http://localhost:8081  admin / admin
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.0
+    container_name: keycloak-ss
+    command: start-dev
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: admin
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://keycloak-db:5432/keycloak
+      KC_DB_USERNAME: keycloak
+      KC_DB_PASSWORD: keycloak_secret
+      KC_HTTP_PORT: 8081
+    ports:
+      - "8081:8081"
+    depends_on:
+      keycloak-db:
+        condition: service_healthy
+    networks:
+      - smartschool-network
+
+  # ── Base de données Application ────────────────────────────────────────────
+  app-db:
+    image: postgres:16
+    container_name: smartschool-dbss
+    environment:
+      POSTGRES_DB: smartschool
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-smartschool}
+    volumes:
+      - app_pg_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    networks:
+      - smartschool-network
+
+  # ── Prometheus : collecte des métriques ────────────────────────────────────
+  #  # Vient scraper /actuator/prometheus de smartschool-api toutes les 15 s.
+  #  # UI : http://localhost:9090
+  prometheus:
+    image: prom/prometheus:v2.54.1
+    container_name: prometheuss
+    volumes:
+      # Config en lecture seule, montée depuis le repo (versionnée)
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      # Données persistées : sinon on perd l'historique à chaque redémarrage
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      # 15 jours d'historique suffisent largement en dev (et bornent le disque)
+      - '--storage.tsdb.retention.time=15d'
+      # Nécessaire pour recharger la config sans redémarrer :
+      #   curl -X POST http://localhost:9090/-/reload
+      - '--web.enable-lifecycle'
+    ports:
+      - "9090:9090"
+    # Linux : permet au conteneur de joindre l'hôte via "host.docker.internal".
+    # Indispensable car smartschool-api tourne dans l'IDE, pas dans Docker.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - smartschool-network
+
+  # ── Grafana : visualisation ────────────────────────────────────────────────
+  # UI : http://localhost:3001  (admin / admin)
+  # Port hôte 3001 et non 3000 : le dev server du front occupe déjà 3000.
+  grafana:
+    image: grafana/grafana:11.2.0
+    container_name: grafana-ss
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      # Autorise l'intégration des dashboards en <iframe> dans le front React.
+      # Sans ces deux lignes, l'iframe reste blanche (X-Frame-Options).
+      GF_SECURITY_ALLOW_EMBEDDING: "true"
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+    volumes:
+      # Provisioning automatique : la datasource Prometheus est déclarée
+      # dans un fichier, donc pas de clic manuel à chaque "docker compose down -v"
+      - ./monitoring/grafana-datasources.yml:/etc/grafana/provisioning/datasources/datasources.yml:ro
+      # Idem pour les dashboards : provisionnés par fichier, donc versionnés
+      # et rejoués automatiquement après un "docker compose down -v".
+      - ./monitoring/grafana-dashboards.yml:/etc/grafana/provisioning/dashboards/dashboards.yml:ro
+      # Les JSON vont hors de provisioning/ : ce répertoire est déjà monté en
+      # lecture seule pour le provider, on ne peut pas y greffer un second montage.
+      - ./monitoring/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana_data:/var/lib/grafana
+    ports:
+      - "3001:3000"
+    depends_on:
+      - prometheus
+    networks:
+      - smartschool-network
+
+
+  # ── Assistant IA : microservice Python/FastAPI + Ollama ────────────────────
+  # API : http://localhost:8000        Doc interactive : http://localhost:8000/docs
+  ai-assistant:
+    build: ./ai-assistant
+    container_name: ai-assistant-ss
+    environment:
+      # Conteneur → conteneur : nom du service Docker
+      PROMETHEUS_URL: http://prometheus:9090
+      # Conteneur → hôte : Spring Boot tourne dans l'IDE.
+      # Port 9091 = management.server.port (l'actuator), et non 8080.
+      ACTUATOR_URL: http://host.docker.internal:9091
+      # API métier du backend (module Planning) — port 8080, pas 9091.
+      # L'assistant y rejoue le jeton de l'utilisateur : il n'a pas de compte de
+      # service, donc pas d'accès aux données d'un établissement dont
+      # l'utilisateur n'est pas membre.
+      BACKEND_URL: http://host.docker.internal:8080
+      # Ollama est installé sur l'hôte, pas en conteneur
+      OLLAMA_URL: http://host.docker.internal:11434
+      OLLAMA_MODEL: ${ASSISTANT_MODEL:-qwen2.5:7b}
+      # Modèle d'embedding de la recherche sur les cahiers de séance.
+      # À télécharger séparément : ollama pull nomic-embed-text (~300 Mo).
+      # Il cohabite avec qwen2.5:7b dans 6 Go de VRAM, contrairement à un
+      # second modèle de chat.
+      EMBEDDING_MODEL: ${ASSISTANT_EMBEDDING_MODEL:-nomic-embed-text}
+      # KEYCLOAK_URL = adresse RÉSEAU pour télécharger les clés publiques (JWKS).
+      KEYCLOAK_URL: http://keycloak:8081
+      KEYCLOAK_REALM: smartschool
+      # KEYCLOAK_ISSUER_URL = identité LOGIQUE inscrite dans le token, telle que
+      # le navigateur a vu Keycloak. Sans cette ligne, tous les tokens émis via
+      # localhost:8081 seraient rejetés ("Invalid issuer").
+      KEYCLOAK_ISSUER_URL: http://localhost:8081/realms/smartschool
+      AUTH_ENABLED: "true"
+      CORS_ORIGINS: http://localhost:5173,http://localhost:3000
+    ports:
+      - "8000:8000"
+    extra_hosts:
+      # Indispensable sous Linux pour que host.docker.internal résolve
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      - prometheus
+    networks:
+      - smartschool-network
+    healthcheck:
+      test: ["CMD", "python", "-c",
+             "import httpx; httpx.get('http://localhost:8000/health').raise_for_status()"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+
+networks:
+  smartschool-network:
+
+volumes:
+  keycloak_pg_data:
+  app_pg_data:
+  prometheus_data:
+  grafana_data:

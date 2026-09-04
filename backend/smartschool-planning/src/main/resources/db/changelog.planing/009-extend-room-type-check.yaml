@@ -1,0 +1,22 @@
+databaseChangeLog:
+  - changeSet:
+      id: 009-extend-room-type-check
+      author: planning
+      comment: >
+        Align the room_type check constraint with the actual Java RoomType enum
+        values (008 listed NORMAL/LAB_PHYSICS/... which never matched the enum)
+        and add the new room types (SALLEDESSIN, SALLEMUSIQUE, AMPHI, BIBLIOTHEQUE).
+      changes:
+        - sql:
+            sql: >
+              ALTER TABLE planning_timetable_session
+                DROP CONSTRAINT IF EXISTS planning_timetable_session_room_type_check;
+              ALTER TABLE planning_timetable_session
+                ADD CONSTRAINT planning_timetable_session_room_type_check
+                CHECK (room_type IN (
+                  'NORMALE', 'LABSCIENCE', 'LABPHYSIQUE', 'LABINFORMATIQUE',
+                  'SALLESPORT', 'SALLEDESSIN', 'SALLEMUSIQUE', 'AMPHI',
+                  'BIBLIOTHEQUE', 'TECH', 'WORKSHOP'
+                ));
+            splitStatements: true
+            stripComments: true

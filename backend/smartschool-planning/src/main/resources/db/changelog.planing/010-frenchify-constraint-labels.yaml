@@ -1,0 +1,117 @@
+databaseChangeLog:
+  # Les libellés seedés en 004 étaient en anglais, et les descriptions avaient été
+  # saisies sans accents ni apostrophes ("Repartir les matieres specialisee",
+  # "3 seances d EPS"). L'interface d'administration est en français : on remet
+  # des libellés lisibles, accentués et cohérents avec le vocabulaire produit.
+  - changeSet:
+      id: 010-frenchify-constraint-labels
+      author: planning
+      changes:
+        - update:
+            tableName: constraint_definition
+            columns:
+              - column: { name: name, value: "Un seul enseignant par matière et par classe" }
+              - column: { name: description, value: "Une classe doit avoir un seul enseignant pour une matière donnée." }
+            where: code = 'ONE_TEACHER_PER_SUBJECT_CLASS'
+        - update:
+            tableName: constraint_definition
+            columns:
+              - column: { name: name, value: "Maximum d'heures par jour pour les élèves" }
+              - column: { name: description, value: "Interdire plus de 6 heures de cours par jour pour une classe." }
+            where: code = 'MAX_STUDENT_HOURS_PER_DAY'
+        - update:
+            tableName: constraint_definition
+            columns:
+              - column: { name: name, value: "Aucune heure creuse pour les élèves" }
+              - column: { name: description, value: "Interdire les heures de battement dans l'emploi du temps des élèves." }
+            where: code = 'NO_STUDENT_IDLE_GAPS'
+        - update:
+            tableName: constraint_definition
+            columns:
+              - column: { name: name, value: "Maximum d'heures par jour pour les enseignants" }
+              - column: { name: description, value: "Interdire plus de 6 heures de cours par jour pour un enseignant." }
+            where: code = 'MAX_TEACHER_HOURS_PER_DAY'
+        - update:
+            tableName: constraint_definition
+            columns:
+              - column: { name: name, value: "Charge allégée le vendredi et le samedi" }
+              - column: { name: description, value: "Limiter à 5 heures la charge d'un enseignant le vendredi ou le samedi." }
+            where: code = 'MAX_TEACHER_HOURS_FRIDAY_SATURDAY'
+        - update:
+            tableName: constraint_definition
+            columns:
+              - column: { name: name, value: "Salle spécialisée obligatoire" }
+              - column: { name: description, value: "Les TP et les ateliers doivent se dérouler dans une salle spécialisée." }
+            where: code = 'SPECIAL_ROOM_REQUIRED'
+        - update:
+            tableName: constraint_definition
+            columns:
+              - column: { name: name, value: "Pas de chevauchement en salle spécialisée" }
+              - column: { name: description, value: "Une salle spécialisée ne peut pas accueillir deux classes en même temps." }
+            where: code = 'SPECIAL_ROOM_NO_OVERLAP'
+        - update:
+            tableName: constraint_definition
+            columns:
+              - column: { name: name, value: "Respect du volume horaire officiel" }
+              - column: { name: description, value: "Respecter le volume horaire officiel défini pour chaque matière." }
+            where: code = 'RESPECT_OFFICIAL_SUBJECT_HOURS'
+        - update:
+            tableName: constraint_definition
+            columns:
+              - column: { name: name, value: "Trois séances d'EPS par semaine" }
+              - column: { name: description, value: "Programmer trois séances d'éducation physique et sportive par semaine." }
+            where: code = 'PHYSICAL_EDUCATION_THREE_SESSIONS'
+        - update:
+            tableName: constraint_definition
+            columns:
+              - column: { name: name, value: "Deux séances consécutives maximum par matière" }
+              - column: { name: description, value: "Éviter plus de deux séances consécutives de la même matière." }
+            where: code = 'MAX_TWO_CONSECUTIVE_SESSIONS_SAME_SUBJECT'
+        - update:
+            tableName: constraint_definition
+            columns:
+              - column: { name: name, value: "Équilibre matin / après-midi" }
+              - column: { name: description, value: "Équilibrer les séances entre le matin et l'après-midi pour chaque enseignant." }
+            where: code = 'BALANCED_MORNING_AFTERNOON'
+        - update:
+            tableName: constraint_definition
+            columns:
+              - column: { name: name, value: "Au moins deux niveaux par enseignant" }
+              - column: { name: description, value: "Un enseignant doit intervenir sur au moins deux niveaux différents." }
+            where: code = 'TEACHER_MIN_TWO_LEVELS'
+        - update:
+            tableName: constraint_definition
+            columns:
+              - column: { name: name, value: "Charge de travail équilibrée" }
+              - column: { name: description, value: "Répartir équitablement la charge horaire entre les enseignants." }
+            where: code = 'BALANCED_TEACHER_WORKLOAD'
+        - update:
+            tableName: constraint_definition
+            columns:
+              - column: { name: name, value: "Jour de repos hebdomadaire" }
+              - column: { name: description, value: "Préserver si possible un jour de repos par semaine pour chaque enseignant." }
+            where: code = 'TEACHER_WEEKLY_REST_DAY'
+        - update:
+            tableName: constraint_definition
+            columns:
+              - column: { name: name, value: "Pas de concentration d'une matière sur un jour" }
+              - column: { name: description, value: "Éviter de concentrer trop de séances d'une même matière sur une seule journée." }
+            where: code = 'AVOID_SUBJECT_CONCENTRATION_SAME_DAY'
+        - update:
+            tableName: constraint_definition
+            columns:
+              - column: { name: name, value: "Répartition équitable des classes difficiles" }
+              - column: { name: description, value: "Répartir équitablement les classes difficiles entre les enseignants." }
+            where: code = 'BALANCED_CLASS_DIFFICULTY_FOR_TEACHERS'
+        - update:
+            tableName: constraint_definition
+            columns:
+              - column: { name: name, value: "Répartition équilibrée des matières principales" }
+              - column: { name: description, value: "Répartir les heures des matières principales de façon équilibrée sur la semaine." }
+            where: code = 'MAIN_SUBJECT_BALANCED_DISTRIBUTION'
+        - update:
+            tableName: constraint_definition
+            columns:
+              - column: { name: name, value: "Séparation cours et travaux pratiques" }
+              - column: { name: description, value: "Séparer les séances théoriques des travaux pratiques d'une même matière." }
+            where: code = 'THEORY_PRACTICE_SEPARATION'

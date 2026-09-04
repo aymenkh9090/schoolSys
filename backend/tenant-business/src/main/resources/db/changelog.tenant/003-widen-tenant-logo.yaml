@@ -1,0 +1,12 @@
+databaseChangeLog:
+  - changeSet:
+      id: 003-widen-tenant-logo
+      author: smartschool
+      comment: >
+        Le logo est desormais importe comme fichier (data URL base64) depuis le frontend
+        plutot que saisi comme URL externe — VARCHAR(255) est trop etroit.
+      changes:
+        - modifyDataType:
+            tableName: tenants
+            columnName: logo
+            newDataType: TEXT

@@ -1,0 +1,129 @@
+spring:
+  application:
+    name: smartschool-api
+  datasource:
+    url: jdbc:postgresql://localhost:5432/smartschool
+    username: postgres
+    password: ${DB_PASSWORD:smartschool}
+    hikari:
+      maximum-pool-size: 10
+      minimum-idle: 2
+      connection-timeout: 30000
+  jpa:
+    hibernate:
+      ddl-auto: update
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+    open-in-view: false
+    show-sql: false
+  liquibase:
+    change-log: classpath:/db.changelog/db.changelog-master.yaml
+    enabled: true
+  # ── OAuth2 Resource Server ─────────────────────────────────────────────────
+  # Spring télécharge automatiquement les clés JWKS depuis :
+  #   {issuer-uri}/protocol/openid-connect/certs  (mis en cache)
+  # et valide la signature du JWT Bearer entrant.
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: http://localhost:8081/realms/smartschool
+  # ── Envoi d'email (mot de passe temporaire à la création de compte) ────────
+  mail:
+    host: smtp.gmail.com
+    port: 587
+    username: ${SMTP_USERNAME:}
+    password: ${SMTP_PASSWORD:}
+    properties:
+      mail:
+        smtp:
+          auth: true
+          starttls:
+            enable: true
+
+server:
+  port: 8080
+
+app:
+  # Phase 2 (avec Keycloak) : jwt → lit tenant_id depuis le JWT validé
+  tenant-resolution: jwt
+  frontend:
+    # Utilisé pour construire le lien de connexion dans l'email de bienvenue.
+    base-url: ${FRONTEND_BASE_URL:http://localhost:5173}
+
+# ── Keycloak Admin Client ───────────────────────────────────────────────────
+# Utilisé par KeycloakAdminServiceImpl pour créer users/groupes via Admin REST API.
+# Le service account (client_credentials) doit avoir les rôles :
+#   manage-users, view-users dans realm-management.
+keycloak:
+  admin:
+    server-url: http://localhost:8081
+    realm: smartschool
+    client-id: smartschool-backend
+    client-secret: ${KC_CLIENT_SECRET}
+
+management:
+  server:
+    port: 9091
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus,metrics
+  endpoint:
+    health:
+      # "always" : expose le détail par composant (db, diskSpace, ping).
+      # C'est ce détail que l'assistant IA va lire — sans lui, /health ne
+      # renvoie que {"status":"UP"}, inexploitable pour un diagnostic.
+      show-details: always
+  metrics:
+    tags:
+      application: smartschool-api
+      environment: ${ENVIRONMENT:demo}
+    distribution:
+      percentiles-histogram:
+        # ⚠️ SANS CETTE LIGNE, AUCUN p95 N'EST CALCULABLE.
+        # Micrometer n'exporterait que count/sum/max, et histogram_quantile()
+        # renverrait toujours NaN. C'est l'oubli le plus fréquent.
+        http.server.requests: true
+      slo:
+        http.server.requests: 100ms,200ms,500ms,1s,2s,5s
+  health:
+    mail:
+      enabled: false     # ← ligne existante à conserver
+
+# ── Métriques métier par établissement ────────────────────────────────────────
+# Relevées périodiquement puis exposées sur /actuator/prometheus, à côté des
+# métriques JVM. Le relevé est périodique et NON calculé au scrape : voir
+# SchoolMetricsPublisher pour la raison (une requête SQL par métrique et par
+# établissement à chaque scrape saturerait la base).
+smartschool:
+  metrics:
+    school:
+      enabled: true
+      # 60 s : ces valeurs (nombre d'utilisateurs, de classes) bougent à
+      # l'échelle de la journée. Plus fin ne montrerait rien de plus et
+      # multiplierait les requêtes groupées pour rien.
+      interval-ms: 60000
+      # Laisse la base et Liquibase finir de démarrer avant le premier cycle.
+      initial-delay-ms: 60000
+      # Garde-fou de cardinalité : au-delà, le relevé est abandonné plutôt que
+      # de saturer Prometheus. Chaque établissement ajoute une dizaine de séries.
+      max-tenants: 500
+
+springdoc:
+  swagger-ui:
+    path: /swagger-ui.html
+  api-docs:
+    path: /v3/api-docs
+
+timefold:
+  solver:
+    termination:
+      spent-limit: 300s
+
+logging:
+  level:
+    tn.wtm.school: DEBUG
+    org.springframework.security: DEBUG
+    org.keycloak: WARN

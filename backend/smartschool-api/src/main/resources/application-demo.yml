@@ -1,0 +1,27 @@
+spring:
+  datasource:
+    url: jdbc:postgresql://localhost:5432/smartschool
+    username: postgres
+    password: ${DB_PASSWORD:smartschool}
+  jpa:
+    hibernate:
+      # Reste en `update` : le changelog ne couvre aujourd'hui que 12 des 44
+      # tables du schema, les autres n'existent que parce qu'Hibernate les cree.
+      # Passer en `validate` comme prod echoue au demarrage sur la premiere table
+      # non migree (`affectations_enseignants`). A rebasculer quand le changelog
+      # sera complet.
+      ddl-auto: update
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+    open-in-view: false
+  liquibase:
+    # Les migrations doivent s'executer la ou on developpe, sinon elles ne sont
+    # jamais testees avant la prod — c'est ainsi que 011 a pu manquer au master
+    # sans que personne ne le voie, la table etant creee par `ddl-auto`.
+    enabled: true
+
+logging:
+  level:
+    tn.wtm.school: DEBUG
+    org.springframework.web: WARN

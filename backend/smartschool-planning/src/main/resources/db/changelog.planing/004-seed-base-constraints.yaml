@@ -1,0 +1,275 @@
+databaseChangeLog:
+  - changeSet:
+      id: 004-seed-base-constraints
+      author: planning
+      changes:
+        - insert:
+            tableName: constraint_definition
+            columns:
+              - column: { name: id_constraint_definition, valueNumeric: 1 }
+              - column: { name: code, value: ONE_TEACHER_PER_SUBJECT_CLASS }
+              - column: { name: name, value: "One teacher per subject per class" }
+              - column: { name: description, value: "Une classe doit avoir un seul enseignant pour une matiere donnee." }
+              - column: { name: category, value: TEACHER }
+              - column: { name: type, value: HARD }
+              - column: { name: default_importance, value: CRITICAL }
+              - column: { name: default_enabled, valueBoolean: true }
+              - column: { name: parameter_schema, value: '{"enabled":{"type":"boolean","default":true}}' }
+              - column: { name: created_by, value: system }
+              - column: { name: updated_by, value: system }
+              - column: { name: version, valueNumeric: 0 }
+        - insert:
+            tableName: constraint_definition
+            columns:
+              - column: { name: id_constraint_definition, valueNumeric: 2 }
+              - column: { name: code, value: MAX_STUDENT_HOURS_PER_DAY }
+              - column: { name: name, value: "Maximum student hours per day" }
+              - column: { name: description, value: "Interdire plus de 6 heures de cours par jour pour les eleves." }
+              - column: { name: category, value: STUDENT }
+              - column: { name: type, value: HARD }
+              - column: { name: default_importance, value: CRITICAL }
+              - column: { name: default_enabled, valueBoolean: true }
+              - column: { name: parameter_schema, value: '{"maxHours":{"type":"number","default":6}}' }
+              - column: { name: created_by, value: system }
+              - column: { name: updated_by, value: system }
+              - column: { name: version, valueNumeric: 0 }
+        - insert:
+            tableName: constraint_definition
+            columns:
+              - column: { name: id_constraint_definition, valueNumeric: 3 }
+              - column: { name: code, value: NO_STUDENT_IDLE_GAPS }
+              - column: { name: name, value: "No student idle gaps" }
+              - column: { name: description, value: "Interdire les heures de battement dans le planning des eleves." }
+              - column: { name: category, value: STUDENT }
+              - column: { name: type, value: HARD }
+              - column: { name: default_importance, value: CRITICAL }
+              - column: { name: default_enabled, valueBoolean: true }
+              - column: { name: parameter_schema, value: '{"enabled":{"type":"boolean","default":true}}' }
+              - column: { name: created_by, value: system }
+              - column: { name: updated_by, value: system }
+              - column: { name: version, valueNumeric: 0 }
+        - insert:
+            tableName: constraint_definition
+            columns:
+              - column: { name: id_constraint_definition, valueNumeric: 4 }
+              - column: { name: code, value: MAX_TEACHER_HOURS_PER_DAY }
+              - column: { name: name, value: "Maximum teacher hours per day" }
+              - column: { name: description, value: "Interdire plus de 6 heures par jour pour un enseignant." }
+              - column: { name: category, value: TEACHER }
+              - column: { name: type, value: HARD }
+              - column: { name: default_importance, value: CRITICAL }
+              - column: { name: default_enabled, valueBoolean: true }
+              - column: { name: parameter_schema, value: '{"maxHours":{"type":"number","default":6}}' }
+              - column: { name: created_by, value: system }
+              - column: { name: updated_by, value: system }
+              - column: { name: version, valueNumeric: 0 }
+        - insert:
+            tableName: constraint_definition
+            columns:
+              - column: { name: id_constraint_definition, valueNumeric: 5 }
+              - column: { name: code, value: MAX_TEACHER_HOURS_FRIDAY_SATURDAY }
+              - column: { name: name, value: "Maximum teacher hours on Friday and Saturday" }
+              - column: { name: description, value: "Maximum 5 heures pour un enseignant le vendredi ou samedi." }
+              - column: { name: category, value: TEACHER }
+              - column: { name: type, value: HARD }
+              - column: { name: default_importance, value: CRITICAL }
+              - column: { name: default_enabled, valueBoolean: true }
+              - column: { name: parameter_schema, value: '{"maxHours":{"type":"number","default":5}}' }
+              - column: { name: created_by, value: system }
+              - column: { name: updated_by, value: system }
+              - column: { name: version, valueNumeric: 0 }
+        - insert:
+            tableName: constraint_definition
+            columns:
+              - column: { name: id_constraint_definition, valueNumeric: 6 }
+              - column: { name: code, value: SPECIAL_ROOM_REQUIRED }
+              - column: { name: name, value: "Special room required" }
+              - column: { name: description, value: "Les TP et ateliers doivent utiliser une salle specialisee." }
+              - column: { name: category, value: ROOM }
+              - column: { name: type, value: HARD }
+              - column: { name: default_importance, value: CRITICAL }
+              - column: { name: default_enabled, valueBoolean: true }
+              - column: { name: parameter_schema, value: '{"enabled":{"type":"boolean","default":true}}' }
+              - column: { name: created_by, value: system }
+              - column: { name: updated_by, value: system }
+              - column: { name: version, valueNumeric: 0 }
+        - insert:
+            tableName: constraint_definition
+            columns:
+              - column: { name: id_constraint_definition, valueNumeric: 7 }
+              - column: { name: code, value: SPECIAL_ROOM_NO_OVERLAP }
+              - column: { name: name, value: "Special room no overlap" }
+              - column: { name: description, value: "Une salle specialisee ne peut pas etre utilisee par deux classes en meme temps." }
+              - column: { name: category, value: ROOM }
+              - column: { name: type, value: HARD }
+              - column: { name: default_importance, value: CRITICAL }
+              - column: { name: default_enabled, valueBoolean: true }
+              - column: { name: parameter_schema, value: '{"enabled":{"type":"boolean","default":true}}' }
+              - column: { name: created_by, value: system }
+              - column: { name: updated_by, value: system }
+              - column: { name: version, valueNumeric: 0 }
+        - insert:
+            tableName: constraint_definition
+            columns:
+              - column: { name: id_constraint_definition, valueNumeric: 8 }
+              - column: { name: code, value: RESPECT_OFFICIAL_SUBJECT_HOURS }
+              - column: { name: name, value: "Respect official subject hours" }
+              - column: { name: description, value: "Respecter le volume horaire officiel par matiere." }
+              - column: { name: category, value: PEDAGOGICAL }
+              - column: { name: type, value: HARD }
+              - column: { name: default_importance, value: CRITICAL }
+              - column: { name: default_enabled, valueBoolean: true }
+              - column: { name: parameter_schema, value: '{"enabled":{"type":"boolean","default":true}}' }
+              - column: { name: created_by, value: system }
+              - column: { name: updated_by, value: system }
+              - column: { name: version, valueNumeric: 0 }
+        - insert:
+            tableName: constraint_definition
+            columns:
+              - column: { name: id_constraint_definition, valueNumeric: 9 }
+              - column: { name: code, value: PHYSICAL_EDUCATION_THREE_SESSIONS }
+              - column: { name: name, value: "Physical education three sessions" }
+              - column: { name: description, value: "Programmer 3 seances d EPS par semaine." }
+              - column: { name: category, value: SUBJECT }
+              - column: { name: type, value: HARD }
+              - column: { name: default_importance, value: CRITICAL }
+              - column: { name: default_enabled, valueBoolean: true }
+              - column: { name: parameter_schema, value: '{"weeklySessions":{"type":"number","default":3}}' }
+              - column: { name: created_by, value: system }
+              - column: { name: updated_by, value: system }
+              - column: { name: version, valueNumeric: 0 }
+        - insert:
+            tableName: constraint_definition
+            columns:
+              - column: { name: id_constraint_definition, valueNumeric: 10 }
+              - column: { name: code, value: MAX_TWO_CONSECUTIVE_SESSIONS_SAME_SUBJECT }
+              - column: { name: name, value: "Max two consecutive sessions same subject" }
+              - column: { name: description, value: "Eviter plus de deux seances consecutives de la meme matiere." }
+              - column: { name: category, value: SUBJECT }
+              - column: { name: type, value: HARD }
+              - column: { name: default_importance, value: HIGH }
+              - column: { name: default_enabled, valueBoolean: true }
+              - column: { name: parameter_schema, value: '{"maxConsecutiveSessions":{"type":"number","default":2}}' }
+              - column: { name: created_by, value: system }
+              - column: { name: updated_by, value: system }
+              - column: { name: version, valueNumeric: 0 }
+        - insert:
+            tableName: constraint_definition
+            columns:
+              - column: { name: id_constraint_definition, valueNumeric: 11 }
+              - column: { name: code, value: BALANCED_MORNING_AFTERNOON }
+              - column: { name: name, value: "Balanced morning and afternoon sessions" }
+              - column: { name: description, value: "Equilibrer les seances entre matin et apres-midi pour l enseignant." }
+              - column: { name: category, value: TEACHER }
+              - column: { name: type, value: MEDIUM }
+              - column: { name: default_importance, value: HIGH }
+              - column: { name: default_enabled, valueBoolean: true }
+              - column: { name: parameter_schema, value: '{"enabled":{"type":"boolean","default":true}}' }
+              - column: { name: created_by, value: system }
+              - column: { name: updated_by, value: system }
+              - column: { name: version, valueNumeric: 0 }
+        - insert:
+            tableName: constraint_definition
+            columns:
+              - column: { name: id_constraint_definition, valueNumeric: 12 }
+              - column: { name: code, value: TEACHER_MIN_TWO_LEVELS }
+              - column: { name: name, value: "Teacher teaches minimum two levels" }
+              - column: { name: description, value: "Un enseignant doit avoir au minimum deux niveaux differents." }
+              - column: { name: category, value: TEACHER }
+              - column: { name: type, value: SOFT }
+              - column: { name: default_importance, value: MEDIUM }
+              - column: { name: default_enabled, valueBoolean: true }
+              - column: { name: parameter_schema, value: '{"minLevels":{"type":"number","default":2}}' }
+              - column: { name: created_by, value: system }
+              - column: { name: updated_by, value: system }
+              - column: { name: version, valueNumeric: 0 }
+        - insert:
+            tableName: constraint_definition
+            columns:
+              - column: { name: id_constraint_definition, valueNumeric: 13 }
+              - column: { name: code, value: BALANCED_TEACHER_WORKLOAD }
+              - column: { name: name, value: "Balanced teacher workload" }
+              - column: { name: description, value: "Repartir equitablement la charge entre les enseignants." }
+              - column: { name: category, value: TEACHER }
+              - column: { name: type, value: SOFT }
+              - column: { name: default_importance, value: MEDIUM }
+              - column: { name: default_enabled, valueBoolean: true }
+              - column: { name: parameter_schema, value: '{"enabled":{"type":"boolean","default":true}}' }
+              - column: { name: created_by, value: system }
+              - column: { name: updated_by, value: system }
+              - column: { name: version, valueNumeric: 0 }
+        - insert:
+            tableName: constraint_definition
+            columns:
+              - column: { name: id_constraint_definition, valueNumeric: 14 }
+              - column: { name: code, value: TEACHER_WEEKLY_REST_DAY }
+              - column: { name: name, value: "Teacher weekly rest day" }
+              - column: { name: description, value: "Essayer de garder un jour de repos hebdomadaire pour l enseignant." }
+              - column: { name: category, value: TEACHER }
+              - column: { name: type, value: SOFT }
+              - column: { name: default_importance, value: MEDIUM }
+              - column: { name: default_enabled, valueBoolean: true }
+              - column: { name: parameter_schema, value: '{"enabled":{"type":"boolean","default":true}}' }
+              - column: { name: created_by, value: system }
+              - column: { name: updated_by, value: system }
+              - column: { name: version, valueNumeric: 0 }
+        - insert:
+            tableName: constraint_definition
+            columns:
+              - column: { name: id_constraint_definition, valueNumeric: 15 }
+              - column: { name: code, value: AVOID_SUBJECT_CONCENTRATION_SAME_DAY }
+              - column: { name: name, value: "Avoid subject concentration same day" }
+              - column: { name: description, value: "Eviter de concentrer trop de seances d une meme matiere sur un seul jour." }
+              - column: { name: category, value: SUBJECT }
+              - column: { name: type, value: SOFT }
+              - column: { name: default_importance, value: MEDIUM }
+              - column: { name: default_enabled, valueBoolean: true }
+              - column: { name: parameter_schema, value: '{"enabled":{"type":"boolean","default":true}}' }
+              - column: { name: created_by, value: system }
+              - column: { name: updated_by, value: system }
+              - column: { name: version, valueNumeric: 0 }
+        - insert:
+            tableName: constraint_definition
+            columns:
+              - column: { name: id_constraint_definition, valueNumeric: 16 }
+              - column: { name: code, value: BALANCED_CLASS_DIFFICULTY_FOR_TEACHERS }
+              - column: { name: name, value: "Balanced class difficulty for teachers" }
+              - column: { name: description, value: "Repartir equitablement les classes difficiles entre les enseignants." }
+              - column: { name: category, value: TEACHER }
+              - column: { name: type, value: SOFT }
+              - column: { name: default_importance, value: LOW }
+              - column: { name: default_enabled, valueBoolean: true }
+              - column: { name: parameter_schema, value: '{"enabled":{"type":"boolean","default":true}}' }
+              - column: { name: created_by, value: system }
+              - column: { name: updated_by, value: system }
+              - column: { name: version, valueNumeric: 0 }
+        - insert:
+            tableName: constraint_definition
+            columns:
+              - column: { name: id_constraint_definition, valueNumeric: 17 }
+              - column: { name: code, value: MAIN_SUBJECT_BALANCED_DISTRIBUTION }
+              - column: { name: name, value: "Main subject balanced distribution" }
+              - column: { name: description, value: "Repartir les heures des matieres principales de facon equilibree." }
+              - column: { name: category, value: PEDAGOGICAL }
+              - column: { name: type, value: SOFT }
+              - column: { name: default_importance, value: MEDIUM }
+              - column: { name: default_enabled, valueBoolean: true }
+              - column: { name: parameter_schema, value: '{"weeklyHours":{"type":"number","default":4}}' }
+              - column: { name: created_by, value: system }
+              - column: { name: updated_by, value: system }
+              - column: { name: version, valueNumeric: 0 }
+        - insert:
+            tableName: constraint_definition
+            columns:
+              - column: { name: id_constraint_definition, valueNumeric: 18 }
+              - column: { name: code, value: THEORY_PRACTICE_SEPARATION }
+              - column: { name: name, value: "Theory practice separation" }
+              - column: { name: description, value: "Separer correctement les seances theoriques et les TP." }
+              - column: { name: category, value: SUBJECT }
+              - column: { name: type, value: MEDIUM }
+              - column: { name: default_importance, value: HIGH }
+              - column: { name: default_enabled, valueBoolean: true }
+              - column: { name: parameter_schema, value: '{"enabled":{"type":"boolean","default":true}}' }
+              - column: { name: created_by, value: system }
+              - column: { name: updated_by, value: system }
+              - column: { name: version, valueNumeric: 0 }

@@ -1,0 +1,17 @@
+spring:
+  datasource:
+    url: jdbc:postgresql://localhost:5432/smartschool_dev
+    username: postgres
+    password: ${DB_PASSWORD:smartschool}
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: true
+  liquibase:
+    change-log: classpath:db.changelog/db.changelog-master.yaml
+    enabled: true
+
+logging:
+  level:
+    tn.wtm.school: DEBUG
+    org.hibernate.SQL: DEBUG

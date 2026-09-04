@@ -1,0 +1,35 @@
+databaseChangeLog:
+  # Sur les bases où custom_constraint a été créée par `ddl-auto: update` (le
+  # changeset 011 n'étant pas dans le master), la clé étrangère porte un nom
+  # généré et surtout pas de ON DELETE CASCADE : y supprimer un profil qui a des
+  # règles personnalisées échoue, alors qu'une base créée par 011 les supprime
+  # avec le profil. On aligne les deux sur le comportement voulu.
+  - changeSet:
+      id: 013-align-custom-constraint-fk
+      author: planning
+      dbms: postgresql
+      changes:
+        - sql:
+            splitStatements: false
+            sql: |
+              DO $$
+              DECLARE existing TEXT;
+              BEGIN
+                  FOR existing IN
+                      SELECT conname
+                        FROM pg_constraint
+                       WHERE conrelid = 'custom_constraint'::regclass
+                         AND contype  = 'f'
+                  LOOP
+                      EXECUTE format('ALTER TABLE custom_constraint DROP CONSTRAINT %I', existing);
+                  END LOOP;
+
+                  ALTER TABLE custom_constraint
+                      ADD CONSTRAINT fk_custom_constraint_profile
+                      FOREIGN KEY (constraint_profile_id)
+                      REFERENCES constraint_profile (id_constraint_profile)
+                      ON DELETE CASCADE;
+              END $$;
+      rollback:
+        - sql:
+            sql: ALTER TABLE custom_constraint DROP CONSTRAINT IF EXISTS fk_custom_constraint_profile;

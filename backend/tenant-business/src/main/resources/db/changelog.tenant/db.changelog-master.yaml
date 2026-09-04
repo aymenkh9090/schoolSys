@@ -1,0 +1,9 @@
+databaseChangeLog:
+  - include:
+      file: db/changelog.tenant/001-create-tenant.yaml
+  - include:
+      file: db/changelog.tenant/002-add-keycloak-columns.yaml
+  - include:
+      file: db/changelog.tenant/003-widen-tenant-logo.yaml
+  - include:
+      file: db/changelog.tenant/004-create-subscription.yaml

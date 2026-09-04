@@ -1,0 +1,93 @@
+databaseChangeLog:
+  - changeSet:
+      id: 006-create-timetable-job
+      author: planning
+      changes:
+        - createTable:
+            tableName: planning_timetable_job
+            columns:
+              - column:
+                  name: id_timetable_job
+                  type: BIGINT
+                  constraints:
+                    primaryKey: true
+                    primaryKeyName: pk_timetable_job
+                    nullable: false
+              - column:
+                  name: tenant_id
+                  type: VARCHAR(100)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: academic_year_id
+                  type: BIGINT
+                  constraints:
+                    nullable: false
+              - column:
+                  name: constraint_profile_id
+                  type: BIGINT
+              - column:
+                  name: status
+                  type: VARCHAR(20)
+                  defaultValue: PENDING
+                  constraints:
+                    nullable: false
+              - column:
+                  name: started_at
+                  type: TIMESTAMP
+              - column:
+                  name: finished_at
+                  type: TIMESTAMP
+              - column:
+                  name: score_achieved
+                  type: VARCHAR(60)
+              - column:
+                  name: error_message
+                  type: VARCHAR(1000)
+              - column:
+                  name: solver_job_id
+                  type: VARCHAR(50)
+              - column:
+                  name: created_at
+                  type: TIMESTAMP
+                  defaultValueComputed: CURRENT_TIMESTAMP
+                  constraints:
+                    nullable: false
+              - column:
+                  name: updated_at
+                  type: TIMESTAMP
+                  defaultValueComputed: CURRENT_TIMESTAMP
+                  constraints:
+                    nullable: false
+              - column:
+                  name: created_by
+                  type: VARCHAR(120)
+                  defaultValue: system
+                  constraints:
+                    nullable: false
+              - column:
+                  name: updated_by
+                  type: VARCHAR(120)
+                  defaultValue: system
+                  constraints:
+                    nullable: false
+              - column:
+                  name: version
+                  type: INTEGER
+                  defaultValueNumeric: 0
+        - createIndex:
+            tableName: planning_timetable_job
+            indexName: idx_timetable_job_tenant
+            columns:
+              - column:
+                  name: tenant_id
+        - createIndex:
+            tableName: planning_timetable_job
+            indexName: idx_timetable_job_year_status
+            columns:
+              - column:
+                  name: tenant_id
+              - column:
+                  name: academic_year_id
+              - column:
+                  name: status

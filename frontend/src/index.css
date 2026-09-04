@@ -1,0 +1,54 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply bg-brand-bg text-brand-text font-sans dark:bg-slate-950 dark:text-slate-200;
+    margin: 0;
+  }
+  :root {
+    --sidebar-width: 280px;
+    --sidebar-width-collapsed: 76px;
+    --topbar-height: 64px;
+  }
+}
+
+@media print {
+  * {
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+  }
+}
+
+/* ── Animations ─────────────────────────────────────────────────────────────
+   Déclarées au niveau racine (et non dans une @layer) pour rester référençables
+   depuis les utilitaires arbitraires de Tailwind : `animate-[fadeIn_.4s]`.     */
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: none; }
+}
+
+/* Entrée d'une bulle de conversation : légère montée, sans rebond — un message
+   qui saute attire l'œil une fois de trop quand la discussion s'allonge. */
+@keyframes bubbleIn {
+  from { opacity: 0; transform: translateY(8px) scale(0.98); }
+  to   { opacity: 1; transform: none; }
+}
+
+/* Les trois points d'attente. Décalés par un delay inline sur chaque point. */
+@keyframes typingDot {
+  0%, 80%, 100% { opacity: 0.25; transform: translateY(0); }
+  40%           { opacity: 1;    transform: translateY(-3px); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

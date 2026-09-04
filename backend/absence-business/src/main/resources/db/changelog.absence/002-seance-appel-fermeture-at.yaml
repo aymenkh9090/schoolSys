@@ -1,0 +1,27 @@
+databaseChangeLog:
+  # fermeture_at n'était jamais renseigné à l'ouverture d'un appel, si bien que
+  # le verrouillage automatique (PlanificateurVerrouillageSeance, qui balaie
+  # fermeture_at < now) ne se déclenchait jamais. Le code le renseigne désormais
+  # depuis le créneau de l'emploi du temps ; on reprend ici les séances déjà
+  # ouvertes en croisant la séance de planning correspondante.
+  - changeSet:
+      id: 002-absence-seance-appel-fermeture-at
+      author: smartschool
+      preConditions:
+        - onFail: MARK_RAN
+        - onFailMessage: >-
+            seance_appel ou planning_timetable_session absente : rien à reprendre.
+        - and:
+            - tableExists:
+                tableName: seance_appel
+            - tableExists:
+                tableName: planning_timetable_session
+      changes:
+        - sql:
+            sql: |
+              UPDATE seance_appel sa
+              SET fermeture_at = sa.date_seance + pts.end_time
+              FROM planning_timetable_session pts
+              WHERE pts.id_timetable_session = sa.seance_planning_id
+                AND pts.tenant_id = sa.tenant_id
+                AND sa.fermeture_at IS NULL

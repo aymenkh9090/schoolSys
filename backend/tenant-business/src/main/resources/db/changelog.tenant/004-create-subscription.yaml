@@ -1,0 +1,109 @@
+databaseChangeLog:
+  - changeSet:
+      id: 004-create-subscription-sequence
+      author: smartschool
+      changes:
+        - createSequence:
+            sequenceName: subscription_seq
+            startValue: 1
+            incrementBy: 1
+
+  - changeSet:
+      id: 004-create-subscription-table
+      author: smartschool
+      changes:
+        - createTable:
+            tableName: subscriptions
+            columns:
+              - column:
+                  name: id
+                  type: BIGINT
+                  constraints:
+                    primaryKey: true
+                    primaryKeyName: pk_subscription
+                    nullable: false
+              - column:
+                  name: tenant_id
+                  type: BIGINT
+                  constraints:
+                    nullable: false
+                    foreignKeyName: fk_subscription_tenant
+                    references: tenants(tenant_id)
+              - column:
+                  name: plan
+                  type: VARCHAR(20)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: billing_cycle
+                  type: VARCHAR(20)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: status
+                  type: VARCHAR(20)
+                  defaultValue: ACTIVE
+                  constraints:
+                    nullable: false
+              - column:
+                  name: start_date
+                  type: DATE
+                  constraints:
+                    nullable: false
+              - column:
+                  name: end_date
+                  type: DATE
+                  constraints:
+                    nullable: false
+              - column:
+                  name: price
+                  type: DECIMAL(10,2)
+              - column:
+                  name: notes
+                  type: VARCHAR(255)
+              - column:
+                  name: created_at
+                  type: TIMESTAMP
+                  defaultValueComputed: CURRENT_TIMESTAMP
+                  constraints:
+                    nullable: false
+              - column:
+                  name: updated_at
+                  type: TIMESTAMP
+                  defaultValueComputed: CURRENT_TIMESTAMP
+                  constraints:
+                    nullable: false
+              - column:
+                  name: created_by
+                  type: VARCHAR(120)
+                  defaultValue: system
+                  constraints:
+                    nullable: false
+              - column:
+                  name: updated_by
+                  type: VARCHAR(120)
+                  defaultValue: system
+                  constraints:
+                    nullable: false
+              - column:
+                  name: version
+                  type: INTEGER
+                  defaultValueNumeric: 0
+        - createIndex:
+            tableName: subscriptions
+            indexName: idx_subscription_tenant
+            columns:
+              - column:
+                  name: tenant_id
+        - createIndex:
+            tableName: subscriptions
+            indexName: idx_subscription_status
+            columns:
+              - column:
+                  name: status
+        - createIndex:
+            tableName: subscriptions
+            indexName: idx_subscription_end_date
+            columns:
+              - column:
+                  name: end_date

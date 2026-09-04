@@ -1,0 +1,26 @@
+global:
+  # Fréquence de collecte. 15 s est le standard : assez fin pour voir un incident,
+  # assez large pour ne pas saturer le disque.
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  # Prometheus se surveille lui-même (utile pour vérifier qu'il tourne)
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+
+  # ── L'application Spring Boot ──────────────────────────────────────────────
+  - job_name: 'smartschool-api'
+    # ⚠️ Ce chemin n'est PAS la valeur par défaut de Prometheus (/metrics).
+    # Spring Boot expose ses métriques sous /actuator/prometheus.
+    metrics_path: '/actuator/prometheus'
+    static_configs:
+      # host.docker.internal = la machine hôte, vue depuis le conteneur.
+      # Nécessite extra_hosts dans docker-compose.yml sous Linux.
+      # Port 9091 = management.server.port (application.yml), et non 8080 :
+      # l'actuator est exposé sur un port séparé de l'API métier.
+      - targets: ['host.docker.internal:9091']
+        labels:
+          application: 'smartschool-api'
+          environment: 'demo'

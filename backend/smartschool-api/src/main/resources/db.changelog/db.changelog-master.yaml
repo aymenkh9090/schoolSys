@@ -1,0 +1,43 @@
+databaseChangeLog:
+  # ── tenant schema ─────────────────────────────────────────────────────────
+  - include:
+      file: db/changelog.tenant/001-create-tenant.yaml
+  - include:
+      file: db/changelog.tenant/002-add-keycloak-columns.yaml
+  - include:
+      file: db/changelog.tenant/003-widen-tenant-logo.yaml
+
+  # ── planning schema ───────────────────────────────────────────────────────
+  - include:
+      file: db/changelog.planing/001-create-constraint-definition.yaml
+  - include:
+      file: db/changelog.planing/002-create-constraint-profile.yaml
+  - include:
+      file: db/changelog.planing/003-create-constraint-setting.yaml
+  - include:
+      file: db/changelog.planing/004-seed-base-constraints.yaml
+  - include:
+      file: db/changelog.planing/006-create-timetable-job.yaml
+  - include:
+      file: db/changelog.planing/005-create-generated-timetable.yaml
+  - include:
+      file: db/changelog.planing/007-create-timetable-session.yaml
+  - include:
+      file: db/changelog.planing/008-fix-room-type-check.yaml
+  - include:
+      file: db/changelog.planing/009-extend-room-type-check.yaml
+  - include:
+      file: db/changelog.planing/010-frenchify-constraint-labels.yaml
+  - include:
+      file: db/changelog.planing/011-create-custom-constraint.yaml
+  - include:
+      file: db/changelog.planing/012-single-active-constraint-profile.yaml
+  - include:
+      file: db/changelog.planing/013-align-custom-constraint-fk.yaml
+
+  # ── absence schema ────────────────────────────────────────────────────────
+  # Après le schéma planning : la reprise de fermeture_at lit planning_timetable_session.
+  - include:
+      file: db/changelog.absence/001-seance-appel-date-seance.yaml
+  - include:
+      file: db/changelog.absence/002-seance-appel-fermeture-at.yaml

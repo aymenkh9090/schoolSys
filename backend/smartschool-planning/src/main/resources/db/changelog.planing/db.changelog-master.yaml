@@ -1,0 +1,29 @@
+databaseChangeLog:
+  # ── constraint configuration ──────────────────────────────────────────────
+  - include:
+      file: db/changelog.planing/001-create-constraint-definition.yaml
+  - include:
+      file: db/changelog.planing/002-create-constraint-profile.yaml
+  - include:
+      file: db/changelog.planing/003-create-constraint-setting.yaml
+  - include:
+      file: db/changelog.planing/004-seed-base-constraints.yaml
+  - include:
+      file: db/changelog.planing/010-frenchify-constraint-labels.yaml
+  - include:
+      file: db/changelog.planing/011-create-custom-constraint.yaml
+  - include:
+      file: db/changelog.planing/012-single-active-constraint-profile.yaml
+  - include:
+      file: db/changelog.planing/013-align-custom-constraint-fk.yaml
+
+  # ── solver / timetable ────────────────────────────────────────────────────
+  - include:
+      file: db/changelog.planing/006-create-timetable-job.yaml
+  - include:
+      file: db/changelog.planing/005-create-generated-timetable.yaml
+  - include:
+      file: db/changelog.planing/007-create-timetable-session.yaml
+  - include:
+      file: db/changelog.planing/008-fix-room-type-check.yaml
+

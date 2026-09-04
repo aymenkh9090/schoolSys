@@ -1,0 +1,116 @@
+databaseChangeLog:
+  # Contraintes réellement personnalisées : celles qui n'existent pas au catalogue
+  # et qu'une école exprime via le DSL. La règle est stockée en JSON déclaratif
+  # (dsl_json) — jamais du code — et rattachée à un profil de contraintes, donc
+  # implicitement à un tenant et à une année scolaire.
+  - changeSet:
+      id: 011-create-custom-constraint
+      author: planning
+      # Ce changeset a longtemps manqué au master applicatif : sur les bases déjà
+      # démarrées, la table a été créée par `ddl-auto: update` et non par
+      # Liquibase. La précondition adopte ces bases (changeset marqué exécuté)
+      # au lieu d'échouer sur un CREATE TABLE impossible ; l'écart de schéma
+      # laissé par Hibernate est rattrapé par 013.
+      preConditions:
+        - onFail: MARK_RAN
+        - not:
+            - tableExists:
+                tableName: custom_constraint
+      changes:
+        - createTable:
+            tableName: custom_constraint
+            columns:
+              - column:
+                  name: id_custom_constraint
+                  type: BIGINT
+                  constraints: { primaryKey: true, nullable: false }
+              - column:
+                  name: tenant_id
+                  type: VARCHAR(100)
+                  constraints: { nullable: false }
+              - column:
+                  name: constraint_profile_id
+                  type: BIGINT
+                  constraints: { nullable: false }
+              - column:
+                  name: code
+                  type: VARCHAR(100)
+                  constraints: { nullable: false }
+              - column:
+                  name: name
+                  type: VARCHAR(180)
+                  constraints: { nullable: false }
+              - column: { name: description, type: TEXT }
+              - column:
+                  name: dsl_json
+                  type: TEXT
+                  constraints: { nullable: false }
+              - column:
+                  name: scope
+                  type: VARCHAR(20)
+                  constraints: { nullable: false }
+              - column:
+                  name: severity
+                  type: VARCHAR(20)
+                  constraints: { nullable: false }
+              - column:
+                  name: weight
+                  type: INT
+                  constraints: { nullable: false }
+              - column:
+                  name: enabled
+                  type: BOOLEAN
+                  defaultValueBoolean: true
+                  constraints: { nullable: false }
+              - column:
+                  name: source
+                  type: VARCHAR(20)
+                  defaultValue: MANUAL
+                  constraints: { nullable: false }
+              - column: { name: natural_language_request, type: TEXT }
+              - column: { name: summary, type: VARCHAR(500) }
+              - column:
+                  name: created_at
+                  type: TIMESTAMP
+                  constraints: { nullable: false }
+              - column:
+                  name: updated_at
+                  type: TIMESTAMP
+                  constraints: { nullable: false }
+              - column:
+                  name: created_by
+                  type: VARCHAR(100)
+                  constraints: { nullable: false }
+              - column:
+                  name: updated_by
+                  type: VARCHAR(100)
+                  constraints: { nullable: false }
+              - column: { name: version, type: INT, defaultValueNumeric: 0 }
+
+        - addForeignKeyConstraint:
+            constraintName: FK_CUSTOM_CONSTRAINT_PROFILE
+            baseTableName: custom_constraint
+            baseColumnNames: constraint_profile_id
+            referencedTableName: constraint_profile
+            referencedColumnNames: id_constraint_profile
+            onDelete: CASCADE
+
+        # Le code identifie la règle dans l'explication du score : il doit être
+        # unique par établissement, jamais globalement (deux écoles ont le droit
+        # d'appeler leur règle « PAS_DE_MATHS_TARD »).
+        - addUniqueConstraint:
+            constraintName: UK_CUSTOM_CONSTRAINT_TENANT_CODE
+            tableName: custom_constraint
+            columnNames: tenant_id, code
+
+        - createIndex:
+            indexName: IDX_CUSTOM_CONSTRAINT_TENANT
+            tableName: custom_constraint
+            columns:
+              - column: { name: tenant_id }
+
+        - createIndex:
+            indexName: IDX_CUSTOM_CONSTRAINT_PROFILE
+            tableName: custom_constraint
+            columns:
+              - column: { name: constraint_profile_id }

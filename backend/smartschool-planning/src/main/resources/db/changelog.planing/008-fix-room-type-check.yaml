@@ -1,0 +1,20 @@
+databaseChangeLog:
+  - changeSet:
+      id: 008-fix-room-type-check
+      author: planning
+      comment: >
+        Rename SALLE_SPORT → SPORT in the room_type check constraint
+        to match the current RoomType enum value.
+      changes:
+        - sql:
+            sql: >
+              ALTER TABLE planning_timetable_session
+                DROP CONSTRAINT IF EXISTS planning_timetable_session_room_type_check;
+              ALTER TABLE planning_timetable_session
+                ADD CONSTRAINT planning_timetable_session_room_type_check
+                CHECK (room_type IN (
+                  'NORMAL', 'LAB_PHYSICS', 'LAB_SCIENCE',
+                  'SPORT', 'COMPUTER', 'TECH', 'WORKSHOP'
+                ));
+            splitStatements: true
+            stripComments: true
