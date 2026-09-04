@@ -15,9 +15,57 @@
 
 ## 0. État d'avancement
 
-> **Point d'arrêt : vendredi 4 septembre, après-midi.** Dépôt propre, rien en
-> cours, `mvn` et `pytest` verts, `main` poussé sur `origin`.
-> `main` = **05e6546**.
+> **Point d'arrêt : nuit de vendredi à samedi, 1 h du matin.** Dépôt propre,
+> rien en cours, `pytest` vert (**192**), `tsc` mobile vert, `main` poussé sur
+> `origin`. `main` = **b226247**.
+>
+> **Les six étapes du plan sont faites.** Il ne reste que du hors-code :
+> SonarCloud, et une répétition téléphone en main. Le gel est dimanche soir —
+> il reste donc **deux jours pour deux tâches d'une heure**.
+
+### Pour reprendre demain
+
+Rien n'est en cours, mais **rien ne survit non plus à un redémarrage** : les
+services tournaient encore au moment du point d'arrêt. Séquence complète, dans
+cet ordre.
+
+```bash
+cd ~/pfe/schoolSys
+
+# 1. Les 6 conteneurs, avec le nom d'hôte fixe pour Keycloak.
+#    Sans la surcouche, le mobile obtiendra un 401 sur tous les écrans.
+export LAN_HOST=$(ip -4 addr show | grep -oP '(?<=inet )192\.168\.[0-9.]+' | head -1)
+docker compose -f docker-compose.yml -f docker-compose.mobile.yml up -d
+
+# 2. L'API. Le secret se relit par l'API d'admin (commande dans mobile/README.md).
+export KC_CLIENT_SECRET="<secret du client smartschool-backend>"
+export KEYCLOAK_ISSUER_URI="http://$LAN_HOST:8081/realms/smartschool"
+export KEYCLOAK_SERVER_URL="http://$LAN_HOST:8081"
+cd backend && mvn spring-boot:run -pl smartschool-api -Dspring-boot.run.profiles=demo
+
+# 3. L'assistant — celui du port 8001, pas le conteneur : Ollama n'écoute
+#    que sur le 127.0.0.1 de l'hôte, hors de portée du conteneur.
+cd ai-assistant
+export KEYCLOAK_ISSUER_URL="http://$LAN_HOST:8081/realms/smartschool"
+.venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8001
+
+# 4. Le mobile. `npm start` impose le port 8082 : le 8081 est pris par Keycloak.
+cd mobile && npm start
+```
+
+**`DB_PASSWORD` est dans le `.env` de la racine** (non versionné). Sans lui,
+l'API s'arrête sur `password authentication failed for user "postgres"` : le
+volume `app_pg_data` a été créé avec un mot de passe différent du défaut.
+
+**Compte de démonstration** : `mehdi.ben.ali` — un enseignant qui a une fiche,
+un emploi du temps publié et des séances. Son mot de passe a été fixé
+vendredi soir ; en cas d'oubli, la commande de réinitialisation est dans
+`mobile/README.md`.
+
+**À vérifier en premier demain** : le résultat du pipeline GitHub Actions sur
+les trois derniers *push*. Le job *Assistant IA* installe depuis
+`requirements.txt`, où `pypdf` et `python-multipart` viennent d'entrer — vert
+en local, non confirmé en CI.
 
 ### Le § 6 est terminé. Le mobile tourne sur téléphone.
 
@@ -920,11 +968,11 @@ qui est incertain en dernier avec une porte de sortie.
 
 ### Samedi 5 — la contribution
 
-> **Ce tableau est en avance d'une journée.** Tout ce qu'il prévoit a été fait
-> le **vendredi** : le § 4 en entier, puis le § 5. Samedi s'ouvre donc
-> directement sur le mobile (§ 6), avec une journée pleine devant lui au lieu
-> d'une demi-journée — c'est la marge qui rend le point de non-retour de
-> dimanche 14 h nettement moins serré qu'annoncé.
+> **Ce tableau ne décrit plus la réalité, et c'est une bonne nouvelle.** Tout ce
+> qu'il prévoyait pour samedi a été fait vendredi (§ 4 puis § 5), et le mobile
+> du § 6 — prévu pour dimanche — l'a été dans la nuit. Le point de non-retour
+> de dimanche 14 h n'a pas eu à servir. Il reste deux jours pour SonarCloud et
+> les répétitions ; le tableau est conservé pour mémoire.
 
 | Créneau | Tâche | Fait quand |
 |---|---|---|
