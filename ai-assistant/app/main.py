@@ -37,6 +37,7 @@ from app.services.cahier_assistant import CahierAssistantService
 from app.services.dsl_translator import DslTranslator
 from app.services.metrics import MetricsService
 from app.services.planning_assistant import PlanningAssistantService
+from app.services.consigne_retrieval import ConsigneRetriever
 from app.services.retrieval import CahierIndexStore, CahierRetriever
 from app.tools.handlers import ToolHandlers
 
@@ -116,10 +117,27 @@ async def lifespan(app: FastAPI):
         ToolLoop(ollama, settings.max_tool_iterations), backend, retriever
     )
 
+    # Index de la circulaire ministérielle. Celui-ci EST préchargé, à l'inverse
+    # de l'index des cahiers, et l'écart est le point d'architecture à retenir :
+    # les cahiers sont des données d'établissement, dont le périmètre dépend du
+    # compte qui pose la question — les précharger exigerait un compte de service
+    # capable de lire les séances de tout le monde. La circulaire, elle, est un
+    # texte réglementaire public : rien à cloisonner, donc rien à attendre.
+    # Le corpus est lu ici : un fichier manquant doit se voir au démarrage.
+    consigne = ConsigneRetriever(
+        ollama,
+        settings.consigne_corpus_path,
+        top_k=settings.consigne_top_k,
+        plancher=settings.consigne_score_floor,
+        marge=settings.consigne_score_margin,
+        poids_lexical=settings.consigne_lexical_weight,
+        batch_size=settings.embedding_batch_size,
+    )
+
     state.update(
         prometheus=prometheus, actuator=actuator, ollama=ollama, backend=backend,
         metrics=metrics, assistant=assistant, planning=planning_assistant,
-        cahier=cahier_assistant,
+        cahier=cahier_assistant, consigne=consigne,
     )
 
     if settings.auth_enabled:
@@ -136,6 +154,15 @@ async def lifespan(app: FastAPI):
         "Modèle d'embedding    : %s (%s)",
         settings.embedding_model,
         await ollama.is_embedding_model_available(),
+    )
+    # Vectorisation du corpus consigne. Tolérante à l'échec : si le modèle
+    # d'embedding n'est pas encore chargé, l'index se construira à la première
+    # question. Faire échouer le démarrage rendrait indisponibles les routes de
+    # monitoring, qui n'ont rien à voir avec ce corpus.
+    logger.info(
+        "Corpus consigne       : %s articles indexés (%s au total)",
+        await consigne.prechauffer(),
+        len(consigne.articles),
     )
 
     yield

@@ -93,6 +93,32 @@ class Settings(BaseSettings):
     # se retrouve noyée dans trois séances qui n'ont fait que passer le plancher.
     rag_score_margin: float = 0.03
 
+    # ── RAG « consigne ministérielle » ──────────────────────────────────────
+    # Corpus statique et public : la circulaire n°66/2024 est le même texte pour
+    # tous les établissements. Un seul index partagé, chargé au démarrage, jamais
+    # invalidé — contrairement aux cahiers, il n'y a rien à cloisonner ni à
+    # rafraîchir. Chemin relatif à la racine du service.
+    consigne_corpus_path: str = "data/corpus-consigne-2024.md"
+    # 3 articles suffisent à ancrer une règle et tiennent dans le contexte du 7B
+    # à côté du catalogue DSL.
+    consigne_top_k: int = 3
+    # Plancher plus bas que celui des cahiers (0,63), et pour une raison
+    # mesurable : la circulaire est écrite dans une langue administrative que les
+    # questions d'un directeur ne reprennent jamais mot pour mot. Sur les 17
+    # questions de calibration, les pertinentes plafonnent à 0,633 au pire et les
+    # hors-sujet à 0,574 au mieux — 0,60 tombe dans l'écart.
+    consigne_score_floor: float = 0.60
+    # Marge plus large que celle des cahiers : ici on cherche à en citer deux ou
+    # trois quand plusieurs articles se répondent (I.2 et II.2, par exemple),
+    # pas à isoler la meilleure séance.
+    consigne_score_margin: float = 0.08
+    # Poids du canal lexical dans le score final (dense + λ·lexical). MESURÉ :
+    # 22 articles du même texte se ressemblent trop pour que le dense seul les
+    # départage — 6 bons articles en tête sur 12 sans lui, 9 avec. λ a un plateau
+    # entre 0,10 et 0,30, ce qui veut dire que le résultat ne tient pas à un
+    # réglage fin sur douze questions.
+    consigne_lexical_weight: float = 0.20
+
     # Rôles admis sur les routes du cahier de séance. Le périmètre réel (ses
     # propres séances ou tout l'établissement) est décidé par le BACKEND à partir
     # du compte : ce n'est pas une information que l'assistant choisit.
