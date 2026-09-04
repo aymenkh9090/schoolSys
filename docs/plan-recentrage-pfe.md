@@ -1,3 +1,4 @@
+
 # Plan de recentrage du PFE — SmartSchool
 
 > **Contexte.** L'encadreur académique juge le projet trop large et trop
@@ -17,6 +18,22 @@
 > **Point d'arrêt : vendredi 4 septembre, après-midi.** Dépôt propre, rien en
 > cours, `mvn` et `pytest` verts, `main` poussé sur `origin`.
 > `main` = **05e6546**.
+
+### Le § 6 est terminé. Le mobile tourne sur téléphone.
+
+Application Expo, six écrans, quatre onglets. L'enseignant y retrouve ses cours
+du jour, fait l'appel en un tap par exception, remplit son cahier de séance,
+consulte sa semaine et ses classes, et interroge l'assistant — soit sur ses
+propres cahiers, soit sur un cours PDF qu'il joint.
+
+**Le blocage annoncé au § 6.2 n'était pas celui qu'on croyait.** Ce n'est pas
+CORS — une application native n'y est pas soumise — mais **l'émetteur du jeton**.
+Keycloak en `start-dev` le construit depuis l'en-tête `Host` : un jeton demandé
+depuis le téléphone porte `http://<ip>:8081/…` là où l'API attend
+`http://localhost:8081/…`. Résultat : connexion réussie, **401 sur tous les
+écrans**, sans rien qui explique pourquoi. `docker-compose.mobile.yml` fixe
+`KC_HOSTNAME` ; `application.yml` externalise `issuer-uri` et `server-url`, avec
+`localhost` par défaut — le web n'est pas touché.
 
 ### Le § 5 est terminé.
 
@@ -106,34 +123,55 @@ intuition, et chacune est consignée dans le code à l'endroit qu'elle concerne.
 > rend le tout vérifiable ; l'humain confirme. Une règle fausse est refusée, pas
 > appliquée. »*
 
+### Ce que le mobile a apporté, chiffré
+
+- chaîne complète vérifiée en HTTP depuis l'IP du réseau local, **onze étapes** :
+  jeton → fiche enseignant → emploi du temps publié → ouverture de l'appel
+  (**31 lignes, toutes `PRESENT`**) → changements de statut → refus **400** d'une
+  exclusion sans raison → cahier → assistant ;
+- **préparation de cours** : dépôt d'un PDF de 2 pages, puis explication d'un
+  passage en **27 s**, QCM de 4 questions avec corrigé en **28 s** ;
+- **192 tests Python verts** (175 auparavant), 1 `xfail` documenté ;
+- vitesse mesurée du modèle : **26,9 jetons/s** sur `qwen2.5:7b`, 56,1 sur le 3B.
+  C'est ce chiffre qui a permis de dimensionner la génération sans essais.
+
+### Trois pièges rencontrés, tous consignés dans le code
+
+Ils valent d'être racontés : chacun se présentait sous un symptôme qui désignait
+le mauvais coupable.
+
+1. **L'émetteur du jeton** (ci-dessus) : ressemble à une panne d'authentification,
+   se corrige dans la configuration de Keycloak.
+2. **`Unsupported FormDataPart implementation`** : depuis le SDK 52, Expo
+   remplace le `fetch` global et **n'accepte plus** la forme
+   `{ uri, name, type }`, pourtant la forme documentée partout pour React
+   Native. L'échec a lieu **avant tout envoi réseau** — la trace serveur reste
+   vide, et le symptôme ressemble à un serveur injoignable.
+3. **`missing read permission`** : `expo-document-picker` écrit sa copie dans un
+   cache partagé par toutes les expériences d'Expo Go, qu'`expo-file-system`
+   n'a pas le droit de lire. La sortie n'est pas d'élargir la permission mais de
+   supprimer la frontière — c'est désormais `expo-file-system` qui ouvre le
+   sélecteur.
+
 ### À reprendre, dans cet ordre
 
-1. **§6 — mobile React Native. Point de non-retour dimanche 14 h**, plan B au §6.3.
-   C'est le seul chantier qui reste et le seul qui puisse échouer : le commencer
-   avant tout le reste, pour que la décision de samedi soir se prenne sur du
-   code qui tourne et non sur une estimation.
-2. **§7.3 — SonarCloud**, 3 clics : importer le dépôt, méthode *GitHub Actions*,
-   secret `SONAR_TOKEN`. L'étape est déjà écrite dans le pipeline. À caser dans
-   une attente de build, ça ne mérite pas une plage à soi.
-3. **README** : il annonce 3 conteneurs, `docker compose` en lance **6**.
+1. **§7.3 — SonarCloud**, 3 clics : importer le dépôt, méthode *GitHub Actions*,
+   secret `SONAR_TOKEN`. L'étape est déjà écrite dans le pipeline.
+2. **README** : il annonce 3 conteneurs, `docker compose` en lance **6**.
+3. **Répétition de la démonstration**, téléphone en main, sur le réseau de la
+   salle si possible : c'est là que l'adresse du serveur change, et c'est
+   précisément pourquoi elle se saisit dans l'application.
 
-### Bloqué, et ça ne dépend pas du code
+### Le § 3.4 n'est plus bloqué
 
-La vérification de bout en bout du § 3.4 exige `KC_CLIENT_SECRET`, que seule la
-console Keycloak donne :
+`KC_CLIENT_SECRET` se lit par l'API d'administration de Keycloak, avec le
+`admin`/`admin` du `docker-compose` — la commande est dans `mobile/README.md`.
+L'API a démarré avec, profil `demo` :
 
-```bash
-export KC_CLIENT_SECRET="<secret du client smartschool-backend>"
-mvn spring-boot:run -pl smartschool-api -Dspring-boot.run.profiles=demo
-```
-
-- [ ] L'application démarre sans erreur Liquibase
-- [ ] Parcours : connexion → génération d'un emploi du temps → saisie d'un appel
-- [ ] L'onglet « Officielles » s'affiche et « Activer la règle » va au bout
-
-> **Fait ce matin en revanche** : `docker compose up -d` relance les **6**
-> conteneurs sains (`keycloak`, `keycloak-db`, `app-db`, `ai-assistant`,
-> `prometheus`, `grafana`). Le README n'en annonce que 3 — **à corriger**.
+- [x] L'application démarre **sans erreur Liquibase** (`liquibase.enabled: true`,
+      « Database is up to date »), **zéro `ERROR`** au démarrage
+- [x] Parcours d'appel complet, vérifié route par route depuis l'IP LAN
+- [ ] L'onglet « Officielles » et « Activer la règle » — à refaire depuis le web
 
 ### Points ouverts
 
@@ -151,6 +189,11 @@ mvn spring-boot:run -pl smartschool-api -Dspring-boot.run.profiles=demo
   - le chat ne nomme pas toujours les trois types d'établissement, et omet
     parfois la séance de quinzaine. **Aucune valeur fausse** — des
     incomplétudes, pas des erreurs.
+- **Le mobile n'a pas non plus d'infrastructure de test.** Le même arbitrage que
+  pour le front, et la même réponse : à deux jours du gel, une suite de tests
+  d'interface coûterait plus qu'elle ne protège. Ce qui est vérifié l'est
+  autrement — `tsc` en mode strict, construction du bundle Android à chaque
+  changement, et la chaîne HTTP éprouvée route par route.
 - Le front n'a **aucune infrastructure de test**. Le parseur de tableaux
   markdown a été vérifié en compilant le vrai composant avec rolldown ; en
   ajouter une à deux jours du gel serait le mauvais arbitrage.
@@ -627,7 +670,12 @@ Le socle était déjà là (`DslRuleBuilder`, `AssistantRuleModal`,
 
 ---
 
-## 6. Absence — application mobile React Native
+## 6. Absence — application mobile React Native — ✅ FAIT
+
+> **Livré, et plus large que le périmètre prévu** : six écrans au lieu de trois,
+> dont le planning de la semaine, les classes, et un assistant qui travaille sur
+> un cours PDF déposé. Les routes citées ci-dessous étaient approximatives ; les
+> vraies sont dans `mobile/README.md`. Le plan B du §6.3 n'a pas eu à servir.
 
 ### 6.1 Périmètre : trois écrans, pas un de plus
 
