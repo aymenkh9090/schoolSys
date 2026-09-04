@@ -12,6 +12,58 @@
 
 ---
 
+## 0. État d'avancement
+
+> **Point d'arrêt : vendredi 4 septembre, ~01 h 40.** Reprise vendredi matin.
+> Dépôt propre, tout est poussé, rien en cours.
+> `main` = `origin/main` = **7b9f9be**.
+
+### Fait
+
+| # | Étape | Preuve |
+|---|---|---|
+| — | Renommage des coordonnées Maven en `tn.schoolsys` / `schoolsys-*` | plus aucune collision `~/.m2` avec le projet copié |
+| §3.1 | Suppression des 4 modules backend (budget, pointage, audit, notification) | `mvn verify` vert, **562 tests, 0 échec** |
+| §3.3 | Nettoyage du front, 10 fichiers retouchés dont 5 tableaux de bord | `npm run build` vert, `oxlint` 0 erreur |
+| §7.1 | Dépôt git + push GitHub, secrets sortis du code | https://github.com/aymenkh9090/smartschool (privé) |
+| §7.2 | JaCoCo + module `coverage-report` | **29,7 %** de lignes agrégées (`planning` à 49,2 %) |
+| §7.4 | Dockerfiles backend et front (+ nginx SPA) | les 3 images construites en local **et** en CI |
+| §7.5 | Pipeline GitHub Actions, 4 jobs | [run #2 tout vert](https://github.com/aymenkh9090/smartschool/actions/runs/33824065706) |
+
+### À reprendre demain, dans cet ordre
+
+1. **§4 — le RAG consigne. C'est la contribution, et rien d'autre n'en dépend.**
+   Commencer par la transcription du corpus (~1 h 30) : c'est le seul travail
+   qui ne peut pas être parallélisé ni raccourci.
+2. §5 — les 4 retouches d'ergonomie du DSL (~2 h 30).
+3. §6 — le mobile React Native. **Point de non-retour dimanche 14 h**, plan B
+   documenté au §6.3.
+4. §7.3 — les 3 clics SonarCloud (importer le dépôt, méthode *GitHub Actions*,
+   secret `SONAR_TOKEN`). L'étape est déjà écrite dans le pipeline et
+   s'activera seule.
+
+### Deux vérifications non faites, à passer en premier demain
+
+Elles ne demandent que quelques minutes et conditionnent tout le reste :
+
+```bash
+# Le mot de passe de la base a changé (secret sorti du code) : base neuve.
+docker compose down -v && docker compose up -d
+mvn spring-boot:run -pl smartschool-api -Dspring-boot.run.profiles=demo
+```
+
+- [ ] L'application démarre sans erreur Liquibase
+- [ ] Parcours : connexion → génération d'un emploi du temps → saisie d'un appel
+
+### Points ouverts
+
+- `absence-business` est à **7,9 %** de couverture. C'est le module qui part en
+  mobile — si une heure se libère dimanche, c'est là qu'elle rapporte le plus.
+- Le Quality Gate SonarCloud sera **rouge** au premier passage. Attendu,
+  argumenté au §7.3 : le retourner en argument, pas le cacher.
+
+---
+
 ## 1. La décision de périmètre
 
 ### 1.1 Ce qu'on garde, et pourquoi c'est cohérent
