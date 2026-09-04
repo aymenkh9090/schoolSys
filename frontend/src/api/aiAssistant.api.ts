@@ -214,10 +214,39 @@ export interface ConsigneArticlesResponse {
   articles: ConsigneArticle[]
 }
 
+export interface ConsigneChatResponse {
+  answer: string
+  sources: ConsigneArticle[]
+  duration_ms: number
+}
+
 export const consigneApi = {
   /** Les 22 articles, dans l'ordre du document. Corpus statique : mis en cache long. */
   listArticles: () =>
     aiClient.get<ConsigneArticlesResponse>('/api/consigne/articles').then((r) => r.data),
+
+  /**
+   * Question libre sur la circulaire, adaptée au contrat de `AssistantChat`.
+   *
+   * Le composant partagé affiche les sources d'une réponse dans `tools_used` —
+   * c'est l'emplacement prévu pour « sur quoi cette réponse s'appuie », et les
+   * citations d'articles sont exactement cela. L'adaptation se fait donc ici
+   * plutôt qu'en dupliquant une interface de conversation qui a déjà coûté cher
+   * à mettre au point pour les deux autres assistants.
+   *
+   * La borne de temps est plus courte que celle des autres : ce service n'a pas
+   * de boucle d'outils, donc au plus une génération. Mesuré entre 1 et 7 s avec
+   * articles, et environ 100 ms quand la circulaire ne couvre pas la question —
+   * le modèle n'est alors pas appelé du tout.
+   */
+  ask: (message: string): Promise<ChatResponse> =>
+    aiClient
+      .post<ConsigneChatResponse>('/api/consigne/chat', { message }, { timeout: 90_000 })
+      .then((r) => ({
+        answer: r.data.answer,
+        tools_used: r.data.sources.map((s) => `§ ${s.id} · p. ${s.page}`),
+        duration_ms: r.data.duration_ms,
+      })),
 }
 
 // ── Assistant Cahier de séance ──────────────────────────────────────────────

@@ -25,6 +25,8 @@ from app.config import get_settings
 from app.models import (
     CahierChatRequest,
     ConsigneArticlesResponse,
+    ConsigneChatRequest,
+    ConsigneChatResponse,
     ChatRequest,
     ChatResponse,
     ConstraintConfirmRequest,
@@ -38,6 +40,7 @@ from app.services.cahier_assistant import CahierAssistantService
 from app.services.dsl_translator import DslTranslator
 from app.services.metrics import MetricsService
 from app.services.planning_assistant import PlanningAssistantService
+from app.services.consigne_assistant import ConsigneAssistantService
 from app.services.consigne_retrieval import ConsigneRetriever
 from app.services.retrieval import CahierIndexStore, CahierRetriever
 from app.tools.handlers import ToolHandlers
@@ -139,10 +142,16 @@ async def lifespan(app: FastAPI):
     )
 
 
+    # Pas de ToolLoop pour la circulaire, contrairement aux trois autres
+    # assistants : une seule opération, toujours nécessaire. Laisser le modèle
+    # décider s'il cherche n'ajouterait qu'une décision qu'il peut rater.
+    consigne_assistant = ConsigneAssistantService(ollama, consigne)
+
     state.update(
         prometheus=prometheus, actuator=actuator, ollama=ollama, backend=backend,
         metrics=metrics, assistant=assistant, planning=planning_assistant,
         cahier=cahier_assistant, consigne=consigne,
+        consigne_assistant=consigne_assistant,
     )
 
     if settings.auth_enabled:
@@ -390,6 +399,23 @@ async def consigne_articles(user: AuthenticatedUser = Depends(require_planning_u
         reference="Circulaire n°66 du 04/09/2024 — ministère de l'Éducation (Tunisie)",
         articles=[a.to_dict() for a in consigne.articles],
     )
+
+
+@app.post("/api/consigne/chat", response_model=ConsigneChatResponse, tags=["consigne"])
+async def consigne_chat(
+    request: ConsigneChatRequest,
+    user: AuthenticatedUser = Depends(require_planning_user),
+):
+    """
+    Question en langage naturel sur la circulaire. Lecture seule.
+
+    La recherche a toujours lieu, avant la génération : le modèle ne peut
+    reformuler que les articles qu'on lui a donnés. Et quand la recherche ne
+    rend rien, il n'est pas appelé du tout — pas de génération, donc pas
+    d'invention, et une réponse immédiate.
+    """
+    logger.info("Question Consigne de %s : %r", user.username, request.message)
+    return await state["consigne_assistant"].ask(request.message)
 
 
 # ── Cahier de séance (protégé — enseignant ou direction) ────────────────────

@@ -456,21 +456,21 @@ découpage des séances. Notation expliquée au § N.1.
 
 | Matière | 7ᵉ année | 8ᵉ année | 9ᵉ année |
 |---|---|---|---|
-| Arabe | 2+1+1+1 | 2+1+1+1 | 2+1+1+1 |
-| Français | 2+1+1+① | 2+1+1+① | 2+1+1+1 |
-| Anglais | (2)+1+1 | (2)+1+1 | (2)+1+1 |
-| Histoire-géographie | 1+1 | 1+1 | 1+1 |
-| Éducation islamique | ①+1 | ①+1 | ①+1 |
-| Éducation civique | ①+1 | ①+1 | ①+1 |
-| Mathématiques | 1+1+1+1 | 1+1+1+1 | 1+1+1+1 |
-| Sciences physiques | ①+(2) | ①+(2) | ①+(2) |
-| Sciences de la vie et de la Terre | ①+(2) | ①+(2) | ①+(2) |
-| Informatique | (2) | (2) | (2) |
-| Éducation technologique | (3) | (2) | (2) |
-| Éducation musicale | 1 | 1 | 1 |
-| Arts plastiques | 1 | 1 | 1 |
-| Éducation théâtrale (*) | (2) | (2) | (2) |
-| Éducation physique | 2+1 | 2+1 | 2+1 |
+| Arabe | 2+1+1+1 · 5 h | 2+1+1+1 · 5 h | 2+1+1+1 · 5 h |
+| Français | 2+1+1+① · 4 h + quinzaine | 2+1+1+① · 4 h + quinzaine | 2+1+1+1 · 5 h |
+| Anglais | (2)+1+1 · 4 h | (2)+1+1 · 4 h | (2)+1+1 · 4 h |
+| Histoire-géographie | 1+1 · 2 h | 1+1 · 2 h | 1+1 · 2 h |
+| Éducation islamique | ①+1 · 1 h + quinzaine | ①+1 · 1 h + quinzaine | ①+1 · 1 h + quinzaine |
+| Éducation civique | ①+1 · 1 h + quinzaine | ①+1 · 1 h + quinzaine | ①+1 · 1 h + quinzaine |
+| Mathématiques | 1+1+1+1 · 4 h | 1+1+1+1 · 4 h | 1+1+1+1 · 4 h |
+| Sciences physiques | ①+(2) · 2 h + quinzaine | ①+(2) · 2 h + quinzaine | ①+(2) · 2 h + quinzaine |
+| Sciences de la vie et de la Terre | ①+(2) · 2 h + quinzaine | ①+(2) · 2 h + quinzaine | ①+(2) · 2 h + quinzaine |
+| Informatique | (2) · 2 h | (2) · 2 h | (2) · 2 h |
+| Éducation technologique | (3) · 3 h | (2) · 2 h | (2) · 2 h |
+| Éducation musicale | 1 · 1 h | 1 · 1 h | 1 · 1 h |
+| Arts plastiques | 1 · 1 h | 1 · 1 h | 1 · 1 h |
+| Éducation théâtrale (*) | (2) · 2 h | (2) · 2 h | (2) · 2 h |
+| Éducation physique | 2+1 · 3 h | 2+1 · 3 h | 2+1 · 3 h |
 
 Trois lectures utiles pour la construction de l'emploi du temps :
 
@@ -481,6 +481,19 @@ Trois lectures utiles pour la construction de l'emploi du temps :
   éducation civique dont la séance `①` est bimensuelle.
 - **Éducation physique** — `2+1` correspond exactement au second découpage
   autorisé par le § III.2.b, avec les 24 h de séparation.
+
+> **Les totaux « · N h » ne figurent pas dans la circulaire.** Ils sont calculés
+> par nous à partir de la notation, et versionnés avec le corpus pour
+> une raison précise : un modèle de 7 milliards de paramètres additionne mal.
+> Mesuré — interrogé sur « combien d'heures d'arabe en 7ᵉ », il répondait « 4 »
+> pour `2+1+1+1`, en comptant les séances au lieu de sommer les heures, et
+> quatre reformulations du prompt n'y ont rien changé. Un total se lit, il ne
+> s'estime pas. Il est inscrit DANS la cellule, à côté de sa notation, et non
+> dans une colonne de synthèse : une colonne obligeait encore à choisir la bonne
+> valeur parmi trois niveaux, et le modèle choisissait mal. Les séances de
+> quinzaine (`①`) restent hors du total plutôt que comptées pour une
+> demi-heure : « 4 h + quinzaine » est ce qu'un directeur inscrit à son emploi
+> du temps.
 
 **Source** — Circulaire n°66 du 04/09/2024, p. 5 (guide, page 4/2)
 
@@ -551,21 +564,21 @@ hebdomadaires et découpage des séances. Notation au § N.1.
 
 | Matière | 7ᵉ année | 8ᵉ année | 9ᵉ année |
 |---|---|---|---|
-| Arabe | 2+1+1+1 | 2+1+1+1 | 2+1+1+1 |
-| Français | 2+1+1+1 | 2+1+1+1 | 2+1+1+1 |
-| Anglais | (2)+1+1+1 | (2)+1+1+1 | (2)+1+1+1 |
-| Histoire-géographie | 1+1 | 1+1 | 1+1 |
-| Éducation islamique | ①+1 | ①+1 | ①+1 |
-| Éducation civique | ①+1 | ①+1 | ①+1 |
-| Mathématiques | 1+1+1+1+1 | 1+1+1+1+1 | 1+1+1+1+1 |
-| Sciences physiques | ①+(2) | ①+(2) | ①+(2) |
-| Sciences de la vie et de la Terre | ①+(2) | ①+(2) | ①+(2) |
-| Informatique | (2) | (2) | (2) |
-| Éducation technologique | (3) | (2) | (2) |
-| Éducation physique | 2+1 | 2+1 | 2+1 |
-| Éducation musicale | 1 | 1 | 1 |
-| Arts plastiques | 1 | 1 | 1 |
-| Éducation théâtrale | (2) | (2) | (2) |
+| Arabe | 2+1+1+1 · 5 h | 2+1+1+1 · 5 h | 2+1+1+1 · 5 h |
+| Français | 2+1+1+1 · 5 h | 2+1+1+1 · 5 h | 2+1+1+1 · 5 h |
+| Anglais | (2)+1+1+1 · 5 h | (2)+1+1+1 · 5 h | (2)+1+1+1 · 5 h |
+| Histoire-géographie | 1+1 · 2 h | 1+1 · 2 h | 1+1 · 2 h |
+| Éducation islamique | ①+1 · 1 h + quinzaine | ①+1 · 1 h + quinzaine | ①+1 · 1 h + quinzaine |
+| Éducation civique | ①+1 · 1 h + quinzaine | ①+1 · 1 h + quinzaine | ①+1 · 1 h + quinzaine |
+| Mathématiques | 1+1+1+1+1 · 5 h | 1+1+1+1+1 · 5 h | 1+1+1+1+1 · 5 h |
+| Sciences physiques | ①+(2) · 2 h + quinzaine | ①+(2) · 2 h + quinzaine | ①+(2) · 2 h + quinzaine |
+| Sciences de la vie et de la Terre | ①+(2) · 2 h + quinzaine | ①+(2) · 2 h + quinzaine | ①+(2) · 2 h + quinzaine |
+| Informatique | (2) · 2 h | (2) · 2 h | (2) · 2 h |
+| Éducation technologique | (3) · 3 h | (2) · 2 h | (2) · 2 h |
+| Éducation physique | 2+1 · 3 h | 2+1 · 3 h | 2+1 · 3 h |
+| Éducation musicale | 1 · 1 h | 1 · 1 h | 1 · 1 h |
+| Arts plastiques | 1 · 1 h | 1 · 1 h | 1 · 1 h |
+| Éducation théâtrale | (2) · 2 h | (2) · 2 h | (2) · 2 h |
 
 Écarts avec le collège ordinaire (§ T.1), qui sont exactement ce qui distingue
 un collège pilote :
@@ -577,5 +590,18 @@ un collège pilote :
 - **Anglais : 4 h au lieu de 3.**
 - **Éducation théâtrale sans la restriction `(*)`** : elle est assurée dans tous
   les collèges pilotes.
+
+> **Les totaux « · N h » ne figurent pas dans la circulaire.** Ils sont calculés
+> par nous à partir de la notation, et versionnés avec le corpus pour
+> une raison précise : un modèle de 7 milliards de paramètres additionne mal.
+> Mesuré — interrogé sur « combien d'heures d'arabe en 7ᵉ », il répondait « 4 »
+> pour `2+1+1+1`, en comptant les séances au lieu de sommer les heures, et
+> quatre reformulations du prompt n'y ont rien changé. Un total se lit, il ne
+> s'estime pas. Il est inscrit DANS la cellule, à côté de sa notation, et non
+> dans une colonne de synthèse : une colonne obligeait encore à choisir la bonne
+> valeur parmi trois niveaux, et le modèle choisissait mal. Les séances de
+> quinzaine (`①`) restent hors du total plutôt que comptées pour une
+> demi-heure : « 4 h + quinzaine » est ce qu'un directeur inscrit à son emploi
+> du temps.
 
 **Source** — Circulaire n°66 du 04/09/2024, p. 7 (guide, page 4/4)

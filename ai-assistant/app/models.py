@@ -176,6 +176,37 @@ class ConsigneArticle(BaseModel):
     citation: str
 
 
+class ConsigneChatRequest(BaseModel):
+    """
+    Question libre sur la circulaire.
+
+    Aucun identifiant d'établissement : la circulaire est un texte national,
+    identique pour tous. Un champ de périmètre laisserait croire à un
+    cloisonnement qui n'existe pas et n'aurait rien à filtrer.
+    """
+
+    message: str = Field(..., min_length=1, max_length=500)
+
+
+class ConsigneChatResponse(BaseModel):
+    """
+    Une réponse rédigée, et les articles sur lesquels elle s'appuie.
+
+    Les sources ne sont pas décoratives : elles sont ce qui permet à
+    l'utilisateur de ne pas croire le modèle sur parole. Elles sont rendues même
+    quand la rédaction échoue — le RAG a fait son travail, et un extrait cité
+    vaut mieux qu'un message d'erreur seul.
+
+    Pas de champ `tools_used` comme dans `ChatResponse` : ce service n'a pas
+    d'outils. La recherche a toujours lieu, avant la génération, et il n'y a
+    donc rien à déclarer que `sources` ne dise déjà mieux.
+    """
+
+    answer: str
+    sources: list[ConsigneArticle] = []
+    duration_ms: int
+
+
 class ConsigneArticlesResponse(BaseModel):
     """
     Le corpus entier, en une fois.

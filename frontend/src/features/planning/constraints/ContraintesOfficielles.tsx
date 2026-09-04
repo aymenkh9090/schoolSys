@@ -8,6 +8,7 @@ import { consigneApi, type ConsigneArticle } from '@/api/aiAssistant.api'
 import type { DslScope, DslSeverity } from '@/api/planning.api'
 import { cn } from '@/lib/utils'
 import { SCOPE_LABELS, SEVERITY_LABELS, SEVERITY_VARIANTS } from './dslLabels'
+import { ConsigneAssistantChat } from './ConsigneAssistantChat'
 
 interface Props {
   /** Ouvre l'assistant pré-rempli avec le texte de l'article. */
@@ -96,6 +97,12 @@ export function ContraintesOfficielles({ onActivate }: Props) {
           </div>
         </div>
       </header>
+
+      {/* La question libre vient AVANT la liste, et c'est le bon ordre : un
+          directeur arrive avec une question précise (« combien d'heures d'arabe
+          en 7ᵉ ? »), pas avec l'envie de parcourir vingt-deux articles. La liste
+          reste dessous pour qui veut lire le texte, ou activer une règle. */}
+      <ConsigneAssistantChat />
 
       {groupes.map(({ section, articles }) => (
         <section key={section} className="space-y-3">
