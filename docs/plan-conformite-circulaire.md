@@ -24,7 +24,7 @@
 | C — Les deux contraintes dures manquantes | **fait** — `RESPECT_OFFICIAL_SUBJECT_HOURS` et `PHYSICAL_EDUCATION_THREE_SESSIONS` câblées, 13 tests ; `NON_CABLEES` tombe de 9 à 7 |
 | D — Règles de la circulaire absentes | **fait** — 5 règles créées, 1 corrigée, 1 réveillée ; 37 tests ; `NON_CABLEES` tombe de 7 à 6 |
 | E — Validation métier post-solve | **fait** — `TimetableBusinessValidator`, 14 contrôles, verrou sur `SOLVED`, rapport archivé ; 33 tests |
-| F — Correction de la consécutivité | à faire |
+| F — Correction de la consécutivité | **fait** — mesurée sur les créneaux contigus, parité comprise ; 14 tests |
 
 ### Ce que l'étape D a livré
 
@@ -108,37 +108,71 @@ Côté interface, `ScoreExplanationPanel` gagne une section « Vérification mé
 placée **avant** les violations Timefold : ce qu'elle reproche est vrai quelles
 que soient les règles activées.
 
+### Ce que l'étape F a livré
+
+`MAX_TWO_CONSECUTIVE_SESSIONS_SAME_SUBJECT` comptait les séances de la matière
+**dans la journée**, sans regarder où elles tombaient. Deux heures de
+mathématiques à 8 h et à 16 h passaient donc pour consécutives, et trois heures
+d'affilée coupées par une heure d'anglais ne l'étaient pas. Elle mesurait la
+concentration — que `AVOID_SUBJECT_CONCENTRATION_SAME_DAY` mesurait déjà, avec le
+même `groupBy`, en SOFT.
+
+Elle mesure désormais la plus longue suite de séances **contiguës**, avec trois
+précisions qui comptent :
+
+- **Le groupement va jusqu'à la demi-journée**, pas seulement au jour : la
+  dernière heure de la matinée et la première de l'après-midi ne s'enchaînent
+  pas, la pause du § I.3 les sépare.
+- **La durée réelle des séances est lue.** Une séance de deux heures occupe
+  quatre créneaux ; la suivante s'y enchaîne au cinquième. Compter les séances
+  sans lire leur durée rompait la suite à tort.
+- **La parité de semaine est évaluée à part**, semaine impaire puis semaine
+  paire, en retenant la pire. Une quinzaine ne prolonge une suite que les
+  semaines où elle a lieu.
+
+Ce dernier point mérite d'être noté : c'est le traitement que la dette
+`noStudentIdleGaps` réclame, appliqué ici pour la première fois. Il servira de
+modèle quand on la reprendra.
+
+Le libellé du catalogue — « Éviter plus de deux séances consécutives de la même
+matière » — n'a pas bougé : **il décrivait déjà le comportement attendu**. C'est
+le code qui en avait dévié, pas la spécification. Aucune migration n'était donc
+nécessaire.
+
+**Les deux contraintes ne se recouvrent plus.** Une matière donnée deux fois le
+matin et deux fois l'après-midi concentre sans enchaîner ; quatre heures
+d'affilée enchaînent sans concentrer davantage. Elles restent toutes deux au
+catalogue, et disent maintenant deux choses différentes.
+
 ### Où reprendre
 
-**Prochaine action : étape F — consécutivité.** Réécrire
-`MAX_TWO_CONSECUTIVE_SESSIONS` sur les `orderIndex` contigus, ou la supprimer si
-`AVOID_SUBJECT_CONCENTRATION_SAME_DAY` suffit : les deux ont aujourd'hui le même
-`groupBy` et comptent les séances du même jour, pas les séances contiguës (P6).
-C'est la dernière étape du plan, et la moins lourde.
+**Les six étapes du plan sont faites.** Ce qui reste n'est plus du rattrapage
+mais des décisions et de la dette identifiée.
 
-**Points ouverts à trancher :**
+**Points ouverts, par ordre d'urgence :**
 
-1. **`COLLEGE_*_OFFICIEL` : T.1 ou T.3 ?** Le seed donne MATH 6 h et EN 5 h en
-   `2+1+1+1`. Le § T.1 (collège) dit MATH 4 h et EN `(2)+1+1` 4 h ; le § T.3
-   (pilote) dit MATH 5 h et EN `(2)+1+1+1` 5 h. Six heures de mathématiques ne
-   correspondent à aucun des deux, et la séance de groupe de l'anglais a
-   disparu dans les deux cas. Ramener MATH à 4 h retire des heures à toutes les
-   classes : **décision non prise**. Ce point devient plus pressant depuis
-   l'étape E : le contrôle `VOLUME_HORAIRE` est bloquant, et il compare aux
-   volumes tels qu'ils sont en base.
-2. **Mesure des 24 h du § III.2.b** — de début à début, hypothèse **retenue et
-   implémentée** ; c'est la lecture stricte. À confirmer auprès de
-   l'établissement.
+1. **`COLLEGE_*_OFFICIEL` : T.1 ou T.3 ?** — **bloquant en pratique depuis
+   l'étape E.** Le seed donne MATH 6 h et EN 5 h en `2+1+1+1`. Le § T.1 (collège)
+   dit MATH 4 h et EN `(2)+1+1` 4 h ; le § T.3 (pilote) dit MATH 5 h et EN
+   `(2)+1+1+1` 5 h. Six heures de mathématiques ne correspondent à aucun des
+   deux, et la séance de groupe de l'anglais a disparu dans les deux cas. Le
+   contrôle `VOLUME_HORAIRE` étant bloquant et comparant aux volumes tels qu'ils
+   sont en base, les générations de l'établissement 28 seront refusées sur ce
+   point tant que la décision n'est pas prise. Ramener MATH à 4 h retire des
+   heures à toutes les classes : **décision non prise**.
+2. **Mesure des 24 h du § III.2.b** — de début à début, hypothèse retenue et
+   implémentée ; c'est la lecture stricte. À confirmer auprès de l'établissement.
 3. **Alternance des quinzaines** — `LessonGenerator.mapWeekParity()`, hypothèse
    retenue (§ 1.6, point 6).
 
 **Dette identifiée, non traitée :** `noStudentIdleGaps` (§ I.5) regroupe les
 séances sans regarder la parité de semaine. Une séance de quinzaine y crée donc
-un trou la semaine où elle n'a pas lieu, ou en masque un. La compacité devrait
-s'évaluer semaine impaire et semaine paire séparément.
-**`MIN_STUDENT_HOURS_PER_HALF_DAY` hérite exactement du même angle mort** : une
+un trou la semaine où elle n'a pas lieu, ou en masque un.
+`MIN_STUDENT_HOURS_PER_HALF_DAY` hérite exactement du même angle mort : une
 demi-journée dont l'unique séance est de quinzaine paraît occupée les deux
-semaines. Les deux contraintes se corrigeront ensemble.
+semaines. Les deux se corrigeront ensemble, sur le modèle de
+`plusLongueSuite()` — évaluer semaine impaire et semaine paire séparément et
+retenir la pire.
 
 **Restant dans `NON_CABLEES`** (6 codes) : les 3 SOFT jamais implémentées
 (`BALANCED_TEACHER_WORKLOAD`, `MAIN_SUBJECT_BALANCED_DISTRIBUTION`,
@@ -146,10 +180,16 @@ semaines. Les deux contraintes se corrigeront ensemble.
 pilotables depuis l'interface (`NO_STUDENT_IDLE_GAPS`, `SPECIAL_ROOM_REQUIRED`,
 `SPECIAL_ROOM_NO_OVERLAP`). **Aucune des trois premières ne figure dans la
 circulaire** — ce sont des préférences de confort ajoutées par anticipation.
-C'est ce qui explique qu'elles survivent à l'étape D, et pourquoi la liste ne se
-videra pas d'elle-même.
+C'est pourquoi la liste ne se videra pas d'elle-même : il faudra soit les écrire,
+soit les retirer du catalogue.
 
-**État des tests :** `smartschool-planning` 330, `smartschool-api` 5,
+**Articles de la circulaire encore sans implémentation** : § I.3 (séparation de
+midi, seulement implicite), § II.1 (aucune source ne peuple les jours de
+formation), § II.2 (« répartition équilibrée » que le texte ne chiffre pas,
+§ 1.6 point 4), § II.3 (écrit comme un plafond journalier et non comme une
+dérogation) et § III.1.
+
+**État des tests :** `smartschool-planning` 344, `smartschool-api` 5,
 `organisation-business` 300, `absence-business` 10, `tenant-business` 19 —
 **0 échec**. Le front compile.
 
@@ -341,12 +381,15 @@ Restent absentes : le § I.3 (séparation de midi, seulement implicite), le § I
 équilibrée » que la circulaire ne chiffre pas, § 1.6 point 4), le § II.3 (écrit
 comme un plafond et non comme une dérogation) et le § III.1.
 
-### P6 — `MAX_TWO_CONSECUTIVE_SESSIONS` ne mesure pas la consécutivité
+### P6 — `MAX_TWO_CONSECUTIVE_SESSIONS` ne mesure pas la consécutivité — **corrigé**
 
-Elle compte les séances **du même jour**, pas les séances **contiguës**. Deux
-séances à 8 h et 16 h comptent comme consécutives ; trois d'affilée séparées par
-une autre matière ne comptent pas. Doublon de fait avec
-`AVOID_SUBJECT_CONCENTRATION_SAME_DAY`, qui a le même `groupBy`.
+> **Corrigé à l'étape F.** Elle comptait les séances **du même jour**, pas les
+> séances **contiguës** : deux séances à 8 h et 16 h comptaient comme
+> consécutives, trois d'affilée séparées par une autre matière ne comptaient pas.
+> Doublon de fait avec `AVOID_SUBJECT_CONCENTRATION_SAME_DAY`, qui avait le même
+> `groupBy`. Elle mesure désormais la plus longue suite de créneaux contigus, par
+> demi-journée, durées réelles lues et parité de semaine évaluée à part. Les deux
+> contraintes disent maintenant deux choses différentes.
 
 ### P7 — Aucune validation métier du planning produit — **corrigé**
 
@@ -443,9 +486,14 @@ archivé sur le job (migration 015) et affiché dans le panneau d'explication.
 Couverture : `TimetableBusinessValidatorTest`, 28 tests, plus 5 sur le verrou
 lui-même dans `TimetableSolverServicePersistResultTest`.
 
-### Étape F — Consécutivité
+### Étape F — Consécutivité — **faite**
 Réécrire `MAX_TWO_CONSECUTIVE_SESSIONS` sur les `orderIndex` contigus, ou la
 supprimer si `AVOID_SUBJECT_CONCENTRATION_SAME_DAY` suffit.
+
+Réécrite, et gardée : une fois la consécutivité réellement mesurée, les deux
+contraintes ne disent plus la même chose. Groupement à la demi-journée, durées
+réelles lues, parité de semaine évaluée séparément.
+Couverture : `ConsecutiviteConstraintTest`, 14 tests.
 
 ---
 

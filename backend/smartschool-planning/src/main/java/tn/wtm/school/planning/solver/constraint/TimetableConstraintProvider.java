@@ -12,6 +12,7 @@ import tn.wtm.school.planning.constraints.dsl.enums.DslAction;
 import tn.wtm.school.planning.constraints.dsl.enums.DslSeverity;
 import tn.wtm.school.planning.solver.domain.Lesson;
 import tn.wtm.school.planning.solver.enums.SessionType;
+import tn.wtm.school.planning.solver.enums.WeekParity;
 
 import java.time.DayOfWeek;
 import java.util.Objects;
@@ -301,20 +302,49 @@ public class TimetableConstraintProvider implements ConstraintProvider {
                 .asConstraint(ONE_TEACHER_PER_SUBJECT_PER_CLASS);
     }
 
-    // Maximum N séances consécutives de la même matière dans la même journée pour une classe
+    /**
+     * Pas plus de N séances d'affilée dans la même matière — la consécutivité
+     * mesurée pour ce qu'elle est.
+     *
+     * <p><b>Ce qu'elle comptait avant.</b> Le nombre de séances de la matière
+     * <em>dans la journée</em>, sans regarder où elles tombaient. Deux heures de
+     * mathématiques à 8 h et à 16 h étaient donc comptées « consécutives », et
+     * trois heures d'affilée séparées par une récréation d'anglais ne l'étaient
+     * pas. Elle mesurait la concentration, pas la consécutivité — et faisait
+     * doublon avec {@code AVOID_SUBJECT_CONCENTRATION_SAME_DAY}, qui la mesure
+     * déjà, avec le même {@code groupBy}, en SOFT.
+     *
+     * <p>Les deux contraintes ne se recouvrent plus : celle-ci regarde la plus
+     * longue suite de séances contiguës, l'autre le total de la journée. Une
+     * matière donnée deux fois le matin et deux fois l'après-midi concentre sans
+     * enchaîner ; quatre heures d'affilée enchaînent sans plus concentrer.
+     *
+     * <p><b>Le groupement va jusqu'à la demi-journée</b>, et pas seulement au
+     * jour : la dernière heure de la matinée et la première de l'après-midi ne
+     * s'enchaînent pas, la pause du § I.3 les sépare. Les rattacher au même
+     * groupe reviendrait à compter une suite là où l'élève a déjeuné.
+     *
+     * <p><b>La parité de semaine est évaluée à part</b>, semaine impaire puis
+     * semaine paire : une quinzaine ne prolonge pas une suite les semaines où
+     * elle n'a pas lieu. C'est le traitement que {@code noStudentIdleGaps}
+     * devrait recevoir aussi — il ne l'a pas encore, et c'est une dette connue.
+     */
     private Constraint maxConsecutiveSameSessions(ConstraintFactory f) {
         return f.forEach(Lesson.class)
-                .filter(l -> l.getTimeSlot() != null && l.getGroupIndex() == 0)
+                .filter(l -> l.getTimeSlot() != null && l.getGroupIndex() != 2
+                        && l.getTimeSlot().getOrderIndex() != null)
                 .groupBy(
                         l -> l.getStudentClassName() + "|" + l.getSubjectCode()
-                                + "|" + l.getTimeSlot().getDay(),
-                        ConstraintCollectors.count())
+                                + "|" + l.getTimeSlot().getDay()
+                                + "|" + l.getTimeSlot().getPeriod(),
+                        ConstraintCollectors.toList())
                 .join(ActiveConstraintParam.class,
-                        Joiners.equal((key, cnt) -> MAX_TWO_CONSECUTIVE_SESSIONS,
+                        Joiners.equal((cle, seances) -> MAX_TWO_CONSECUTIVE_SESSIONS,
                                 ActiveConstraintParam::getCode))
-                .filter((key, cnt, p) -> p.getIntParam() > 0 && cnt > p.getIntParam())
+                .filter((cle, seances, p) -> p.getIntParam() > 0
+                        && plusLongueSuite(seances) > p.getIntParam())
                 .penalize(HardMediumSoftScore.ONE_HARD,
-                        (key, cnt, p) -> cnt - p.getIntParam())
+                        (cle, seances, p) -> plusLongueSuite(seances) - p.getIntParam())
                 .asConstraint(MAX_TWO_CONSECUTIVE_SESSIONS);
     }
 
@@ -890,5 +920,53 @@ public class TimetableConstraintProvider implements ConstraintProvider {
     /** Nombre de niveaux exigé par le § II.5 — deux sauf réglage contraire. */
     private static int niveauxExiges(ActiveConstraintParam p) {
         return p.getInt("minLevels", p.getIntParam() > 0 ? p.getIntParam() : 2);
+    }
+
+    /**
+     * La plus longue suite de séances qui s'enchaînent réellement, toutes
+     * semaines confondues.
+     *
+     * <p>Évaluée deux fois — pour la semaine impaire, pour la semaine paire — et
+     * on retient la pire. Une séance de quinzaine ne prolonge une suite que les
+     * semaines où elle a lieu ; la compter toujours inventerait un enchaînement
+     * que l'élève ne vit jamais, et ne jamais la compter en masquerait un vrai.
+     */
+    private static int plusLongueSuite(java.util.List<Lesson> seances) {
+        return Math.max(
+                suiteDeLaSemaine(seances, WeekParity.ODD),
+                suiteDeLaSemaine(seances, WeekParity.EVEN));
+    }
+
+    /**
+     * La plus longue suite parmi les seules séances qui ont lieu cette
+     * semaine-là.
+     *
+     * <p>Deux séances s'enchaînent quand la seconde commence là où la première
+     * s'arrête. Le {@code <=} plutôt qu'un {@code ==} traite un chevauchement
+     * comme une suite : deux séances qui se superposent sont déjà une violation
+     * dure ({@code classConflict}), et rompre la suite à cet endroit ferait
+     * disparaître la seconde violation derrière la première.
+     */
+    private static int suiteDeLaSemaine(java.util.List<Lesson> seances, WeekParity semaine) {
+        java.util.List<Lesson> deLaSemaine = seances.stream()
+                .filter(l -> l.getWeekParity() == null
+                        || l.getWeekParity() == WeekParity.ALL
+                        || l.getWeekParity() == semaine)
+                .sorted(java.util.Comparator.comparingInt(l -> l.getTimeSlot().getOrderIndex()))
+                .toList();
+        if (deLaSemaine.isEmpty()) {
+            return 0;
+        }
+        int record = 1;
+        int courante = 1;
+        for (int i = 1; i < deLaSemaine.size(); i++) {
+            Lesson precedente = deLaSemaine.get(i - 1);
+            Lesson suivante   = deLaSemaine.get(i);
+            int finPrecedente = precedente.getTimeSlot().getOrderIndex()
+                    + Math.max(1, precedente.getDurationSlots());
+            courante = suivante.getTimeSlot().getOrderIndex() <= finPrecedente ? courante + 1 : 1;
+            record = Math.max(record, courante);
+        }
+        return record;
     }
 }
