@@ -27,6 +27,7 @@
 | F — Correction de la consécutivité | **fait** — mesurée sur les créneaux contigus, parité comprise ; 14 tests |
 | G — Parité de semaine dans la continuité | **fait** — `noStudentIdleGaps` et `MIN_STUDENT_HOURS_PER_HALF_DAY` lisent la quinzaine ; 12 tests |
 | H — Programme national conforme (§ T.1 + § T.3) | **fait** — MATH 4 h, EN `(2)+1+1`, FR `2+1+1+①` ; jeu pilote ajouté ; rattrapage des bases semées ; 12 tests |
+| I — Catalogue vidé de ses mensonges | **fait** — § II.2 et § III.1 écrites, 4 codes retirés ; `NON_CABLEES` est **vide** ; 11 tests |
 
 ### Ce que l'étape D a livré
 
@@ -250,11 +251,67 @@ porte en note « Anglais : 4 h au lieu de 3 », alors que son propre tableau not
 table ni avec l'autre. Les tables étant la transcription et les notes le
 commentaire, c'est la table qui a été suivie.
 
+### Ce que l'étape I a livré
+
+Six codes du catalogue n'ouvraient aucun flux dans le provider, pour deux
+raisons opposées et également trompeuses : trois SOFT n'avaient jamais été
+écrites — l'établissement pouvait les activer, elles ne faisaient rien — et
+trois règles dures étaient appliquées **en dur**, si bien que les décocher ne
+les désactivait pas. La liste est traitée code par code, selon ce qui était
+faux.
+
+| Code | § | Décision |
+|---|---|---|
+| `BALANCED_TEACHER_WORKLOAD` | II.2 | **écrite** — service réparti sur les jours de travail |
+| `MAIN_SUBJECT_BALANCED_DISTRIBUTION` | III.1 | **écrite** — matière répartie matin / après-midi |
+| `BALANCED_CLASS_DIFFICULTY_FOR_TEACHERS` | — | **retirée** : absente de la circulaire |
+| `NO_STUDENT_IDLE_GAPS` | I.5 | **retirée du catalogue**, toujours appliquée |
+| `SPECIAL_ROOM_REQUIRED` | III.4 | idem |
+| `SPECIAL_ROOM_NO_OVERLAP` | — | **retirée** : ne disait rien de plus que `roomConflict` |
+
+**Pourquoi retirer plutôt que rendre pilotable.** Le § I.5 interdit les heures
+creuses et le § III.4 impose la salle spécialisée : ce ne sont pas des options.
+Les rendre décochables aurait rouvert exactement le piège que l'étape E a
+fermé — un emploi du temps déclaré conforme parce qu'on avait décoché la règle
+qu'il viole. Les deux règles restent donc appliquées ; c'est la case à cocher
+qui disparaît, parce qu'elle ne commandait rien.
+
+**§ II.2 — les deux nombres viennent de la même phrase.** « L'horaire
+hebdomadaire dû par l'enseignant est réparti de manière équilibrée sur les
+jours de travail. » L'équilibre n'est pas chiffré (§ 1.6, point 4) et il ne faut
+pas lui prêter un chiffre. Ce qui est mesuré est donc la seule chose que la
+phrase interdit sans ambiguïté : concentrer le service sur quelques jours. Le
+plafond d'une journée est la part équitable — le service divisé par les jours
+travaillés — **et jamais moins de deux heures**, plancher que le même article
+énonce dans la phrase suivante. Sans ce plancher, la contrainte pousserait un
+enseignant à mi-temps vers une heure par jour six jours par semaine, c'est-à-dire
+vers ce que le même article interdit. Le jour de formation du § II.1 sort du
+diviseur par les indisponibilités de l'enseignant — c'est là qu'il devrait être
+inscrit, et rien ne peuple encore cette source.
+
+**§ III.1 — une règle binaire, une pénalité binaire.** « Les heures
+hebdomadaires prévues pour une même matière sont réparties sur les périodes du
+matin et de l'après-midi, quelle que soit cette matière. » Le texte ne demande
+pas une moitié de chaque côté ; il interdit qu'une matière soit *entièrement*
+massée d'un seul côté. Une matière est massée ou elle ne l'est pas — un degré de
+massement n'aurait pas de sens. Deux exclusions, parce qu'on ne reproche pas
+l'impossible : une matière d'une seule séance ne se partage pas, et le seuil de
+volume est réglable (deux heures par défaut). La parité de semaine n'est **pas**
+séparée ici, contrairement aux contraintes de continuité : l'article parle des
+heures « prévues pour la matière », c'est-à-dire de la semaine type et non de la
+semaine vécue.
+
+**Un défaut voisin corrigé au passage.** Aucune des règles câblées aux étapes C
+et D n'avait de libellé dans `TimetableSolverService` : le panneau d'explication
+affichait leur code brut — `MIN_STUDENT_HOURS_PER_HALF_DAY` — à un directeur
+d'établissement. Les dix libellés et suggestions manquants sont écrits, avec le
+§ d'origine.
+
 ### Où reprendre
 
-**Les huit étapes du plan sont faites, et la dette qu'elles avaient identifiée
-est soldée.** Ce qui reste tient en un rattrapage de données à exécuter, deux
-hypothèses à confirmer auprès de l'établissement, et un ménage de catalogue.
+**Les neuf étapes du plan sont faites, la dette qu'elles avaient identifiée est
+soldée et `NON_CABLEES` est vide.** Ce qui reste tient en un rattrapage de
+données à exécuter et deux hypothèses à confirmer auprès de l'établissement.
 
 **Points ouverts, par ordre d'urgence :**
 
@@ -274,22 +331,17 @@ hypothèses à confirmer auprès de l'établissement, et un ménage de catalogue
 de semaine. Les deux lisent désormais la quinzaine, par le même filtre que la
 consécutivité.
 
-**Restant dans `NON_CABLEES`** (6 codes) : les 3 SOFT jamais implémentées
-(`BALANCED_TEACHER_WORKLOAD`, `MAIN_SUBJECT_BALANCED_DISTRIBUTION`,
-`BALANCED_CLASS_DIFFICULTY_FOR_TEACHERS`) et les 3 appliquées en dur mais non
-pilotables depuis l'interface (`NO_STUDENT_IDLE_GAPS`, `SPECIAL_ROOM_REQUIRED`,
-`SPECIAL_ROOM_NO_OVERLAP`). **Aucune des trois premières ne figure dans la
-circulaire** — ce sont des préférences de confort ajoutées par anticipation.
-C'est pourquoi la liste ne se videra pas d'elle-même : il faudra soit les écrire,
-soit les retirer du catalogue.
+**`NON_CABLEES` est vide depuis l'étape I.** Le catalogue ne montre plus que des
+règles que le solveur évalue, et toute règle qu'il évalue y figure. Le verrou
+`CatalogueProviderCoverageTest` ne tolère donc plus aucun écart.
 
-**Articles de la circulaire encore sans implémentation** : § I.3 (séparation de
-midi, seulement implicite), § II.1 (aucune source ne peuple les jours de
-formation), § II.2 (« répartition équilibrée » que le texte ne chiffre pas,
-§ 1.6 point 4), § II.3 (écrit comme un plafond journalier et non comme une
-dérogation) et § III.1.
+**Articles de la circulaire encore sans implémentation** — il en reste trois, et
+aucun ne se règle par une contrainte : § I.3 (la séparation de midi n'est
+qu'implicite dans `isBreakSlot`), § II.1 (aucune source ne peuple les jours de
+formation — c'est une donnée qui manque, pas une règle), § II.3 (écrit comme un
+plafond journalier et non comme la dérogation qu'il est).
 
-**État des tests :** `smartschool-planning` 356, `smartschool-api` 12,
+**État des tests :** `smartschool-planning` 367, `smartschool-api` 12,
 `organisation-business` 300, `absence-business` 10, `tenant-business` 19 —
 **0 échec**. Le front compile.
 
@@ -394,13 +446,13 @@ déclarés dans `TimetableConstraintProvider` :
 |---|---|---|
 | `RESPECT_OFFICIAL_SUBJECT_HOURS` | HARD | ~~aucun flux~~ — **câblée à l'étape C** |
 | `PHYSICAL_EDUCATION_THREE_SESSIONS` | HARD | ~~aucun flux~~ — **câblée à l'étape C** |
-| `SPECIAL_ROOM_NO_OVERLAP` | HARD | aucun flux (couvert de fait par `roomConflict`) |
-| `NO_STUDENT_IDLE_GAPS` | HARD | codée en dur, **non pilotable** depuis le profil |
+| `SPECIAL_ROOM_NO_OVERLAP` | HARD | ~~aucun flux~~ — **retirée du catalogue, étape I** (doublon de `roomConflict`) |
+| `NO_STUDENT_IDLE_GAPS` | HARD | ~~codée en dur, non pilotable~~ — **retirée du catalogue, étape I** ; toujours appliquée |
 | `SPECIAL_ROOM_REQUIRED` | HARD | idem |
-| `BALANCED_TEACHER_WORKLOAD` | SOFT | constante déclarée, aucun flux |
+| `BALANCED_TEACHER_WORKLOAD` | SOFT | ~~constante déclarée, aucun flux~~ — **écrite à l'étape I** (§ II.2) |
 | `TEACHER_MIN_TWO_LEVELS` | SOFT | ~~idem~~ — **câblée à l'étape D** |
-| `MAIN_SUBJECT_BALANCED_DISTRIBUTION` | SOFT | idem |
-| `BALANCED_CLASS_DIFFICULTY_FOR_TEACHERS` | SOFT | idem |
+| `MAIN_SUBJECT_BALANCED_DISTRIBUTION` | SOFT | ~~idem~~ — **écrite à l'étape I** (§ III.1) |
+| `BALANCED_CLASS_DIFFICULTY_FOR_TEACHERS` | SOFT | ~~idem~~ — **retirée du catalogue, étape I** : absente de la circulaire |
 
 Le profil 11842 active `RESPECT_OFFICIAL_SUBJECT_HOURS` en **CRITICAL, poids
 1000**. Le solveur ne la voit pas : **la garantie des volumes du § T.1 n'existe
@@ -467,19 +519,18 @@ enseignant ≠ horaire élève).
 | I.3 | 2 h de séparation midi | implicite (`isBreakSlot`), non vérifiée |
 | I.4 | Stabilité de salle sur une demi-journée | ~~absente~~ — **`CLASS_ROOM_STABILITY_PER_HALF_DAY`, étape D** |
 | II.1 | Journée de formation | `teacherAvailability` existe, rien ne la peuple |
-| II.2 | Équilibre hebdomadaire du service | absente |
+| II.2 | Équilibre hebdomadaire du service | ~~absente~~ — **`BALANCED_TEACHER_WORKLOAD`, étape I** |
 | II.3 | Dérogation 5 h consécutives vendredi/samedi | implémentée comme plafond journalier, pas comme dérogation |
 | II.4 | Alternance sur les 4 premiers jours | ~~toute la semaine~~ — **bornée à lundi–jeudi, étape D** |
 | II.5 | Deux niveaux minimum | ~~constante déclarée, flux absent~~ — **câblée à l'étape D** |
-| III.1 | Répartition matin/après-midi d'une matière | absente |
+| III.1 | Répartition matin/après-midi d'une matière | ~~absente~~ — **`MAIN_SUBJECT_BALANCED_DISTRIBUTION`, étape I** |
 | III.2.a | ¾ des fondamentales le matin | ~~absente~~ — **`MAIN_SUBJECTS_MORNING_QUOTA`, étape D** ; `mainSubject` enfin utilisé |
 | III.2.b | 24 h entre deux EPS | ~~absente~~ — **`PHYSICAL_EDUCATION_SESSION_SPACING`, étape D** |
 | III.2.c | 2 h/semaine, jamais deux jours consécutifs | ~~absente~~ — **`SUBJECT_TWO_HOURS_NOT_CONSECUTIVE_DAYS`, étape D** |
 
 Restent absentes : le § I.3 (séparation de midi, seulement implicite), le § II.1
-(aucune source ne peuple les jours de formation), le § II.2 (« répartition
-équilibrée » que la circulaire ne chiffre pas, § 1.6 point 4), le § II.3 (écrit
-comme un plafond et non comme une dérogation) et le § III.1.
+(aucune source ne peuple les jours de formation) et le § II.3 (écrit comme un
+plafond et non comme une dérogation).
 
 ### P6 — `MAX_TWO_CONSECUTIVE_SESSIONS` ne mesure pas la consécutivité — **corrigé**
 
@@ -543,7 +594,7 @@ comme un plafond et non comme une dérogation) et le § III.1.
 | `solver/ref/TeacherRef.java` | volume hebdomadaire, jours de formation |
 | `solver/service/TimetableSolverService.java` | branchement de la validation |
 | `solver/validation/` | **créé à l'étape E** — `TimetableBusinessValidator`, `ValidationReport`, `ValidationFinding`, `ValidationSeverity` |
-| migration Liquibase | alignement catalogue ↔ provider ; `014-seed-circulaire-constraints.yaml` sème les 5 codes de l'étape D et rattrape les profils existants |
+| migration Liquibase | alignement catalogue ↔ provider ; `014-seed-circulaire-constraints.yaml` sème les 5 codes de l'étape D et rattrape les profils existants ; `016-vider-catalogue-non-cable.yaml` retire les 4 codes de l'étape I et redit ce que font les 2 écrites |
 | `api/NationalPatternSeeder.java` | programmes § T.1 et § T.3, rattrapage par version |
 | `docs/sql/rattrapage-volumes-t1.sql` | remise à niveau des patterns déjà copiés chez un établissement |
 | données `patterns` / `pattern_details` | durées `(N)` |
@@ -620,6 +671,15 @@ aucune base en service. Les données déjà copiées chez un établissement se
 rattrapent par `docs/sql/rattrapage-volumes-t1.sql`.
 Couverture : `NationalPatternSeederTest`, 12 tests.
 
+### Étape I — Vider le catalogue de ce qu'il ne commande pas — **faite**
+Écrire les deux SOFT qui correspondent à un article du texte —
+`BALANCED_TEACHER_WORKLOAD` (§ II.2) et `MAIN_SUBJECT_BALANCED_DISTRIBUTION`
+(§ III.1) — et retirer du catalogue les quatre codes restants : trois règles
+dures appliquées en dur, donc jamais désactivables, et une préférence que la
+circulaire ne demande nulle part. `NON_CABLEES` est vide. Les dix libellés
+manquants du panneau d'explication sont écrits au passage.
+Couverture : `RepartitionHebdomadaireTest`, 11 tests ; migration 016.
+
 ---
 
 ## 6. Impact attendu
@@ -635,6 +695,7 @@ Couverture : `NationalPatternSeederTest`, 12 tests.
 | F | Corrige un doublon ; effet marginal. |
 | G | Déplace des violations dans les deux sens : quelques-unes apparaissent (trous et demi-journées courtes que la quinzaine masquait), quelques-unes disparaissent (trous qu'aucune semaine ne voit). Sensible seulement là où il y a des quinzaines. |
 | H | Retire 2 h de mathématiques et 1 h d'anglais à chaque classe, et rend à l'anglais sa séance de groupe. C'est ce qui débloque `VOLUME_HORAIRE`. Les affectations d'enseignants bâties sur les anciens volumes deviennent excédentaires. |
+| I | Deux préférences SOFT de plus à satisfaire, donc un score souple plus bas à emploi du temps constant. Aucune règle dure ne change : les codes retirés du catalogue étaient appliqués en dur et le restent. |
 
 ---
 

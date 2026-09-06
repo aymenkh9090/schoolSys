@@ -47,17 +47,27 @@ class LiquibaseChangelogTest {
             assertThat(columns(conn, "constraint_setting")).contains("tenant_id");
 
             // 18 contraintes au seed d'origine, plus les 5 règles de la
-            // circulaire n°66 semées à l'étape D (migration 014).
-            assertThat(countRows(conn, "constraint_definition")).isEqualTo(23);
+            // circulaire n°66 semées à l'étape D (migration 014), moins les 4
+            // codes retirés à l'étape I (migration 016) : trois règles dures
+            // appliquées en dur, donc jamais désactivables, et une préférence
+            // que la circulaire ne demande nulle part.
+            assertThat(countRows(conn, "constraint_definition")).isEqualTo(19);
             assertThat(countRows(conn, "constraint_profile")).isZero();
             assertThat(countRows(conn, "constraint_setting")).isZero();
 
             // Spot-check specific codes from PLANNING_MODULE.md §11
             assertThat(countByCode(conn, "MAX_STUDENT_HOURS_PER_DAY")).isEqualTo(1);
-            assertThat(countByCode(conn, "NO_STUDENT_IDLE_GAPS")).isEqualTo(1);
             assertThat(countByCode(conn, "MAX_TEACHER_HOURS_FRIDAY_SATURDAY")).isEqualTo(1);
             assertThat(countByCode(conn, "TEACHER_MIN_TWO_LEVELS")).isEqualTo(1);
-            assertThat(countByCode(conn, "SPECIAL_ROOM_NO_OVERLAP")).isEqualTo(1);
+
+            // Retirées du catalogue à l'étape I. Les deux premières restent
+            // appliquées en dur par le provider — c'est la case à cocher qui
+            // était mensongère, pas la règle ; la troisième ne disait rien de
+            // plus que roomConflict.
+            assertThat(countByCode(conn, "NO_STUDENT_IDLE_GAPS")).isZero();
+            assertThat(countByCode(conn, "SPECIAL_ROOM_REQUIRED")).isZero();
+            assertThat(countByCode(conn, "SPECIAL_ROOM_NO_OVERLAP")).isZero();
+            assertThat(countByCode(conn, "BALANCED_CLASS_DIFFICULTY_FOR_TEACHERS")).isZero();
 
             // Règles de la circulaire n°66 ajoutées par la migration 014
             assertThat(countByCode(conn, "SUBJECT_TWO_HOURS_NOT_CONSECUTIVE_DAYS")).isEqualTo(1);

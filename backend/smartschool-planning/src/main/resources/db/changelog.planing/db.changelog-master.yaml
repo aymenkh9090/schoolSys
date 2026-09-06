@@ -18,6 +18,8 @@ databaseChangeLog:
       file: db/changelog.planing/013-align-custom-constraint-fk.yaml
   - include:
       file: db/changelog.planing/014-seed-circulaire-constraints.yaml
+  - include:
+      file: db/changelog.planing/016-vider-catalogue-non-cable.yaml
 
   # ── solver / timetable ────────────────────────────────────────────────────
   - include:

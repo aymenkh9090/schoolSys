@@ -15,6 +15,10 @@
  * Un code absent d'ici retombe sur le libellé du serveur : la liste reste
  * complète même si le catalogue gagne une entrée avant que sa traduction
  * n'arrive.
+ *
+ * Les codes retirés du catalogue à l'étape I du plan de conformité n'ont plus
+ * d'entrée ici : les heures creuses et la salle spécialisée restent imposées,
+ * mais elles ne sont pas des options et n'ont donc plus de case à cocher.
  */
 
 import type { ConstraintCategory, ConstraintType, ImportanceLevel } from '@/api/planning.api'
@@ -34,12 +38,6 @@ export const CATALOGUE_LABELS: Record<string, LibelleBilingue> = {
       'Une classe ne dépasse pas le nombre d’heures de cours fixé sur une même journée.',
     descriptionAr: 'لا يتجاوز القسم عدد ساعات الدراسة المحدد في اليوم الواحد.',
   },
-  NO_STUDENT_IDLE_GAPS: {
-    nom: 'Pas d’heures creuses pour les élèves',
-    nomAr: 'لا ساعات فارغة للتلاميذ',
-    description: 'Les cours d’une classe se suivent, sans trou au milieu de la journée.',
-    descriptionAr: 'تتوالى دروس القسم دون فراغ في وسط اليوم.',
-  },
   MAX_TEACHER_HOURS_PER_DAY: {
     nom: 'Heures de cours maximum par jour pour un enseignant',
     nomAr: 'الحد الأقصى للساعات اليومية للأستاذ',
@@ -52,19 +50,6 @@ export const CATALOGUE_LABELS: Record<string, LibelleBilingue> = {
     description:
       'Le vendredi et le samedi sont des journées courtes : le volume d’un enseignant y est plafonné plus bas.',
     descriptionAr: 'الجمعة والسبت يومان قصيران: يُحدَّد الحجم الساعي للأستاذ فيهما بسقف أدنى.',
-  },
-  SPECIAL_ROOM_REQUIRED: {
-    nom: 'Salle spécialisée obligatoire',
-    nomAr: 'قاعة مختصة إجبارية',
-    description:
-      'Les matières qui l’exigent — laboratoire, informatique, sport — sont placées dans une salle adaptée.',
-    descriptionAr: 'تُبرمَج المواد التي تستوجب ذلك — مخبر، إعلامية، رياضة — في قاعة مناسبة.',
-  },
-  SPECIAL_ROOM_NO_OVERLAP: {
-    nom: 'Une seule classe à la fois dans une salle spécialisée',
-    nomAr: 'قسم واحد فقط في القاعة المختصة',
-    description: 'Deux cours ne peuvent pas occuper la même salle spécialisée au même moment.',
-    descriptionAr: 'لا يمكن أن يشغل درسان القاعة المختصة نفسها في الوقت ذاته.',
   },
   RESPECT_OFFICIAL_SUBJECT_HOURS: {
     nom: 'Respect des horaires officiels de chaque matière',
@@ -98,10 +83,11 @@ export const CATALOGUE_LABELS: Record<string, LibelleBilingue> = {
     descriptionAr: 'يتفادى إسناد مستوى واحد فقط للأستاذ.',
   },
   BALANCED_TEACHER_WORKLOAD: {
-    nom: 'Charge de travail équilibrée entre enseignants',
-    nomAr: 'توازن العبء بين الأساتذة',
-    description: 'La charge hebdomadaire est répartie aussi équitablement que possible.',
-    descriptionAr: 'يُوزَّع الحجم الأسبوعي بأكثر ما يمكن من الإنصاف.',
+    nom: 'Service réparti sur la semaine',
+    nomAr: 'توزيع التوقيت على أيام العمل',
+    description:
+      'Le service d’un enseignant s’étale sur ses jours de travail, au lieu d’être massé sur deux ou trois journées.',
+    descriptionAr: 'يُوزَّع توقيت الأستاذ على أيام عمله بدل تجميعه في يومين أو ثلاثة.',
   },
   TEACHER_WEEKLY_REST_DAY: {
     nom: 'Un jour libre par semaine pour l’enseignant',
@@ -115,17 +101,12 @@ export const CATALOGUE_LABELS: Record<string, LibelleBilingue> = {
     description: 'Les heures d’une matière sont étalées sur la semaine.',
     descriptionAr: 'تُوزَّع ساعات المادة على أيام الأسبوع.',
   },
-  BALANCED_CLASS_DIFFICULTY_FOR_TEACHERS: {
-    nom: 'Répartition équitable des classes difficiles',
-    nomAr: 'توزيع عادل للأقسام الصعبة',
-    description: 'Les classes réputées difficiles ne reviennent pas toujours aux mêmes enseignants.',
-    descriptionAr: 'لا تُسنَد الأقسام الصعبة دائمًا إلى نفس الأساتذة.',
-  },
   MAIN_SUBJECT_BALANCED_DISTRIBUTION: {
-    nom: 'Matières principales réparties sur la semaine',
-    nomAr: 'توزيع المواد الأساسية على الأسبوع',
-    description: 'Les matières à fort volume horaire sont étalées plutôt que groupées.',
-    descriptionAr: 'تُوزَّع المواد ذات الحجم الساعي الكبير بدل تجميعها.',
+    nom: 'Matière répartie entre le matin et l’après-midi',
+    nomAr: 'توزيع المادة بين الفترة الصباحية والمسائية',
+    description:
+      'Les heures d’une même matière ne sont pas toutes placées le matin, ni toutes l’après-midi.',
+    descriptionAr: 'لا تُبرمَج ساعات المادة الواحدة كلها صباحًا ولا كلها مساءً.',
   },
   THEORY_PRACTICE_SEPARATION: {
     nom: 'Séparation entre cours et travaux pratiques',

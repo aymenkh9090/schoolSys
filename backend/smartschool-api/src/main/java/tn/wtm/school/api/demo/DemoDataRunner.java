@@ -150,21 +150,12 @@ public class DemoDataRunner implements ApplicationRunner {
         def("MAX_STUDENT_HOURS_PER_DAY",              "Maximum student hours per day",
                 ConstraintCategory.STUDENT,    ConstraintType.HARD,   ImportanceLevel.CRITICAL,
                 "{\"maxHours\":{\"type\":\"number\",\"default\":6}}");
-        def("NO_STUDENT_IDLE_GAPS",                   "No student idle gaps",
-                ConstraintCategory.STUDENT,    ConstraintType.HARD,   ImportanceLevel.CRITICAL,
-                "{\"enabled\":{\"type\":\"boolean\",\"default\":true}}");
         def("MAX_TEACHER_HOURS_PER_DAY",              "Maximum teacher hours per day",
                 ConstraintCategory.TEACHER,    ConstraintType.HARD,   ImportanceLevel.CRITICAL,
                 "{\"maxHours\":{\"type\":\"number\",\"default\":6}}");
         def("MAX_TEACHER_HOURS_FRIDAY_SATURDAY",      "Maximum teacher hours on Friday and Saturday",
                 ConstraintCategory.TEACHER,    ConstraintType.HARD,   ImportanceLevel.CRITICAL,
                 "{\"maxHours\":{\"type\":\"number\",\"default\":5}}");
-        def("SPECIAL_ROOM_REQUIRED",                  "Special room required",
-                ConstraintCategory.ROOM,       ConstraintType.HARD,   ImportanceLevel.CRITICAL,
-                "{\"enabled\":{\"type\":\"boolean\",\"default\":true}}");
-        def("SPECIAL_ROOM_NO_OVERLAP",                "Special room no overlap",
-                ConstraintCategory.ROOM,       ConstraintType.HARD,   ImportanceLevel.CRITICAL,
-                "{\"enabled\":{\"type\":\"boolean\",\"default\":true}}");
         def("RESPECT_OFFICIAL_SUBJECT_HOURS",         "Respect official subject hours",
                 ConstraintCategory.PEDAGOGICAL, ConstraintType.HARD,  ImportanceLevel.CRITICAL,
                 "{\"enabled\":{\"type\":\"boolean\",\"default\":true}}");
@@ -180,21 +171,18 @@ public class DemoDataRunner implements ApplicationRunner {
         def("TEACHER_MIN_TWO_LEVELS",                 "Teacher teaches minimum two levels",
                 ConstraintCategory.TEACHER,    ConstraintType.SOFT,   ImportanceLevel.MEDIUM,
                 "{\"minLevels\":{\"type\":\"number\",\"default\":2}}");
-        def("BALANCED_TEACHER_WORKLOAD",              "Balanced teacher workload",
+        def("BALANCED_TEACHER_WORKLOAD",              "Service réparti sur la semaine",
                 ConstraintCategory.TEACHER,    ConstraintType.SOFT,   ImportanceLevel.MEDIUM,
-                "{\"enabled\":{\"type\":\"boolean\",\"default\":true}}");
+                "{\"workingDays\":{\"type\":\"number\",\"default\":6}}");
         def("TEACHER_WEEKLY_REST_DAY",                "Teacher weekly rest day",
                 ConstraintCategory.TEACHER,    ConstraintType.SOFT,   ImportanceLevel.MEDIUM,
                 "{\"enabled\":{\"type\":\"boolean\",\"default\":true}}");
         def("AVOID_SUBJECT_CONCENTRATION_SAME_DAY",   "Avoid subject concentration same day",
                 ConstraintCategory.SUBJECT,    ConstraintType.SOFT,   ImportanceLevel.MEDIUM,
                 "{\"enabled\":{\"type\":\"boolean\",\"default\":true}}");
-        def("BALANCED_CLASS_DIFFICULTY_FOR_TEACHERS", "Balanced class difficulty for teachers",
-                ConstraintCategory.TEACHER,    ConstraintType.SOFT,   ImportanceLevel.LOW,
-                "{\"enabled\":{\"type\":\"boolean\",\"default\":true}}");
-        def("MAIN_SUBJECT_BALANCED_DISTRIBUTION",     "Main subject balanced distribution",
+        def("MAIN_SUBJECT_BALANCED_DISTRIBUTION",     "Matière répartie matin et après-midi",
                 ConstraintCategory.PEDAGOGICAL, ConstraintType.SOFT,  ImportanceLevel.MEDIUM,
-                "{\"weeklyHours\":{\"type\":\"number\",\"default\":4}}");
+                "{\"weeklyHours\":{\"type\":\"number\",\"default\":2}}");
         def("THEORY_PRACTICE_SEPARATION",             "Theory practice separation",
                 ConstraintCategory.SUBJECT,    ConstraintType.MEDIUM, ImportanceLevel.HIGH,
                 "{\"enabled\":{\"type\":\"boolean\",\"default\":true}}");

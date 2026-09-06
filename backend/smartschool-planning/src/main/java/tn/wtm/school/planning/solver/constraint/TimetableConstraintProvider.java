@@ -13,6 +13,7 @@ import tn.wtm.school.planning.constraints.dsl.enums.DslSeverity;
 import tn.wtm.school.planning.solver.domain.Lesson;
 import tn.wtm.school.planning.solver.enums.SessionType;
 import tn.wtm.school.planning.solver.enums.WeekParity;
+import tn.wtm.school.planning.solver.ref.TeacherRef;
 
 import java.time.DayOfWeek;
 import java.util.Objects;
@@ -57,6 +58,8 @@ public class TimetableConstraintProvider implements ConstraintProvider {
                 mainSubjectsMorningQuota(f),
                 classRoomStabilityPerHalfDay(f),
                 teacherMinTwoLevels(f),
+                balancedTeacherWorkload(f),
+                mainSubjectBalancedDistribution(f),
 
                 // ── Bloc 4 : contraintes personnalisées (DSL, par établissement) ──
                 customLessonPenalty(f, DslSeverity.HARD,   CUSTOM_RULE_HARD),
@@ -809,6 +812,88 @@ public class TimetableConstraintProvider implements ConstraintProvider {
                 .asConstraint(TEACHER_MIN_TWO_LEVELS);
     }
 
+    /**
+     * Le service d'un enseignant se répartit sur ses jours de travail — § II.2.
+     *
+     * <p>« L'horaire hebdomadaire dû par l'enseignant est réparti de manière
+     * équilibrée sur les jours de travail, sans compter la journée consacrée à
+     * la formation. » La circulaire ne chiffre pas cet équilibre, et il ne faut
+     * pas lui prêter un chiffre qu'elle n'écrit pas. Ce qui est mesuré ici est
+     * donc la seule chose que la phrase interdit sans ambiguïté : <b>concentrer
+     * le service sur quelques jours</b>.
+     *
+     * <p><b>Les deux nombres viennent de la même phrase.</b> Le plafond
+     * au-delà duquel une journée est dite concentrée est le service divisé par
+     * les jours travaillés — la part équitable — et jamais moins de deux heures,
+     * le plancher que le § II.2 énonce dans la phrase suivante. Sans ce plancher,
+     * la contrainte pousserait un enseignant à mi-temps vers une heure par jour
+     * six jours par semaine, c'est-à-dire exactement ce que le même article
+     * interdit. La pénalité est la somme des créneaux qui dépassent ce plafond :
+     * un service de douze heures tenu en deux jours coûte plus qu'en trois.
+     *
+     * <p><b>Le jour de formation</b> du § II.1 est retiré du diviseur par le
+     * biais des indisponibilités de l'enseignant — c'est là qu'il devrait être
+     * inscrit. Rien ne peuple encore cette source (voir § P5), le diviseur vaut
+     * donc aujourd'hui les jours ouvrés de l'établissement.
+     *
+     * <p>La parité de semaine est évaluée à part, comme partout ailleurs : une
+     * semaine où la quinzaine tombe est plus chargée que l'autre, et c'est la
+     * plus chargée qui décide.
+     */
+    private Constraint balancedTeacherWorkload(ConstraintFactory f) {
+        return f.forEach(Lesson.class)
+                .filter(l -> l.getTimeSlot() != null && l.getTeacher() != null
+                        && l.getTimeSlot().getDay() != null && l.getGroupIndex() != 2)
+                .groupBy(Lesson::getTeacher, ConstraintCollectors.toList())
+                .join(ActiveConstraintParam.class,
+                        Joiners.equal((prof, seances) -> BALANCED_TEACHER_WORKLOAD,
+                                ActiveConstraintParam::getCode))
+                .filter((prof, seances, p) -> concentrationDuService(prof, seances, p) > 0)
+                .penalize(HardMediumSoftScore.ofSoft(1),
+                        (prof, seances, p) ->
+                                concentrationDuService(prof, seances, p) * p.getSoftWeight())
+                .asConstraint(BALANCED_TEACHER_WORKLOAD);
+    }
+
+    /**
+     * Les heures d'une matière se répartissent entre le matin et
+     * l'après-midi — § III.1.
+     *
+     * <p>« Les heures hebdomadaires prévues pour une même matière sont réparties
+     * sur les périodes du matin et de l'après-midi, quelle que soit cette
+     * matière. » C'est le cadre général dont le § III.2.a — trois quarts des
+     * fondamentales le matin — est le cas particulier chiffré. Le texte ne
+     * demande pas une moitié de chaque côté : il interdit qu'une matière soit
+     * <em>entièrement</em> massée d'un seul côté. La contrainte dit donc oui ou
+     * non, et pénalise d'un point : une matière est massée ou elle ne l'est pas,
+     * un degré de massement n'aurait pas de sens.
+     *
+     * <p><b>Deux exclusions, parce qu'on ne reproche pas l'impossible.</b> Une
+     * matière d'une seule séance ne se partage pas ; une matière dont le volume
+     * reste sous le seuil configuré non plus. Le seuil est en heures, deux par
+     * défaut.
+     *
+     * <p><b>La parité de semaine n'est pas séparée ici</b>, contrairement aux
+     * contraintes de continuité. L'article parle des heures « prévues pour la
+     * matière » — le programme de la semaine type, pas la semaine telle qu'un
+     * élève la vit. Une matière dont la séance du matin est de quinzaine reste
+     * une matière répartie.
+     */
+    private Constraint mainSubjectBalancedDistribution(ConstraintFactory f) {
+        return f.forEach(Lesson.class)
+                .filter(l -> l.getTimeSlot() != null && l.getGroupIndex() != 2
+                        && l.getTimeSlot().getPeriod() != null)
+                .groupBy(l -> l.getStudentClassName() + "|" + l.getSubjectCode(),
+                        ConstraintCollectors.toList())
+                .join(ActiveConstraintParam.class,
+                        Joiners.equal((cle, seances) -> MAIN_SUBJECT_BALANCED_DISTRIBUTION,
+                                ActiveConstraintParam::getCode))
+                .filter((cle, seances, p) -> matiereMasseeSurUnePeriode(seances, p))
+                .penalize(HardMediumSoftScore.ofSoft(1),
+                        (cle, seances, p) -> p.getSoftWeight())
+                .asConstraint(MAIN_SUBJECT_BALANCED_DISTRIBUTION);
+    }
+
     // ══════════════════════════════════════════════════════════════════════════
     // Bloc 4 — Contraintes personnalisées définies en DSL par l'établissement
     //
@@ -1011,6 +1096,77 @@ public class TimetableConstraintProvider implements ConstraintProvider {
             record = Math.max(record, courante);
         }
         return record;
+    }
+
+    /**
+     * Les créneaux de service qui dépassent la part équitable d'une journée,
+     * toutes journées cumulées — zéro quand le service est réparti.
+     */
+    private static int concentrationDuService(TeacherRef prof, java.util.List<Lesson> seances,
+                                              ActiveConstraintParam p) {
+        return Math.max(concentrationDeLaSemaine(prof, seances, p, WeekParity.ODD),
+                concentrationDeLaSemaine(prof, seances, p, WeekParity.EVEN));
+    }
+
+    private static int concentrationDeLaSemaine(TeacherRef prof, java.util.List<Lesson> seances,
+                                                ActiveConstraintParam p, WeekParity semaine) {
+        java.util.Map<DayOfWeek, Integer> parJour = new java.util.EnumMap<>(DayOfWeek.class);
+        for (Lesson l : seancesDeLaSemaine(seances, semaine)) {
+            parJour.merge(l.getTimeSlot().getDay(), Math.max(1, l.getDurationSlots()), Integer::sum);
+        }
+        if (parJour.isEmpty()) {
+            return 0;
+        }
+        int service = parJour.values().stream().mapToInt(Integer::intValue).sum();
+        int plafond = plafondEquitable(prof, p, service);
+        return parJour.values().stream()
+                .mapToInt(charge -> Math.max(0, charge - plafond))
+                .sum();
+    }
+
+    /**
+     * Ce qu'une journée peut porter sans qu'on parle de concentration : la part
+     * équitable du service, arrondie au créneau supérieur, et jamais sous le
+     * plancher de deux heures du § II.2.
+     */
+    private static int plafondEquitable(TeacherRef prof, ActiveConstraintParam p, int service) {
+        int jours = Math.max(1, joursTravailles(p) - joursIndisponibles(prof));
+        int partEquitable = (service + jours - 1) / jours;
+        return Math.max(PLANCHER_JOURNALIER, partEquitable);
+    }
+
+    /** Deux heures en créneaux de 30 min — le plancher journalier du § II.2. */
+    private static final int PLANCHER_JOURNALIER = 4;
+
+    /** Jours ouvrés de l'établissement — six sauf réglage contraire. */
+    private static int joursTravailles(ActiveConstraintParam p) {
+        return Math.max(1, p.getInt("workingDays", p.getIntParam() > 0 ? p.getIntParam() : 6));
+    }
+
+    private static int joursIndisponibles(TeacherRef prof) {
+        return prof.getUnavailableDays() == null ? 0 : prof.getUnavailableDays().size();
+    }
+
+    /**
+     * Vrai quand toutes les heures d'une matière tombent du même côté de la
+     * journée — § III.1 — alors que son découpage permettrait de les répartir.
+     */
+    private static boolean matiereMasseeSurUnePeriode(java.util.List<Lesson> seances,
+                                                      ActiveConstraintParam p) {
+        if (seances.size() < 2 || volumeEnCreneaux(seances) < volumeRepartissable(p)) {
+            return false;
+        }
+        boolean matin = seances.stream()
+                .anyMatch(l -> l.getTimeSlot().getPeriod() == DayPeriod.MORNING);
+        boolean apresMidi = seances.stream()
+                .anyMatch(l -> l.getTimeSlot().getPeriod() == DayPeriod.AFTERNOON);
+        return !(matin && apresMidi);
+    }
+
+    /** Volume à partir duquel une matière doit se répartir, en créneaux — 2 h par défaut. */
+    private static int volumeRepartissable(ActiveConstraintParam p) {
+        int heures = p.getInt("weeklyHours", p.getIntParam() > 0 ? p.getIntParam() : 2);
+        return Math.max(2, heures * 2);
     }
 
     /**

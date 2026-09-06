@@ -56,6 +56,9 @@ import static org.assertj.core.api.Assertions.assertThat;
  * test, et câbler un code sans retirer sa ligne d'ici le fait échouer aussi. La
  * liste ne peut donc pas pourrir en silence, et elle a vocation à se vider.
  *
+ * <p><b>Elle est vide depuis l'étape I.</b> Le test ne tolère donc plus aucun
+ * écart : tout code du catalogue ouvre un flux.
+ *
  * <p>Voir {@code docs/plan-conformite-circulaire.md} § P1.
  */
 class CatalogueProviderCoverageTest {
@@ -63,39 +66,30 @@ class CatalogueProviderCoverageTest {
     /**
      * Codes présents au catalogue mais qu'aucun flux du provider ne joint.
      *
-     * <p>Deux natures très différentes, et il faut les distinguer :
+     * <p><b>Elle est vide depuis l'étape I, et c'était son but.</b> Le catalogue
+     * ne montre plus que des règles que le solveur évalue, et toute règle que le
+     * solveur évalue est au catalogue. Les six codes qui figuraient ici l'ont
+     * quittée de deux façons opposées, selon ce qui était faux :
      *
      * <ul>
-     *   <li><b>Jamais implémentées</b> — les trois SOFT restantes :
-     *       l'établissement peut les activer, elles ne font rien. Aucune ne
-     *       figure dans la circulaire, ce qui explique qu'elles survivent à
-     *       l'étape D. {@code RESPECT_OFFICIAL_SUBJECT_HOURS} et
-     *       {@code PHYSICAL_EDUCATION_THREE_SESSIONS} figuraient ici jusqu'à
-     *       l'étape C, {@code TEACHER_MIN_TWO_LEVELS} jusqu'à l'étape D.</li>
-     *   <li><b>Implémentées mais non pilotables</b> —
-     *       {@code NO_STUDENT_IDLE_GAPS}, {@code SPECIAL_ROOM_REQUIRED} et
-     *       {@code SPECIAL_ROOM_NO_OVERLAP} : le provider les applique en dur,
-     *       toujours, sans joindre {@link ActiveConstraintParam}. Elles sont
-     *       respectées, mais les décocher dans l'interface ne les désactive pas.
-     *       C'est l'inverse du problème précédent, et c'est tout aussi trompeur.</li>
+     *   <li><b>Écrites</b> — {@code RESPECT_OFFICIAL_SUBJECT_HOURS} et
+     *       {@code PHYSICAL_EDUCATION_THREE_SESSIONS} à l'étape C,
+     *       {@code TEACHER_MIN_TWO_LEVELS} à l'étape D,
+     *       {@code BALANCED_TEACHER_WORKLOAD} (§ II.2) et
+     *       {@code MAIN_SUBJECT_BALANCED_DISTRIBUTION} (§ III.1) à l'étape I.
+     *       Elles annonçaient une règle que rien n'appliquait.</li>
+     *   <li><b>Retirées du catalogue</b> — {@code NO_STUDENT_IDLE_GAPS},
+     *       {@code SPECIAL_ROOM_REQUIRED} et {@code SPECIAL_ROOM_NO_OVERLAP},
+     *       appliquées en dur et donc non désactivables : la case à cocher
+     *       mentait dans l'autre sens. Elles restent appliquées ; c'est la case
+     *       qui est partie. {@code BALANCED_CLASS_DIFFICULTY_FOR_TEACHERS} est
+     *       partie pour une troisième raison : la circulaire ne la demande nulle
+     *       part.</li>
      * </ul>
+     *
+     * <p>Une entrée ajoutée ici doit dire pourquoi, et porter une échéance.
      */
-    private static final Set<String> NON_CABLEES = new LinkedHashSet<>(Set.of(
-            // — jamais implémentées —
-            //
-            // Ces trois-là ne viennent pas de la circulaire : elle ne demande ni
-            // charge égale entre enseignants, ni répartition hebdomadaire des
-            // matières principales, ni équité des classes difficiles. Ce sont
-            // des préférences de confort, ajoutées au catalogue par anticipation.
-            // Elles restent donc en attente, sans échéance, là où l'étape D a
-            // câblé tout ce que le texte réclame nommément.
-            "BALANCED_TEACHER_WORKLOAD",
-            "MAIN_SUBJECT_BALANCED_DISTRIBUTION",
-            "BALANCED_CLASS_DIFFICULTY_FOR_TEACHERS",
-            // — appliquées en dur, non pilotables depuis le profil —
-            "NO_STUDENT_IDLE_GAPS",
-            "SPECIAL_ROOM_REQUIRED",
-            "SPECIAL_ROOM_NO_OVERLAP"));
+    private static final Set<String> NON_CABLEES = new LinkedHashSet<>(Set.of());
 
     @Test
     @DisplayName("Tout code du catalogue est soit consommé par le provider, soit déclaré non câblé")

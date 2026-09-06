@@ -1,0 +1,105 @@
+databaseChangeLog:
+  # ── Étape I du plan de mise en conformité à la circulaire n°66 ─────────────
+  #
+  # Six codes du catalogue n'ouvraient aucun flux dans le provider, pour deux
+  # raisons opposées et également trompeuses :
+  #
+  #   - trois SOFT n'avaient jamais été écrites : l'établissement pouvait les
+  #     activer, elles ne faisaient rien ;
+  #   - trois règles dures étaient appliquées EN DUR, toujours : les décocher
+  #     dans l'interface ne les désactivait pas.
+  #
+  # Cette migration tranche code par code. Deux des trois SOFT correspondent à
+  # un article de la circulaire encore sans implémentation : elles sont écrites
+  # (voir TimetableConstraintProvider) et leur libellé est corrigé ici, parce
+  # qu'il ne décrivait pas ce qu'elles font. Les quatre autres quittent le
+  # catalogue : une case à cocher qui ne commande rien vaut moins que pas de
+  # case du tout.
+  #
+  # Ce que le retrait NE change PAS : les trois règles dures restent appliquées.
+  # Le § I.5 interdit les heures creuses et le § III.4 impose la salle
+  # spécialisée ; ce ne sont pas des options, et elles n'auraient jamais dû être
+  # présentées comme telles. SPECIAL_ROOM_NO_OVERLAP, lui, n'a jamais rien dit
+  # de plus que roomConflict.
+
+  - changeSet:
+      id: 016-drop-non-cable-settings
+      author: planning
+      changes:
+        - sql:
+            sql: |
+              DELETE FROM constraint_setting
+               WHERE constraint_definition_id IN (
+                     SELECT id_constraint_definition FROM constraint_definition
+                      WHERE code IN ('BALANCED_CLASS_DIFFICULTY_FOR_TEACHERS',
+                                     'NO_STUDENT_IDLE_GAPS',
+                                     'SPECIAL_ROOM_REQUIRED',
+                                     'SPECIAL_ROOM_NO_OVERLAP'))
+
+  - changeSet:
+      id: 016-drop-non-cable-definitions
+      author: planning
+      changes:
+        - delete:
+            tableName: constraint_definition
+            where: >
+              code IN ('BALANCED_CLASS_DIFFICULTY_FOR_TEACHERS',
+                       'NO_STUDENT_IDLE_GAPS',
+                       'SPECIAL_ROOM_REQUIRED',
+                       'SPECIAL_ROOM_NO_OVERLAP')
+
+  # § II.2 — « L'horaire hebdomadaire dû par l'enseignant est réparti de manière
+  # équilibrée sur les jours de travail. » Le libellé parlait d'équité entre
+  # enseignants ; la règle porte sur la répartition du service d'un enseignant
+  # sur sa propre semaine. Le paramètre passe du « enabled » de façade au nombre
+  # de jours ouvrés, qui est le diviseur de la part équitable.
+  - changeSet:
+      id: 016-decrire-balanced-teacher-workload
+      author: planning
+      changes:
+        - update:
+            tableName: constraint_definition
+            columns:
+              - column: { name: name, value: "Service réparti sur la semaine" }
+              - column: { name: description, value: "Répartir le service hebdomadaire d'un enseignant sur ses jours de travail, au lieu de le concentrer sur quelques journées (circulaire n°66, § II.2)." }
+              - column: { name: parameter_schema, value: '{"workingDays":{"type":"number","default":6}}' }
+            where: code = 'BALANCED_TEACHER_WORKLOAD'
+
+  # § III.1 — « Les heures hebdomadaires prévues pour une même matière sont
+  # réparties sur les périodes du matin et de l'après-midi, quelle que soit
+  # cette matière. » Le libellé disait « sur la semaine » : ce n'est pas la même
+  # règle, et c'est celle-ci que le texte énonce. Le seuil passe de 4 h à 2 h —
+  # en dessous, une matière n'a pas de quoi se répartir.
+  - changeSet:
+      id: 016-decrire-main-subject-distribution
+      author: planning
+      changes:
+        - update:
+            tableName: constraint_definition
+            columns:
+              - column: { name: name, value: "Matière répartie matin et après-midi" }
+              - column: { name: description, value: "Les heures d'une même matière ne doivent pas être massées entièrement le matin ou entièrement l'après-midi (circulaire n°66, § III.1)." }
+              - column: { name: parameter_schema, value: '{"weeklyHours":{"type":"number","default":2}}' }
+            where: code = 'MAIN_SUBJECT_BALANCED_DISTRIBUTION'
+
+  # Les réglages déjà en base portent le paramètre de façade « enabled ». Le
+  # remplacer par le paramètre réel, sans toucher à ceux qu'un établissement
+  # aurait déjà renseignés.
+  - changeSet:
+      id: 016-realigner-parametres-existants
+      author: planning
+      changes:
+        - sql:
+            sql: |
+              UPDATE constraint_setting SET parameters_json = '{"workingDays":6}'
+               WHERE parameters_json IN ('{"enabled":true}', '{}')
+                 AND constraint_definition_id IN (
+                     SELECT id_constraint_definition FROM constraint_definition
+                      WHERE code = 'BALANCED_TEACHER_WORKLOAD')
+        - sql:
+            sql: |
+              UPDATE constraint_setting SET parameters_json = '{"weeklyHours":2}'
+               WHERE parameters_json IN ('{"enabled":true}', '{}', '{"weeklyHours":4}')
+                 AND constraint_definition_id IN (
+                     SELECT id_constraint_definition FROM constraint_definition
+                      WHERE code = 'MAIN_SUBJECT_BALANCED_DISTRIBUTION')
