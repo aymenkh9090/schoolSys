@@ -119,8 +119,8 @@ Une fois créé :
 | Client ID | `smartschool-frontend` |
 | Client authentication | OFF (public) |
 | Standard flow | ON |
-| Valid redirect URIs | `http://localhost:5173/*` |
-| Web origins | `http://localhost:5173` |
+| Valid redirect URIs | `http://localhost:3000/*` |
+| Web origins | `http://localhost:3000` |
 
 ### 2.6 Créer le premier super admin
 
@@ -147,11 +147,21 @@ Le reste de la configuration (URL de la base, issuer Keycloak, realm, client-id)
 
 ```bash
 cd backend
-mvn -pl smartschool-api -am spring-boot:run
+mvn -pl smartschool-api -am install -DskipTests   # la première fois seulement
+mvn -pl smartschool-api spring-boot:run
 ```
 
 - API : http://localhost:8080
 - Swagger UI : http://localhost:8080/swagger-ui.html
+
+**Deux commandes, et non un `-am` sur `spring-boot:run`.** L'API dépend de cinq
+modules frères (`security-module`, `tenant-business`, `organisation-business`,
+`smartschool-planning`, `absence-business`) : sans eux dans le dépôt local,
+Maven ne résout pas ses dépendances. Mais `-am` étend le
+goal au POM parent, qui n'a pas de classe `main` — `spring-boot:run` s'y arrête
+sur `Unable to find a suitable main class`. On construit donc les modules
+d'abord, on ne lance que l'API ensuite. La première commande devient inutile
+tant qu'aucun module frère n'est modifié.
 
 Autres commandes utiles : voir `backend/README.md` (tests, profil `demo` avec données d'exemple, etc.).
 
@@ -163,7 +173,7 @@ npm install
 npm run dev
 ```
 
-- Application : http://localhost:5173
+- Application : http://localhost:3000
 
 `frontend/.env.local` contient déjà les valeurs par défaut cohérentes avec Keycloak et le backend démarrés ci-dessus :
 
@@ -176,7 +186,7 @@ VITE_KEYCLOAK_CLIENT_ID=smartschool-frontend
 
 ## 6. Se connecter
 
-Ouvrir http://localhost:5173 et se connecter avec l'utilisateur `superadmin` créé à l'étape 2.6 (rôle `PLATFORM_SUPER_ADMIN`).
+Ouvrir http://localhost:3000 et se connecter avec l'utilisateur `superadmin` créé à l'étape 2.6 (rôle `PLATFORM_SUPER_ADMIN`).
 
 ## 7. Application mobile (facultatif)
 
