@@ -6,6 +6,7 @@ import ai.timefold.solver.core.api.domain.variable.PlanningVariable;
 import lombok.*;
 import tn.wtm.school.planning.solver.enums.RoomType;
 import tn.wtm.school.planning.solver.enums.SessionType;
+import tn.wtm.school.planning.solver.enums.WeekParity;
 import tn.wtm.school.planning.solver.ref.RoomRef;
 import tn.wtm.school.planning.solver.ref.TeacherRef;
 import tn.wtm.school.planning.solver.ref.TimeSlotRef;
@@ -75,8 +76,34 @@ public class Lesson {
     @Builder.Default
     private int durationSlots = 1;
 
+    /**
+     * Semaines où la séance a effectivement lieu — notation {@code ①} du § N.1.
+     *
+     * <p>Jamais {@code null} après génération : {@link WeekParity#ALL} est le
+     * cas ordinaire. Une séance de quinzaine porte {@code ODD} ou {@code EVEN},
+     * et deux séances de parités opposées ne se disputent ni le créneau, ni la
+     * salle, ni l'enseignant — voir {@link #sharesWeeksWith(Lesson)}.
+     */
+    @Builder.Default
+    private WeekParity weekParity = WeekParity.ALL;
+
     /** Links the two demi-group lessons that must share the same TimeSlot. */
     private Long pairedLessonId;
+
+    /**
+     * Volume hebdomadaire officiel de la matière pour ce niveau, en créneaux de
+     * 30 min — {@code niveaux_matieres.heures_semaine} × 2.
+     *
+     * <p>Porté par chaque séance parce que c'est la seule façon d'en disposer
+     * dans un flux de contraintes : le solveur ne voit que des {@code Lesson}.
+     * Toutes les séances d'un même couple classe / matière portent la même
+     * valeur ; la contrainte {@code RESPECT_OFFICIAL_SUBJECT_HOURS} compare la
+     * somme des durées placées à ce volume (§ T.1 de la circulaire).
+     *
+     * <p>Zéro quand le volume officiel est inconnu — la contrainte se tait
+     * alors plutôt que de pénaliser une donnée manquante.
+     */
+    private int officialWeeklySlots;
 
     /** Number of students in the class (needed for room capacity constraint). */
     private int classStudentCount;
@@ -104,6 +131,20 @@ public class Lesson {
         return pairedLessonId != null;
     }
 
+    /**
+     * Les deux séances peuvent-elles tomber la même semaine ?
+     *
+     * <p>Fausse uniquement pour une quinzaine impaire face à une quinzaine
+     * paire. Toute contrainte de conflit — enseignant, salle, classe — doit en
+     * tenir compte : deux séances qui n'ont jamais lieu la même semaine ne se
+     * heurtent pas, même sur le même créneau.
+     */
+    public boolean sharesWeeksWith(Lesson other) {
+        WeekParity mine  = weekParity == null ? WeekParity.ALL : weekParity;
+        WeekParity yours = other.weekParity == null ? WeekParity.ALL : other.weekParity;
+        return mine.overlapsWith(yours);
+    }
+
     /** True when both time slot and room are assigned (fully placed). */
     public boolean isAssigned() {
         return timeSlot != null && room != null;
@@ -128,12 +169,21 @@ public class Lesson {
     /**
      * True when this lesson's time interval overlaps {@code other}'s on the same day.
      * Used by teacher/room/class conflict constraints for multi-slot sessions.
+     *
+     * <p>Deux séances de quinzaine opposées ne se chevauchent jamais, même à
+     * cheval sur le même créneau : elles n'ont pas lieu la même semaine. La
+     * parité est donc évaluée ici plutôt que répétée dans chaque contrainte de
+     * conflit — l'oublier dans une seule d'entre elles suffirait à réintroduire
+     * un faux conflit.
      */
     public boolean overlapsInTime(Lesson other) {
         if (timeSlot == null || other.timeSlot == null) {
             return false;
         }
         if (timeSlot.getDay() != other.timeSlot.getDay()) {
+            return false;
+        }
+        if (!sharesWeeksWith(other)) {
             return false;
         }
         java.time.LocalTime aStart = getStartTime(), aEnd = getEndTime();

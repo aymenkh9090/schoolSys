@@ -40,6 +40,8 @@ public final class ConstraintCodes {
     public static final String BALANCED_CLASS_DIFFICULTY             = "BALANCED_CLASS_DIFFICULTY_FOR_TEACHERS";
     public static final String MAIN_SUBJECT_BALANCED_DISTRIBUTION    = "MAIN_SUBJECT_BALANCED_DISTRIBUTION";
     public static final String THEORY_PRACTICE_SEPARATION            = "THEORY_PRACTICE_SEPARATION";
+    public static final String RESPECT_OFFICIAL_SUBJECT_HOURS        = "RESPECT_OFFICIAL_SUBJECT_HOURS";
+    public static final String PHYSICAL_EDUCATION_THREE_SESSIONS     = "PHYSICAL_EDUCATION_THREE_SESSIONS";
 
     // ── contraintes personnalisées (DSL, Section 6.4) ─────────────────────────
     //

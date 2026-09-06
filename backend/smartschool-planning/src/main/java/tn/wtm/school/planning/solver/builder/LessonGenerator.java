@@ -45,6 +45,7 @@ public class LessonGenerator {
     public List<Lesson> generate(String tenantId, Long academicYearId) {
         lessonIdCounter.set(0);
         pairIdCounter.set(0);
+        quinzainesParClasse.clear();
 
         List<TeachingAssignment> assignments =
                 assignmentRepository.findAllForGeneration(academicYearId);
@@ -215,9 +216,11 @@ public class LessonGenerator {
 
         return chosen.getPatternDetails().stream()
                 .filter(d -> d.getType() == orgType)
-                .filter(d -> d.getWeekParity() == null
-                        || d.getWeekParity() == WeekParity.ALL
-                        || d.getWeekParity() == WeekParity.BIWEEKLY)
+                // Aucun filtrage sur la parité : une séance de quinzaine EXISTE,
+                // elle a seulement lieu une semaine sur deux. L'ancien filtre
+                // écartait ODD et EVEN — la séance disparaissait de l'emploi du
+                // temps — et laissait passer BIWEEKLY comme une séance
+                // hebdomadaire, doublant son volume. Les deux faussaient le § T.1.
                 .sorted(Comparator.comparingInt(PatternDetail::getSessionOrder))
                 .toList();
     }
@@ -282,6 +285,7 @@ public class LessonGenerator {
                 detail != null ? detail.getType() : sst.getType();
         tn.wtm.school.org.enums.RoomType orgRoomType =
                 detail != null ? detail.getRequiredRoomType() : null;
+        WeekParity orgParity = detail != null ? detail.getWeekParity() : null;
 
         SessionType sessionType    = mapSessionType(orgSessionType);
         RoomType    requiredRoom   = mapRoomType(orgRoomType, subject);
@@ -297,12 +301,14 @@ public class LessonGenerator {
                 .studentClassLevel(levelCodeOf(classGroup))
                 .studentClassSpeciality(specialityOf(classGroup))
                 .classStudentCount(classGroup.getNbEleve() != null ? classGroup.getNbEleve() : 0)
+                .officialWeeklySlots(officialSlots(ta.getSubjectLevel().getHeuresSemaine()))
                 .sessionType(sessionType)
                 .requiredRoomType(requiredRoom)
                 .requiresSpecialRoom(requiresSpecial)
                 .groupIndex(groupIndex)
                 .pairedLessonId(pairedLessonId)
                 .durationSlots(durationSlots)
+                .weekParity(mapWeekParity(orgParity, classGroup.getCode()))
                 .teacher(toTeacherRef(ta.getTeacher()))
                 .build();
     }
@@ -341,6 +347,55 @@ public class LessonGenerator {
                 .name(name)
                 .maxHoursPerDay(maxHours)
                 .build();
+    }
+
+    // ── parité de semaine ─────────────────────────────────────────────────────
+
+    /**
+     * Compteur de quinzaines par classe, pour l'alternance décrite ci-dessous.
+     * Remis à zéro à chaque appel de {@link #generate}.
+     */
+    private final Map<String, Integer> quinzainesParClasse = new LinkedHashMap<>();
+
+    /**
+     * Traduit la parité du modèle organisation vers celle du solveur.
+     *
+     * <p>{@code ALL} et {@code null} donnent {@code WeekParity.ALL} du solveur, et
+     * {@code ODD}/{@code EVEN} sont repris tels quels : ces trois cas sont dictés
+     * par la donnée.
+     *
+     * <p><b>{@code BIWEEKLY} est le cas qui demande une décision.</b> Il dit
+     * « une semaine sur deux » sans dire laquelle, alors que le solveur a besoin
+     * d'une semaine précise pour savoir si deux séances se heurtent. Nous
+     * alternons donc, classe par classe et dans l'ordre de génération : la
+     * première quinzaine de la classe tombe en semaine impaire, la deuxième en
+     * semaine paire, et ainsi de suite.
+     *
+     * <p><b>Ce choix n'est pas dans la circulaire</b>, qui ne dit rien de la
+     * semaine à retenir. Il est retenu parce qu'il sert le § III.3 — « le lien
+     * est établi entre les matières qui adoptent le système des groupes et les
+     * séances de quinzaine » : en répartissant les quinzaines d'une même classe
+     * sur les deux semaines, deux d'entre elles peuvent partager un créneau au
+     * lieu de s'exclure, ce qui est précisément la coordination recherchée.
+     * L'alternative — tout mettre en semaine impaire — laisserait la semaine
+     * paire vide et interdirait ce partage.
+     */
+    private tn.wtm.school.planning.solver.enums.WeekParity mapWeekParity(
+            WeekParity orgParity, String classCode) {
+        if (orgParity == null || orgParity == WeekParity.ALL) {
+            return tn.wtm.school.planning.solver.enums.WeekParity.ALL;
+        }
+        if (orgParity == WeekParity.ODD) {
+            return tn.wtm.school.planning.solver.enums.WeekParity.ODD;
+        }
+        if (orgParity == WeekParity.EVEN) {
+            return tn.wtm.school.planning.solver.enums.WeekParity.EVEN;
+        }
+        // BIWEEKLY — alternance déterministe au sein de la classe.
+        int rang = quinzainesParClasse.merge(classCode == null ? "" : classCode, 1, Integer::sum);
+        return rang % 2 == 1
+                ? tn.wtm.school.planning.solver.enums.WeekParity.ODD
+                : tn.wtm.school.planning.solver.enums.WeekParity.EVEN;
     }
 
     // ── enum mappers ──────────────────────────────────────────────────────────
@@ -399,5 +454,19 @@ public class LessonGenerator {
     private static int hoursToSlots(Double hours) {
         if (hours == null || hours <= 0) return 1;
         return Math.max(1, (int) Math.round(hours / 0.5));
+    }
+
+    /**
+     * Volume officiel converti en créneaux, ou 0 s'il n'est pas renseigné.
+     *
+     * <p>Distinct de {@link #hoursToSlots} sur un point qui compte :
+     * {@code hoursToSlots} retourne 1 pour une donnée absente — une séance dure
+     * au moins un créneau —, alors qu'un volume officiel inconnu doit valoir
+     * zéro, ce qui fait taire la contrainte au lieu de la faire pénaliser une
+     * donnée manquante.
+     */
+    private static int officialSlots(Double hours) {
+        if (hours == null || hours <= 0) return 0;
+        return (int) Math.round(hours / 0.5);
     }
 }

@@ -42,6 +42,8 @@ public class TimetableConstraintProvider implements ConstraintProvider {
                 maxTeacherHoursFridaySaturday(f),
                 oneTeacherPerSubjectClass(f),
                 maxConsecutiveSameSessions(f),
+                respectOfficialSubjectHours(f),
+                physicalEducationSessionShape(f),
 
                 // ── Bloc 3 : contraintes dynamiques MEDIUM / SOFT ─────────────
                 theoryPracticeSeparation(f),
@@ -308,6 +310,111 @@ public class TimetableConstraintProvider implements ConstraintProvider {
                 .penalize(HardMediumSoftScore.ONE_HARD,
                         (key, cnt, p) -> cnt - p.getIntParam())
                 .asConstraint(MAX_TWO_CONSECUTIVE_SESSIONS);
+    }
+
+    /**
+     * Le volume hebdomadaire placé pour un couple classe / matière doit être
+     * exactement celui du programme officiel — § T.1 de la circulaire n°66.
+     *
+     * <p><b>Ce que cette contrainte attrape réellement.</b> Toutes les séances
+     * étant engendrées à partir du pattern, la somme devrait coïncider
+     * d'elle-même : quand elle ne coïncide pas, c'est que la <em>génération</em>
+     * est fautive — séance perdue, séance en double, durée mal transcrite. La
+     * contrainte ne corrige rien, elle rend visible en violation dure ce qui
+     * passait jusqu'ici pour un emploi du temps valide mais incomplet. C'est
+     * précisément le défaut qu'avaient les séances en système de groupes, dont
+     * la durée était divisée par deux : le planning était « faisable » et
+     * l'élève perdait la moitié de son informatique.
+     *
+     * <p><b>{@code groupIndex != 2} :</b> les deux moitiés d'une classe suivent
+     * la même séance au même moment. Compter les deux doublerait le volume reçu
+     * par l'élève, qui n'assiste qu'à l'une d'elles.
+     *
+     * <p><b>La parité de semaine n'est pas déduite ici.</b> Une séance de
+     * quinzaine compte pour sa durée pleine, parce que c'est la convention des
+     * données : {@code heures_semaine} vaut 3 pour la physique, soit 1 h de
+     * quinzaine plus 2 h de TP. Comparer une somme pondérée à un total qui ne
+     * l'est pas ferait échouer toutes les matières à quinzaine.
+     *
+     * <p>Le volume officiel voyage dans la clé de regroupement plutôt que dans
+     * un collecteur : les flux de contraintes s'arrêtent au quadruplet, et la
+     * jointure avec {@link ActiveConstraintParam} en consomme déjà un terme.
+     */
+    private Constraint respectOfficialSubjectHours(ConstraintFactory f) {
+        return f.forEach(Lesson.class)
+                .filter(l -> l.getGroupIndex() != 2 && l.getOfficialWeeklySlots() > 0)
+                .groupBy(Lesson::getStudentClassName,
+                         l -> l.getSubjectCode() + '|' + l.getOfficialWeeklySlots(),
+                         ConstraintCollectors.sum(Lesson::getDurationSlots))
+                .join(ActiveConstraintParam.class,
+                        Joiners.equal((cls, cle, places) -> RESPECT_OFFICIAL_SUBJECT_HOURS,
+                                ActiveConstraintParam::getCode))
+                .filter((cls, cle, places, p) -> places != officielDepuisCle(cle))
+                .penalize(HardMediumSoftScore.ONE_HARD,
+                        (cls, cle, places, p) -> Math.abs(places - officielDepuisCle(cle)))
+                .asConstraint(RESPECT_OFFICIAL_SUBJECT_HOURS);
+    }
+
+    /** Volume officiel encodé en fin de clé « MATIERE|slots ». */
+    private static int officielDepuisCle(String cle) {
+        int sep = cle.lastIndexOf('|');
+        return sep < 0 ? 0 : Integer.parseInt(cle.substring(sep + 1));
+    }
+
+    /**
+     * L'éducation physique suit l'un des deux découpages autorisés par le
+     * § III.2.b : « soit en trois séances espacées, soit en deux séances dont
+     * l'une de deux heures et l'autre d'une heure ».
+     *
+     * <p>La circulaire n'en propose pas un troisième. Quatre séances d'une
+     * demi-heure, ou une seule de trois heures, totalisent le bon volume et ne
+     * sont pourtant pas conformes — d'où une contrainte sur la <em>forme</em>,
+     * distincte de {@code RESPECT_OFFICIAL_SUBJECT_HOURS} qui, lui, ne regarde
+     * que le total.
+     *
+     * <p><b>L'espacement n'est pas vérifié ici.</b> La règle des 24 heures
+     * entre deux séances relève du § III.2.b également, mais elle porte sur le
+     * placement et non sur le découpage ; elle a sa propre contrainte. Les
+     * mélanger rendrait le diagnostic illisible : « votre EPS n'est pas
+     * conforme » sans dire si c'est le nombre de séances ou leur écart.
+     *
+     * <p>Le paramètre du profil donne le nombre de séances de la première
+     * forme (3 par défaut) ; la seconde forme, 2 h + 1 h, est celle que la
+     * circulaire énonce littéralement et n'est pas paramétrable.
+     */
+    private Constraint physicalEducationSessionShape(ConstraintFactory f) {
+        return f.forEach(Lesson.class)
+                .filter(l -> l.getSessionType() == SessionType.SPORT && l.getGroupIndex() != 2)
+                .groupBy(Lesson::getStudentClassName, ConstraintCollectors.toList())
+                .join(ActiveConstraintParam.class,
+                        Joiners.equal((cls, seances) -> PHYSICAL_EDUCATION_THREE_SESSIONS,
+                                ActiveConstraintParam::getCode))
+                .filter((cls, seances, p) -> !decoupageEpsAutorise(seances, p.getIntParam()))
+                .penalize(HardMediumSoftScore.ONE_HARD)
+                .asConstraint(PHYSICAL_EDUCATION_THREE_SESSIONS);
+    }
+
+    /**
+     * Les deux découpages du § III.2.b, et eux seuls.
+     *
+     * @param seancesAttendues nombre de séances de la première forme, réglé par
+     *                         le profil ; 3 dans la circulaire
+     */
+    private static boolean decoupageEpsAutorise(java.util.List<Lesson> seances, int seancesAttendues) {
+        if (seances.isEmpty()) {
+            return true; // matière non enseignée dans cette classe — rien à dire
+        }
+        int attendues = seancesAttendues > 0 ? seancesAttendues : 3;
+        if (seances.size() == attendues) {
+            return true;
+        }
+        // Seconde forme : deux séances, l'une de 2 h (4 créneaux), l'autre d'1 h.
+        if (seances.size() == 2) {
+            int a = seances.get(0).getDurationSlots();
+            int b = seances.get(1).getDurationSlots();
+            return (a == 4 && b == 2) || (a == 2 && b == 4);
+        }
+        return false;
     }
 
     // ══════════════════════════════════════════════════════════════════════════

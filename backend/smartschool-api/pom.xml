@@ -54,6 +54,15 @@
             <artifactId>schoolsys-security-module</artifactId>
             <version>0.0.1-SNAPSHOT</version>
         </dependency>
+        <!-- Le module n'avait aucun test : le seed du programme national y vit,
+             et une erreur de transcription de la circulaire n'y était rattrapée
+             par rien. Voir NationalPatternSeederTest. -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-actuator</artifactId>
