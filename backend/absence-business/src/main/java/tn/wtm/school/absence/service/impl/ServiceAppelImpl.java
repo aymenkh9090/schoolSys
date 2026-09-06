@@ -9,6 +9,7 @@ import tn.wtm.school.absence.dto.reponse.AbsenceEleveReponse;
 import tn.wtm.school.absence.dto.reponse.AppelReponse;
 import tn.wtm.school.absence.dto.reponse.HistoriqueAppelReponse;
 import tn.wtm.school.absence.dto.reponse.LigneAppelReponse;
+import tn.wtm.school.absence.dto.reponse.SignalementEleveReponse;
 import tn.wtm.school.absence.entity.HistoriqueAppel;
 import tn.wtm.school.absence.entity.JustificatifAbsence;
 import tn.wtm.school.absence.entity.LigneAppel;
@@ -18,6 +19,7 @@ import tn.wtm.school.absence.enums.StatutPresence;
 import tn.wtm.school.absence.mapper.HistoriqueAppelMapper;
 import tn.wtm.school.absence.mapper.LigneAppelMapper;
 import tn.wtm.school.absence.mapper.SeanceAppelMapper;
+import tn.wtm.school.absence.port.PortContexteScolaire;
 import tn.wtm.school.absence.port.PortEleveGroupe;
 import tn.wtm.school.absence.port.PortSeancePlanning;
 import tn.wtm.school.absence.port.PortSeancePlanning.CreneauSeance;
@@ -32,9 +34,13 @@ import tn.wtm.school.common.service.TenantService;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.time.temporal.ChronoUnit;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -49,6 +55,7 @@ public class ServiceAppelImpl extends TenantService implements ServiceAppel {
     private final HistoriqueAppelMapper historiqueAppelMapper;
     private final PortEleveGroupe portEleveGroupe;
     private final PortSeancePlanning portSeancePlanning;
+    private final PortContexteScolaire portContexteScolaire;
 
     @Override
     @Transactional
@@ -143,6 +150,96 @@ public class ServiceAppelImpl extends TenantService implements ServiceAppel {
                 .minutesRetard(ligne.getMinutesRetard())
                 .raisonExclusion(ligne.getRaisonExclusion())
                 .seanceVerrouillee(seance.getEstVerrouille())
+                .justificatifId(dernier != null ? dernier.getId() : null)
+                .statutJustificatif(dernier != null ? dernier.getStatut() : null)
+                .build();
+    }
+
+    /**
+     * Fenêtre par défaut du suivi : une semaine.
+     *
+     * Assez large pour couvrir un week-end et un jour férié, assez courte pour
+     * qu'un enseignant ne relise pas le mois écoulé avant d'entrer en classe.
+     * Une absence plus ancienne et toujours non justifiée relève du dossier de
+     * l'élève, que la vie scolaire traite depuis le web.
+     */
+    private static final int JOURS_SUIVIS_PAR_DEFAUT = 7;
+
+    @Override
+    public List<SignalementEleveReponse> listerSignalementsClasse(Long groupeClasseId, LocalDate debut, LocalDate fin) {
+        if (groupeClasseId == null) {
+            throw new BadRequestException("L'identifiant de la classe est obligatoire");
+        }
+
+        LocalDate jusqua = fin != null ? fin : LocalDate.now();
+        LocalDate depuis = debut != null ? debut : jusqua.minusDays(JOURS_SUIVIS_PAR_DEFAUT);
+        if (depuis.isAfter(jusqua)) {
+            throw new BadRequestException("La date de début est postérieure à la date de fin");
+        }
+
+        String tenantId = currentTenant();
+
+        // Le retard est volontairement exclu : un élève arrivé avec dix minutes
+        // de retard est en classe, et l'annoncer au professeur suivant comme un
+        // manquement en cours noierait les deux cas qui, eux, appellent une
+        // réaction — l'absence et l'exclusion.
+        List<LigneAppel> lignes = ligneAppelRepository.findSignalementsClasse(
+                tenantId, groupeClasseId,
+                List.of(StatutPresence.ABSENT, StatutPresence.EXCLU),
+                depuis, jusqua);
+
+        if (lignes.isEmpty()) return List.of();
+
+        // Les libellés sont résolus en deux requêtes pour toute la liste, et non
+        // une par ligne : la classe entière tient dans un écran de téléphone,
+        // son chargement doit tenir dans un aller-retour.
+        Set<Long> matieres = lignes.stream()
+                .map(l -> l.getSeanceAppel().getMatiereId())
+                .filter(java.util.Objects::nonNull)
+                .collect(Collectors.toSet());
+        Set<Long> enseignants = lignes.stream()
+                .map(l -> l.getSeanceAppel().getEnseignantId())
+                .filter(java.util.Objects::nonNull)
+                .collect(Collectors.toSet());
+
+        Map<Long, String> libellesMatieres = portContexteScolaire.libellesMatieres(tenantId, matieres);
+        Map<Long, String> nomsEnseignants = portContexteScolaire.nomsEnseignants(tenantId, enseignants);
+
+        return lignes.stream()
+                .map(ligne -> versSignalement(tenantId, ligne, libellesMatieres, nomsEnseignants))
+                .toList();
+    }
+
+    private SignalementEleveReponse versSignalement(String tenantId,
+                                                    LigneAppel ligne,
+                                                    Map<Long, String> libellesMatieres,
+                                                    Map<Long, String> nomsEnseignants) {
+        SeanceAppel seance = ligne.getSeanceAppel();
+
+        // Le dernier dépôt fait foi : une absence refusée puis re-justifiée doit
+        // afficher l'état du nouveau justificatif, pas celui du premier.
+        JustificatifAbsence dernier = ligne.getJustificatifs().stream()
+                .max(Comparator.comparing(JustificatifAbsence::getSoumisAt,
+                        Comparator.nullsFirst(Comparator.naturalOrder())))
+                .orElse(null);
+
+        LocalTime heureDebut = portSeancePlanning
+                .trouverCreneau(tenantId, seance.getSeancePlanningId())
+                .map(CreneauSeance::heureDebut)
+                .orElse(null);
+
+        return SignalementEleveReponse.builder()
+                .eleveId(ligne.getEleveId())
+                .ligneAppelId(ligne.getId())
+                .seanceAppelId(seance.getId())
+                .statut(ligne.getStatut())
+                .dateSeance(seance.getDateSeance())
+                .heureDebut(heureDebut)
+                .matiereId(seance.getMatiereId())
+                .matiere(libellesMatieres.get(seance.getMatiereId()))
+                .enseignantId(seance.getEnseignantId())
+                .enseignant(nomsEnseignants.get(seance.getEnseignantId()))
+                .raisonExclusion(ligne.getRaisonExclusion())
                 .justificatifId(dernier != null ? dernier.getId() : null)
                 .statutJustificatif(dernier != null ? dernier.getStatut() : null)
                 .build();

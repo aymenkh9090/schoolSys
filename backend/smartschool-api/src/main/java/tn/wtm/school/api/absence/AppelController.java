@@ -14,6 +14,7 @@ import tn.wtm.school.absence.dto.reponse.AbsenceEleveReponse;
 import tn.wtm.school.absence.dto.reponse.AppelReponse;
 import tn.wtm.school.absence.dto.reponse.HistoriqueAppelReponse;
 import tn.wtm.school.absence.dto.reponse.LigneAppelReponse;
+import tn.wtm.school.absence.dto.reponse.SignalementEleveReponse;
 import tn.wtm.school.absence.service.ServiceAppel;
 import tn.wtm.school.org.service.SchoolUserService;
 
@@ -68,6 +69,24 @@ public class AppelController {
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) @Nullable LocalDate fin,
             @RequestParam(required = false, defaultValue = "true") boolean inclureRetards) {
         return ResponseEntity.ok(serviceAppel.listerAbsencesEleve(eleveId, debut, fin, inclureRetards));
+    }
+
+    /**
+     * Absences et exclusions non justifiées d'une CLASSE, sur une période.
+     * <p>
+     * L'enseignant qui ouvre sa feuille d'appel voit ainsi ce que ses collègues
+     * ont signalé plus tôt dans la journée ou la semaine : un élève absent en
+     * première heure, un autre exclu la veille. La liste se vide quand la vie
+     * scolaire valide un justificatif, jamais depuis la classe.
+     * <p>
+     * Bornes par défaut : les sept derniers jours jusqu'à aujourd'hui.
+     */
+    @GetMapping("/classes/{groupeClasseId}/signalements")
+    public ResponseEntity<List<SignalementEleveReponse>> signalementsClasse(
+            @PathVariable Long groupeClasseId,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) @Nullable LocalDate depuis,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) @Nullable LocalDate jusqua) {
+        return ResponseEntity.ok(serviceAppel.listerSignalementsClasse(groupeClasseId, depuis, jusqua));
     }
 
     @PatchMapping("/lignes/{ligneAppelId}/statut")

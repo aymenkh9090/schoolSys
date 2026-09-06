@@ -70,4 +70,34 @@ public interface LigneAppelRepository
             @Param("statuts") java.util.Collection<StatutPresence> statuts,
             @Param("debut") java.time.LocalDate debut,
             @Param("fin") java.time.LocalDate fin);
+
+    /**
+     * Absences et exclusions non soldées d'une CLASSE sur une période.
+     * <p>
+     * Rattachée à la classe et non à l'enseignant : c'est ce qui permet au
+     * professeur de la deuxième heure de voir l'élève que son collègue a
+     * signalé en première. Le filtre {@code est_justifie = FALSE} est la seule
+     * sortie de la liste — un enseignant constate, la vie scolaire solde.
+     * <p>
+     * {@code estJustifie} peut être nul sur les lignes antérieures à la valeur
+     * par défaut de la colonne : le test l'accepte explicitement, sans quoi ces
+     * absences-là disparaîtraient de la vue sans avoir jamais été justifiées.
+     */
+    @Query("""
+            SELECT DISTINCT l FROM LigneAppel l
+            JOIN FETCH l.seanceAppel s
+            LEFT JOIN FETCH l.justificatifs
+            WHERE l.tenantId = :tenantId
+              AND s.groupeClasseId = :groupeClasseId
+              AND l.statut IN :statuts
+              AND (l.estJustifie IS NULL OR l.estJustifie = FALSE)
+              AND s.dateSeance BETWEEN :debut AND :fin
+            ORDER BY s.dateSeance DESC
+            """)
+    List<LigneAppel> findSignalementsClasse(
+            @Param("tenantId") String tenantId,
+            @Param("groupeClasseId") Long groupeClasseId,
+            @Param("statuts") java.util.Collection<StatutPresence> statuts,
+            @Param("debut") java.time.LocalDate debut,
+            @Param("fin") java.time.LocalDate fin);
 }

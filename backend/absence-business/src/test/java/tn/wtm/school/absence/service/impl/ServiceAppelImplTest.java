@@ -10,11 +10,15 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
 import tn.wtm.school.absence.dto.reponse.AppelReponse;
+import tn.wtm.school.absence.dto.reponse.SignalementEleveReponse;
 import tn.wtm.school.absence.dto.requete.OuvertureAppelRequete;
+import tn.wtm.school.absence.entity.LigneAppel;
 import tn.wtm.school.absence.entity.SeanceAppel;
+import tn.wtm.school.absence.enums.StatutPresence;
 import tn.wtm.school.absence.mapper.HistoriqueAppelMapper;
 import tn.wtm.school.absence.mapper.LigneAppelMapper;
 import tn.wtm.school.absence.mapper.SeanceAppelMapper;
+import tn.wtm.school.absence.port.PortContexteScolaire;
 import tn.wtm.school.absence.port.PortEleveGroupe;
 import tn.wtm.school.absence.port.PortSeancePlanning;
 import tn.wtm.school.absence.port.PortSeancePlanning.CreneauSeance;
@@ -28,12 +32,14 @@ import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.time.LocalTime;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.anyCollection;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
@@ -55,6 +61,7 @@ class ServiceAppelImplTest {
     @Mock private HistoriqueAppelMapper historiqueAppelMapper;
     @Mock private PortEleveGroupe portEleveGroupe;
     @Mock private PortSeancePlanning portSeancePlanning;
+    @Mock private PortContexteScolaire portContexteScolaire;
 
     private ServiceAppelImpl service;
 
@@ -65,7 +72,8 @@ class ServiceAppelImplTest {
     void setUp() {
         TenantContext.setTenantId(TENANT);
         service = new ServiceAppelImpl(seanceAppelRepository, ligneAppelRepository, historiqueAppelRepository,
-                seanceAppelMapper, ligneAppelMapper, historiqueAppelMapper, portEleveGroupe, portSeancePlanning);
+                seanceAppelMapper, ligneAppelMapper, historiqueAppelMapper, portEleveGroupe, portSeancePlanning,
+                portContexteScolaire);
 
         mercrediPasse = LocalDate.now().minusDays(7);
         while (mercrediPasse.getDayOfWeek() != DayOfWeek.WEDNESDAY) {
@@ -181,5 +189,67 @@ class ServiceAppelImplTest {
                 .isInstanceOf(BadRequestException.class);
 
         verify(seanceAppelRepository, never()).save(any(SeanceAppel.class));
+    }
+
+    // ── Suivi des absences d'une séance à l'autre ────────────────────────────
+
+    private LigneAppel ligneSignalee(Long eleveId, StatutPresence statut, LocalDate jour) {
+        SeanceAppel seance = SeanceAppel.builder()
+                .id(9L)
+                .seancePlanningId(PLANNING_ID)
+                .groupeClasseId(1L)
+                .matiereId(3L)
+                .enseignantId(4L)
+                .dateSeance(jour)
+                .build();
+        return LigneAppel.builder()
+                .id(77L)
+                .eleveId(eleveId)
+                .statut(statut)
+                .seanceAppel(seance)
+                .estJustifie(false)
+                .justificatifs(List.of())
+                .build();
+    }
+
+    /**
+     * Le cas d'usage complet : l'élève absent chez un collègue apparaît, avec
+     * les libellés qu'un enseignant peut lire — pas des identifiants.
+     */
+    @Test
+    void remonteLesAbsencesNonJustifieesDeLaClasseAvecLeursLibelles() {
+        when(ligneAppelRepository.findSignalementsClasse(eq(TENANT), eq(1L), anyCollection(), any(), any()))
+                .thenReturn(List.of(ligneSignalee(12L, StatutPresence.ABSENT, mercrediPasse)));
+        when(portContexteScolaire.libellesMatieres(eq(TENANT), anyCollection()))
+                .thenReturn(Map.of(3L, "Mathématiques"));
+        when(portContexteScolaire.nomsEnseignants(eq(TENANT), anyCollection()))
+                .thenReturn(Map.of(4L, "Mme Trabelsi"));
+
+        List<SignalementEleveReponse> signalements = service.listerSignalementsClasse(1L, null, null);
+
+        assertThat(signalements).singleElement().satisfies(s -> {
+            assertThat(s.getEleveId()).isEqualTo(12L);
+            assertThat(s.getStatut()).isEqualTo(StatutPresence.ABSENT);
+            assertThat(s.getMatiere()).isEqualTo("Mathématiques");
+            assertThat(s.getEnseignant()).isEqualTo("Mme Trabelsi");
+            assertThat(s.getHeureDebut()).isEqualTo(LocalTime.of(10, 0));
+        });
+    }
+
+    /** Fenêtre par défaut : les sept derniers jours, bornes comprises. */
+    @Test
+    void observeLaSemaineEcouleeQuandAucuneBorneNestDonnee() {
+        service.listerSignalementsClasse(1L, null, null);
+
+        verify(ligneAppelRepository).findSignalementsClasse(
+                eq(TENANT), eq(1L), anyCollection(),
+                eq(LocalDate.now().minusDays(7)), eq(LocalDate.now()));
+    }
+
+    @Test
+    void refuseUneFenetreInversee() {
+        assertThatThrownBy(() ->
+                service.listerSignalementsClasse(1L, LocalDate.now(), LocalDate.now().minusDays(3)))
+                .isInstanceOf(BadRequestException.class);
     }
 }
