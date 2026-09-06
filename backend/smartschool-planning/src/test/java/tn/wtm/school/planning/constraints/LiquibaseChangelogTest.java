@@ -46,8 +46,9 @@ class LiquibaseChangelogTest {
             assertThat(columns(conn, "constraint_profile")).contains("tenant_id");
             assertThat(columns(conn, "constraint_setting")).contains("tenant_id");
 
-            // Exactly 18 constraints seeded, profiles and settings empty
-            assertThat(countRows(conn, "constraint_definition")).isEqualTo(18);
+            // 18 contraintes au seed d'origine, plus les 5 règles de la
+            // circulaire n°66 semées à l'étape D (migration 014).
+            assertThat(countRows(conn, "constraint_definition")).isEqualTo(23);
             assertThat(countRows(conn, "constraint_profile")).isZero();
             assertThat(countRows(conn, "constraint_setting")).isZero();
 
@@ -57,6 +58,13 @@ class LiquibaseChangelogTest {
             assertThat(countByCode(conn, "MAX_TEACHER_HOURS_FRIDAY_SATURDAY")).isEqualTo(1);
             assertThat(countByCode(conn, "TEACHER_MIN_TWO_LEVELS")).isEqualTo(1);
             assertThat(countByCode(conn, "SPECIAL_ROOM_NO_OVERLAP")).isEqualTo(1);
+
+            // Règles de la circulaire n°66 ajoutées par la migration 014
+            assertThat(countByCode(conn, "SUBJECT_TWO_HOURS_NOT_CONSECUTIVE_DAYS")).isEqualTo(1);
+            assertThat(countByCode(conn, "PHYSICAL_EDUCATION_SESSION_SPACING")).isEqualTo(1);
+            assertThat(countByCode(conn, "MIN_STUDENT_HOURS_PER_HALF_DAY")).isEqualTo(1);
+            assertThat(countByCode(conn, "MAIN_SUBJECTS_MORNING_QUOTA")).isEqualTo(1);
+            assertThat(countByCode(conn, "CLASS_ROOM_STABILITY_PER_HALF_DAY")).isEqualTo(1);
         }
     }
 

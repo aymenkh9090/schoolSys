@@ -43,6 +43,17 @@ public final class ConstraintCodes {
     public static final String RESPECT_OFFICIAL_SUBJECT_HOURS        = "RESPECT_OFFICIAL_SUBJECT_HOURS";
     public static final String PHYSICAL_EDUCATION_THREE_SESSIONS     = "PHYSICAL_EDUCATION_THREE_SESSIONS";
 
+    // ── règles de la circulaire n°66 câblées à l'étape D ──────────────────────
+    //
+    // Contrairement aux précédentes, ces cinq-là n'existaient pas au catalogue :
+    // elles y entrent par la migration 014. Les codes sont donc neufs des deux
+    // côtés, et le verrou CatalogueProviderCoverageTest les tient appariés.
+    public static final String SUBJECT_TWO_HOURS_NOT_CONSECUTIVE_DAYS = "SUBJECT_TWO_HOURS_NOT_CONSECUTIVE_DAYS";
+    public static final String PHYSICAL_EDUCATION_SESSION_SPACING     = "PHYSICAL_EDUCATION_SESSION_SPACING";
+    public static final String MIN_STUDENT_HOURS_PER_HALF_DAY         = "MIN_STUDENT_HOURS_PER_HALF_DAY";
+    public static final String MAIN_SUBJECTS_MORNING_QUOTA            = "MAIN_SUBJECTS_MORNING_QUOTA";
+    public static final String CLASS_ROOM_STABILITY_PER_HALF_DAY      = "CLASS_ROOM_STABILITY_PER_HALF_DAY";
+
     // ── contraintes personnalisées (DSL, Section 6.4) ─────────────────────────
     //
     // Timefold agrège les violations par NOM de contrainte, et ce nom est figé à

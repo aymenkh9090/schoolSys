@@ -22,50 +22,96 @@
 | B1 — Durées `(N)` des séances de groupe | **fait** — seeder corrigé + 5 tests, 45 lignes de données rétablies |
 | B3 — Alignement `total_hours` / `heures_semaine` | **fait** — 0 pattern incohérent, tous établissements |
 | C — Les deux contraintes dures manquantes | **fait** — `RESPECT_OFFICIAL_SUBJECT_HOURS` et `PHYSICAL_EDUCATION_THREE_SESSIONS` câblées, 13 tests ; `NON_CABLEES` tombe de 9 à 7 |
-| D — Règles de la circulaire absentes | à faire |
+| D — Règles de la circulaire absentes | **fait** — 5 règles créées, 1 corrigée, 1 réveillée ; 37 tests ; `NON_CABLEES` tombe de 7 à 6 |
 | E — Validation métier post-solve | à faire |
 | F — Correction de la consécutivité | à faire |
 
+### Ce que l'étape D a livré
+
+Cinq codes **neufs des deux côtés** — ils n'existaient ni au catalogue ni dans le
+provider. La migration `014-seed-circulaire-constraints.yaml` les sème et
+**rattrape les profils existants** : `createDefault()` ne sème un réglage qu'à la
+création du profil, un établissement déjà en service n'aurait donc jamais vu ces
+règles. C'est le défaut P1 à l'envers, et il fallait le traiter dans la même
+migration.
+
+| # | Règle | § | Code | Sévérité |
+|---|---|---|---|---|
+| 1 | Matière à 2 h/semaine : jamais deux jours consécutifs | III.2.c | `SUBJECT_TWO_HOURS_NOT_CONSECUTIVE_DAYS` | MEDIUM |
+| 2 | 24 h entre deux séances d'EPS | III.2.b | `PHYSICAL_EDUCATION_SESSION_SPACING` | MEDIUM |
+| 3 | 2 h minimum par demi-journée non vide | I.2 | `MIN_STUDENT_HOURS_PER_HALF_DAY` | HARD |
+| 4 | ¾ des matières fondamentales le matin | III.2.a | `MAIN_SUBJECTS_MORNING_QUOTA` | MEDIUM, en récompense |
+| 5 | Stabilité de salle sur une demi-journée | I.4 | `CLASS_ROOM_STABILITY_PER_HALF_DAY` | MEDIUM |
+| 6 | Alternance restreinte aux 4 premiers jours | II.4 | `BALANCED_MORNING_AFTERNOON` **corrigée** | MEDIUM |
+| 7 | Deux niveaux minimum par enseignant | II.5 | `TEACHER_MIN_TWO_LEVELS` **câblée** | SOFT |
+
+Trois décisions d'implémentation méritent d'être retenues, parce qu'elles
+tranchent des ambiguïtés du texte :
+
+- **§ III.2.c est écrit sur le volume, pas sur les noms de matières.** La
+  circulaire vise l'histoire-géo et l'éducation islamique et civique ; elle les
+  désigne par « les matières à deux heures ». La contrainte lit
+  `officialWeeklySlots == 4` : elle suivra le programme si celui-ci change.
+- **§ I.2 — l'exemption de l'EPS porte sur la demi-journée, pas sur l'heure.**
+  Une heure de sport seule dans sa matinée est régulière ; une heure de sport
+  suivie d'une heure de maths fait deux heures et satisfait le plancher. Retirer
+  l'EPS de la somme aurait produit l'inverse : une matinée de deux heures
+  déclarée trop courte.
+- **§ III.2.a est une récompense plafonnée, pas une pénalité.** Le texte réserve
+  explicitement un quart de l'horaire à l'après-midi : pénaliser les heures
+  d'après-midi combattrait la circulaire. La récompense sature au quota, si bien
+  qu'une matière entièrement matinale ne rapporte pas plus qu'un trois-quarts.
+
+**Effet de bord corrigé au passage.** `BALANCED_MORNING_AFTERNOON` équilibrait
+la semaine entière. Vendredi et samedi n'ayant pas d'après-midi dans
+l'établissement 28, chaque heure du vendredi matin creusait un déséquilibre que
+rien ne pouvait combler : la contrainte pénalisait un emploi du temps régulier et
+le solveur dépensait son budget à courir après un équilibre impossible. Elle ne
+regarde plus que lundi à jeudi, comme le § II.4 le borne.
+
 ### Où reprendre
 
-**Prochaine action : étape D**, dans cet ordre de valeur.
+**Prochaine action : étape E — validation métier post-solve.** Le job ne devrait
+passer `SOLVED` que si `score.isFeasible()` **et** une vérification indépendante
+de Timefold : heures par matière et par classe, nombre de séances, conflits
+enseignant / classe / salle, disponibilités, lessons manquantes ou dupliquées,
+conformité T.1–T.3.
 
-| # | Règle | § | Sévérité | Note d'implémentation |
-|---|---|---|---|---|
-| 1 | Matière à 2 h/semaine : jamais deux jours consécutifs | III.2.c | MEDIUM | Vise histoire-géo, éducation islamique et civique. Regrouper par classe + matière, comparer les jours deux à deux. |
-| 2 | 24 h entre deux séances d'EPS | III.2.b | MEDIUM | **Hypothèse à confirmer** : mesure de début à début (§ 1.6, point 5). Complète `PHYSICAL_EDUCATION_THREE_SESSIONS`, qui ne regarde que le découpage. |
-| 3 | 2 h minimum par demi-journée non vide | I.2 | HARD | Le plafond de 6 h existe déjà (`MAX_STUDENT_HOURS_PER_DAY`) ; c'est le plancher qui manque. Ne s'applique **pas** à l'EPS — la circulaire l'exclut nommément. |
-| 4 | ¾ des matières fondamentales le matin | III.2.a | MEDIUM, en récompense | Arabe, français, mathématiques. `Lesson.mainSubject` existe déjà et n'est utilisé nulle part. On ne peut pas interdire l'après-midi : un quart de l'horaire doit y aller. |
-| 5 | Stabilité de salle sur une demi-journée | I.4 | MEDIUM | Sauf matières en salle spécialisée — l'exception est la condition de faisabilité du § III.4. |
-| 6 | Alternance restreinte aux 4 premiers jours | II.4 | MEDIUM | **Correction** de `BALANCED_MORNING_AFTERNOON`, qui équilibre aujourd'hui sur toute la semaine, vendredi et samedi compris. |
-| 7 | Deux niveaux minimum par enseignant | II.5 | SOFT | Retire `TEACHER_MIN_TWO_LEVELS` de `NON_CABLEES`. |
-
-**Points ouverts à trancher avant ou pendant :**
+**Points ouverts à trancher :**
 
 1. **`COLLEGE_*_OFFICIEL` : T.1 ou T.3 ?** Le seed donne MATH 6 h et EN 5 h en
    `2+1+1+1`. Le § T.1 (collège) dit MATH 4 h et EN `(2)+1+1` 4 h ; le § T.3
    (pilote) dit MATH 5 h et EN `(2)+1+1+1` 5 h. Six heures de mathématiques ne
    correspondent à aucun des deux, et la séance de groupe de l'anglais a
    disparu dans les deux cas. Ramener MATH à 4 h retire des heures à toutes les
-   classes : **décision non prise**.
-2. **Mesure des 24 h du § III.2.b** — de début à début, hypothèse retenue.
+   classes : **décision non prise**. C'est le dernier point ouvert qui bloque
+   une lecture stricte du § T.1.
+2. **Mesure des 24 h du § III.2.b** — de début à début, hypothèse **retenue et
+   implémentée**. Elle est la lecture stricte : elle refuse lundi 10 h puis
+   mardi 8 h, que la mesure de fin à début accepterait. À confirmer auprès de
+   l'établissement.
 3. **Alternance des quinzaines** — `LessonGenerator.mapWeekParity()`, hypothèse
    retenue (§ 1.6, point 6).
 
 **Dette identifiée, non traitée :** `noStudentIdleGaps` (§ I.5) regroupe les
 séances sans regarder la parité de semaine. Une séance de quinzaine y crée donc
 un trou la semaine où elle n'a pas lieu, ou en masque un. La compacité devrait
-s'évaluer semaine impaire et semaine paire séparément. À reprendre avec le
-point 3 de l'étape D.
+s'évaluer semaine impaire et semaine paire séparément.
+**`MIN_STUDENT_HOURS_PER_HALF_DAY` hérite exactement du même angle mort** : une
+demi-journée dont l'unique séance est de quinzaine paraît occupée les deux
+semaines. Les deux contraintes se corrigeront ensemble.
 
-**Restant dans `NON_CABLEES`** (7 codes) : les 4 SOFT jamais implémentées
-(`BALANCED_TEACHER_WORKLOAD`, `TEACHER_MIN_TWO_LEVELS`,
-`MAIN_SUBJECT_BALANCED_DISTRIBUTION`, `BALANCED_CLASS_DIFFICULTY_FOR_TEACHERS`)
-et les 3 appliquées en dur mais non pilotables depuis l'interface
-(`NO_STUDENT_IDLE_GAPS`, `SPECIAL_ROOM_REQUIRED`, `SPECIAL_ROOM_NO_OVERLAP`).
+**Restant dans `NON_CABLEES`** (6 codes) : les 3 SOFT jamais implémentées
+(`BALANCED_TEACHER_WORKLOAD`, `MAIN_SUBJECT_BALANCED_DISTRIBUTION`,
+`BALANCED_CLASS_DIFFICULTY_FOR_TEACHERS`) et les 3 appliquées en dur mais non
+pilotables depuis l'interface (`NO_STUDENT_IDLE_GAPS`, `SPECIAL_ROOM_REQUIRED`,
+`SPECIAL_ROOM_NO_OVERLAP`). **Aucune des trois premières ne figure dans la
+circulaire** — ce sont des préférences de confort ajoutées par anticipation.
+C'est ce qui explique qu'elles survivent à l'étape D, et pourquoi la liste ne se
+videra pas d'elle-même.
 
-**État des tests au moment de l'interruption :** `smartschool-planning` 260,
-`smartschool-api` 5, `organisation-business` 300, `absence-business` 10 —
+**État des tests :** `smartschool-planning` 297, `smartschool-api` 5,
+`organisation-business` 300, `absence-business` 10, `tenant-business` 19 —
 **0 échec**.
 
 **Pour relancer une génération et mesurer l'effet** : l'API exige un compte
@@ -173,7 +219,7 @@ déclarés dans `TimetableConstraintProvider` :
 | `NO_STUDENT_IDLE_GAPS` | HARD | codée en dur, **non pilotable** depuis le profil |
 | `SPECIAL_ROOM_REQUIRED` | HARD | idem |
 | `BALANCED_TEACHER_WORKLOAD` | SOFT | constante déclarée, aucun flux |
-| `TEACHER_MIN_TWO_LEVELS` | SOFT | idem |
+| `TEACHER_MIN_TWO_LEVELS` | SOFT | ~~idem~~ — **câblée à l'étape D** |
 | `MAIN_SUBJECT_BALANCED_DISTRIBUTION` | SOFT | idem |
 | `BALANCED_CLASS_DIFFICULTY_FOR_TEACHERS` | SOFT | idem |
 
@@ -238,18 +284,23 @@ enseignant ≠ horaire élève).
 
 | § | Règle | État |
 |---|---|---|
-| I.2 | 2 h minimum par demi-journée non vide | absente |
+| I.2 | 2 h minimum par demi-journée non vide | ~~absente~~ — **`MIN_STUDENT_HOURS_PER_HALF_DAY`, étape D** |
 | I.3 | 2 h de séparation midi | implicite (`isBreakSlot`), non vérifiée |
-| I.4 | Stabilité de salle sur une demi-journée | absente |
+| I.4 | Stabilité de salle sur une demi-journée | ~~absente~~ — **`CLASS_ROOM_STABILITY_PER_HALF_DAY`, étape D** |
 | II.1 | Journée de formation | `teacherAvailability` existe, rien ne la peuple |
 | II.2 | Équilibre hebdomadaire du service | absente |
 | II.3 | Dérogation 5 h consécutives vendredi/samedi | implémentée comme plafond journalier, pas comme dérogation |
-| II.4 | Alternance sur les 4 premiers jours | équilibre calculé sur toute la semaine |
-| II.5 | Deux niveaux minimum | constante déclarée, flux absent |
+| II.4 | Alternance sur les 4 premiers jours | ~~toute la semaine~~ — **bornée à lundi–jeudi, étape D** |
+| II.5 | Deux niveaux minimum | ~~constante déclarée, flux absent~~ — **câblée à l'étape D** |
 | III.1 | Répartition matin/après-midi d'une matière | absente |
-| III.2.a | ¾ des fondamentales le matin | absente (`Lesson.mainSubject` inutilisé) |
-| III.2.b | 24 h entre deux EPS | absente |
-| III.2.c | 2 h/semaine, jamais deux jours consécutifs | absente |
+| III.2.a | ¾ des fondamentales le matin | ~~absente~~ — **`MAIN_SUBJECTS_MORNING_QUOTA`, étape D** ; `mainSubject` enfin utilisé |
+| III.2.b | 24 h entre deux EPS | ~~absente~~ — **`PHYSICAL_EDUCATION_SESSION_SPACING`, étape D** |
+| III.2.c | 2 h/semaine, jamais deux jours consécutifs | ~~absente~~ — **`SUBJECT_TWO_HOURS_NOT_CONSECUTIVE_DAYS`, étape D** |
+
+Restent absentes : le § I.3 (séparation de midi, seulement implicite), le § II.1
+(aucune source ne peuple les jours de formation), le § II.2 (« répartition
+équilibrée » que la circulaire ne chiffre pas, § 1.6 point 4), le § II.3 (écrit
+comme un plafond et non comme une dérogation) et le § III.1.
 
 ### P6 — `MAX_TWO_CONSECUTIVE_SESSIONS` ne mesure pas la consécutivité
 
@@ -299,7 +350,7 @@ vérification des heures, des séances, ou de la conformité au texte.
 | `solver/ref/TeacherRef.java` | volume hebdomadaire, jours de formation |
 | `solver/service/TimetableSolverService.java` | branchement de la validation |
 | **nouveau** `solver/validation/TimetableBusinessValidator.java` | validation métier |
-| migration Liquibase | alignement catalogue ↔ provider |
+| migration Liquibase | alignement catalogue ↔ provider ; `014-seed-circulaire-constraints.yaml` sème les 5 codes de l'étape D et rattrape les profils existants |
 | données `patterns` / `pattern_details` | durées `(N)` |
 
 ---
@@ -322,7 +373,7 @@ correspondant. **Ne change aucun comportement** ; empêche P1 de se reproduire.
   (classe, matière) comparée au volume officiel. **HARD**, § T.1/T.3.
 - `PHYSICAL_EDUCATION_THREE_SESSIONS` — § III.2.b, avec ses deux découpages.
 
-### Étape D — Les règles absentes, par valeur décroissante
+### Étape D — Les règles absentes, par valeur décroissante — **faite**
 1. § III.2.c — 2 h/semaine, jamais deux jours consécutifs (MEDIUM)
 2. § III.2.b — 24 h entre deux EPS (MEDIUM)
 3. § I.2 — 2 h minimum par demi-journée non vide (HARD)
@@ -330,6 +381,10 @@ correspondant. **Ne change aucun comportement** ; empêche P1 de se reproduire.
 5. § I.4 — stabilité de salle (MEDIUM)
 6. § II.4 — alternance restreinte aux 4 premiers jours (correction)
 7. § II.5 — deux niveaux minimum (SOFT)
+
+Les cinq premières sont de nouveaux codes, semés par la migration 014 avec le
+rattrapage des profils déjà en base ; les deux dernières corrigent l'existant.
+Couverture : `ConformiteCirculaireEtapeDTest`, 37 tests.
 
 ### Étape E — Validation métier post-solve
 Indépendante de Timefold : heures par matière et par classe, nombre de séances,

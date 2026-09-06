@@ -44,12 +44,18 @@ public class TimetableConstraintProvider implements ConstraintProvider {
                 maxConsecutiveSameSessions(f),
                 respectOfficialSubjectHours(f),
                 physicalEducationSessionShape(f),
+                minStudentHoursPerHalfDay(f),
 
                 // ── Bloc 3 : contraintes dynamiques MEDIUM / SOFT ─────────────
                 theoryPracticeSeparation(f),
                 balancedMorningAfternoon(f),
                 teacherWeeklyRestDay(f),
                 avoidSubjectConcentrationSameDay(f),
+                subjectTwoHoursNotConsecutiveDays(f),
+                physicalEducationSessionSpacing(f),
+                mainSubjectsMorningQuota(f),
+                classRoomStabilityPerHalfDay(f),
+                teacherMinTwoLevels(f),
 
                 // ── Bloc 4 : contraintes personnalisées (DSL, par établissement) ──
                 customLessonPenalty(f, DslSeverity.HARD,   CUSTOM_RULE_HARD),
@@ -417,6 +423,65 @@ public class TimetableConstraintProvider implements ConstraintProvider {
         return false;
     }
 
+    /**
+     * Toute demi-journée où la classe vient doit lui offrir au moins deux
+     * heures — § I.2 de la circulaire n°66.
+     *
+     * <p>Le plafond de six heures par jour existait déjà
+     * ({@code MAX_STUDENT_HOURS_PER_DAY}) ; c'est le plancher qui manquait. Les
+     * deux bornes viennent pourtant de la même phrase, et c'est le plancher qui
+     * décrit la nuisance la plus concrète : faire venir une classe entière au
+     * collège pour une heure unique.
+     *
+     * <p><b>L'EPS est nommément exclu par le texte.</b> Une séance de sport
+     * d'une heure, seule dans sa demi-journée, est régulière — c'est même le
+     * découpage que le § III.2.b recommande. L'exemption porte sur la
+     * demi-journée entièrement sportive : dès qu'une autre matière l'accompagne,
+     * le volume de la demi-journée se compte en entier, EPS compris, et doit
+     * atteindre le plancher.
+     */
+    private Constraint minStudentHoursPerHalfDay(ConstraintFactory f) {
+        return f.forEach(Lesson.class)
+                .filter(l -> l.getTimeSlot() != null && l.getGroupIndex() != 2)
+                .groupBy(
+                        Lesson::getStudentClassName,
+                        l -> l.getTimeSlot().getDay() + "|" + l.getTimeSlot().getPeriod(),
+                        ConstraintCollectors.toList())
+                .join(ActiveConstraintParam.class,
+                        Joiners.equal((cls, demiJournee, seances) -> MIN_STUDENT_HOURS_PER_HALF_DAY,
+                                ActiveConstraintParam::getCode))
+                .filter((cls, demiJournee, seances, p) ->
+                        demiJourneeSousLePlancher(seances, plancherDemiJournee(p)))
+                .penalize(HardMediumSoftScore.ONE_HARD,
+                        (cls, demiJournee, seances, p) ->
+                                plancherDemiJournee(p) - volumeEnCreneaux(seances))
+                .asConstraint(MIN_STUDENT_HOURS_PER_HALF_DAY);
+    }
+
+    /** Plancher du § I.2 en créneaux de 30 min — 2 h, sauf réglage contraire. */
+    private static int plancherDemiJournee(ActiveConstraintParam p) {
+        int heures = p.getInt("minHours", p.getIntParam() > 0 ? p.getIntParam() : 2);
+        return heures * 2;
+    }
+
+    private static int volumeEnCreneaux(java.util.List<Lesson> seances) {
+        return seances.stream().mapToInt(Lesson::getDurationSlots).sum();
+    }
+
+    /**
+     * Vrai quand la demi-journée est occupée, trop courte, et pas uniquement
+     * sportive — les trois conditions du § I.2 réunies.
+     */
+    private static boolean demiJourneeSousLePlancher(java.util.List<Lesson> seances, int plancher) {
+        if (seances.isEmpty()) {
+            return false; // demi-journée libre : la règle ne vise que les demi-journées où la classe vient
+        }
+        if (seances.stream().allMatch(l -> l.getSessionType() == SessionType.SPORT)) {
+            return false; // exclusion nommée par le texte
+        }
+        return volumeEnCreneaux(seances) < plancher;
+    }
+
     // ══════════════════════════════════════════════════════════════════════════
     // Bloc 3 — Contraintes dynamiques MEDIUM / SOFT
     // ══════════════════════════════════════════════════════════════════════════
@@ -444,10 +509,29 @@ public class TimetableConstraintProvider implements ConstraintProvider {
         return (aTheory && bPractice) || (aPractice && bTheory);
     }
 
-    // Équilibrage matin/après-midi pour les enseignants (Ministry §II-5)
+    /**
+     * Alternance matin / après-midi de l'enseignant sur les quatre premiers
+     * jours de la semaine — § II.4.
+     *
+     * <p><b>Correction.</b> Cette contrainte équilibrait jusqu'ici la semaine
+     * entière, vendredi et samedi compris. Or ces deux jours-là n'ont pas
+     * d'après-midi dans un grand nombre d'établissements — c'est le cas de
+     * l'établissement 28 — et chaque heure du vendredi matin creusait donc un
+     * déséquilibre que rien ne pouvait combler. La contrainte pénalisait un
+     * emploi du temps parfaitement régulier, et le solveur dépensait son budget
+     * à courir après un équilibre impossible. La circulaire, elle, borne
+     * explicitement l'alternance aux quatre premiers jours.
+     *
+     * <p>{@code groupIndex != 2} pour la raison habituelle : les deux moitiés
+     * d'une classe dédoublée occupent le même créneau chez le même professeur ;
+     * les compter toutes les deux gonflerait artificiellement le côté où elles
+     * tombent.
+     */
     private Constraint balancedMorningAfternoon(ConstraintFactory f) {
         return f.forEach(Lesson.class)
-                .filter(l -> l.getTeacher() != null && l.getTimeSlot() != null)
+                .filter(l -> l.getTeacher() != null && l.getTimeSlot() != null
+                        && l.getGroupIndex() != 2
+                        && estDansLesQuatrePremiersJours(l.getTimeSlot().getDay()))
                 .groupBy(
                         l -> l.getTeacher().getId(),
                         ConstraintCollectors.sum(
@@ -493,6 +577,160 @@ public class TimetableConstraintProvider implements ConstraintProvider {
                 .penalize(HardMediumSoftScore.ofSoft(1),
                         (key, cnt, p) -> (cnt - 1) * p.getSoftWeight())
                 .asConstraint(AVOID_SUBJECT_CONCENTRATION_SAME_DAY);
+    }
+
+    /**
+     * Une matière à deux heures hebdomadaires ne tombe jamais sur deux jours qui
+     * se suivent — § III.2.c.
+     *
+     * <p>Le texte vise l'histoire-géographie et l'éducation islamique et civique,
+     * mais il les désigne par leur volume, pas par leur nom : la règle est écrite
+     * ici sur {@code officialWeeklySlots}, donc elle suivra le programme si celui-ci
+     * change, et elle s'appliquera d'elle-même à toute matière ramenée à 2 h.
+     *
+     * <p>Une matière de 2 h donnée en une seule séance de deux heures ne forme
+     * aucune paire : elle ne peut pas violer la règle, et le flux ne la voit
+     * même pas. Ce sont les deux séances d'une heure que la règle écarte.
+     *
+     * <p>Samedi et lundi ne sont pas consécutifs : la semaine scolaire s'arrête
+     * au samedi, et l'écart réel est d'un dimanche entier. Comparer les numéros
+     * de jour de {@link DayOfWeek} le dit sans qu'on ait à l'énoncer.
+     */
+    private Constraint subjectTwoHoursNotConsecutiveDays(ConstraintFactory f) {
+        return f.forEachUniquePair(Lesson.class,
+                Joiners.equal(Lesson::getStudentClassName),
+                Joiners.equal(Lesson::getSubjectCode))
+                .filter((a, b) -> a.getGroupIndex() != 2 && b.getGroupIndex() != 2)
+                .filter((a, b) -> a.getOfficialWeeklySlots() == DEUX_HEURES_EN_CRENEAUX)
+                .filter((a, b) -> a.getTimeSlot() != null && b.getTimeSlot() != null)
+                .filter((a, b) -> joursConsecutifs(a.getTimeSlot().getDay(), b.getTimeSlot().getDay()))
+                .join(ActiveConstraintParam.class,
+                        Joiners.equal((a, b) -> SUBJECT_TWO_HOURS_NOT_CONSECUTIVE_DAYS,
+                                ActiveConstraintParam::getCode))
+                .penalize(HardMediumSoftScore.ONE_MEDIUM)
+                .asConstraint(SUBJECT_TWO_HOURS_NOT_CONSECUTIVE_DAYS);
+    }
+
+    /**
+     * Deux séances d'éducation physique sont séparées d'au moins vingt-quatre
+     * heures — § III.2.b, seconde moitié de la phrase.
+     *
+     * <p>{@code PHYSICAL_EDUCATION_THREE_SESSIONS} vérifie le découpage — trois
+     * séances, ou une de 2 h et une d'1 h. Elle ne regarde pas où elles tombent :
+     * trois séances le même mardi la satisfont. C'est cette contrainte-ci qui
+     * les écarte, et les deux restent distinctes pour que le diagnostic dise
+     * laquelle des deux moitiés du § III.2.b est en défaut.
+     *
+     * <p><b>Mesure de début à début</b> — hypothèse assumée : la circulaire ne
+     * dit pas si les vingt-quatre heures se comptent de la fin d'une séance au
+     * début de la suivante ou de début à début (voir le § 1.6 du plan de mise en
+     * conformité). De début à début est la lecture stricte : elle interdit
+     * lundi 10 h puis mardi 8 h, que l'autre lecture accepterait.
+     */
+    private Constraint physicalEducationSessionSpacing(ConstraintFactory f) {
+        return f.forEachUniquePair(Lesson.class,
+                Joiners.equal(Lesson::getStudentClassName))
+                .filter((a, b) -> a.getSessionType() == SessionType.SPORT
+                        && b.getSessionType() == SessionType.SPORT)
+                .filter((a, b) -> a.getGroupIndex() != 2 && b.getGroupIndex() != 2)
+                .filter((a, b) -> estDatee(a) && estDatee(b))
+                .join(ActiveConstraintParam.class,
+                        Joiners.equal((a, b) -> PHYSICAL_EDUCATION_SESSION_SPACING,
+                                ActiveConstraintParam::getCode))
+                .filter((a, b, p) -> minutesEntre(a, b) < separationExigeeEnMinutes(p))
+                .penalize(HardMediumSoftScore.ONE_MEDIUM,
+                        (a, b, p) -> heuresManquantes(minutesEntre(a, b), separationExigeeEnMinutes(p)))
+                .asConstraint(PHYSICAL_EDUCATION_SESSION_SPACING);
+    }
+
+    /**
+     * Les trois quarts des matières fondamentales — arabe, français,
+     * mathématiques — se donnent le matin, § III.2.a.
+     *
+     * <p><b>Pourquoi une récompense et non une pénalité.</b> Le texte ne dit pas
+     * « pas de fondamentale l'après-midi » : il en réserve explicitement un quart
+     * à l'après-midi. Une pénalité sur les heures d'après-midi combattrait donc
+     * la circulaire elle-même. On récompense les heures matinales jusqu'au quota,
+     * et pas au-delà : tout matin ne rapporte pas plus qu'un trois-quarts, si
+     * bien que le solveur n'a aucun intérêt à vider l'après-midi.
+     *
+     * <p>Le quota se calcule par couple classe / matière, à partir du volume
+     * réellement placé. {@code Lesson.mainSubject} vient de
+     * {@code Subject.estPrincipale} : c'est l'établissement qui désigne ses
+     * matières fondamentales, et non une liste de codes figée ici.
+     */
+    private Constraint mainSubjectsMorningQuota(ConstraintFactory f) {
+        return f.forEach(Lesson.class)
+                .filter(l -> l.isMainSubject() && l.getTimeSlot() != null && l.getGroupIndex() != 2)
+                .groupBy(Lesson::getStudentClassName,
+                         Lesson::getSubjectCode,
+                         ConstraintCollectors.toList())
+                .join(ActiveConstraintParam.class,
+                        Joiners.equal((cls, matiere, seances) -> MAIN_SUBJECTS_MORNING_QUOTA,
+                                ActiveConstraintParam::getCode))
+                // Une récompense nulle n'est pas une récompense : la filtrer évite
+                // d'inscrire au score des correspondances qui ne pèsent rien.
+                .filter((cls, matiere, seances, p) ->
+                        creditMatinal(seances, quotaMatinalEnPourcent(p)) > 0)
+                .reward(HardMediumSoftScore.ONE_MEDIUM,
+                        (cls, matiere, seances, p) -> creditMatinal(seances, quotaMatinalEnPourcent(p)))
+                .asConstraint(MAIN_SUBJECTS_MORNING_QUOTA);
+    }
+
+    /**
+     * Une classe ne change pas de salle au sein d'une demi-journée — § I.4.
+     *
+     * <p><b>L'exception des salles spécialisées est la règle même du § III.4</b> :
+     * les travaux pratiques se font au laboratoire, l'informatique en salle
+     * machine, le sport au gymnase. Pénaliser ces déplacements-là rendrait les
+     * deux articles contradictoires ; le § I.4 ne parle que des allers-retours
+     * gratuits entre salles ordinaires.
+     *
+     * <p>Les séances dédoublées sont hors du compte : {@code roomConflict} exige
+     * déjà que les deux moitiés d'une classe occupent deux salles différentes.
+     * Le déplacement y est structurel, pas subi.
+     */
+    private Constraint classRoomStabilityPerHalfDay(ConstraintFactory f) {
+        return f.forEach(Lesson.class)
+                .filter(l -> l.getTimeSlot() != null && l.getRoom() != null
+                        && l.getGroupIndex() == 0 && !l.isRequiresSpecialRoom())
+                .groupBy(
+                        Lesson::getStudentClassName,
+                        l -> l.getTimeSlot().getDay() + "|" + l.getTimeSlot().getPeriod(),
+                        ConstraintCollectors.toSet(l -> l.getRoom().getId()))
+                .join(ActiveConstraintParam.class,
+                        Joiners.equal((cls, demiJournee, salles) -> CLASS_ROOM_STABILITY_PER_HALF_DAY,
+                                ActiveConstraintParam::getCode))
+                .filter((cls, demiJournee, salles, p) -> salles.size() > 1)
+                .penalize(HardMediumSoftScore.ONE_MEDIUM,
+                        (cls, demiJournee, salles, p) -> salles.size() - 1)
+                .asConstraint(CLASS_ROOM_STABILITY_PER_HALF_DAY);
+    }
+
+    /**
+     * Un enseignant intervient sur au moins deux niveaux différents — § II.5.
+     *
+     * <p>Le code figurait au catalogue depuis l'origine, activable dans
+     * l'interface, sans qu'aucun flux ne le consomme : l'établissement pouvait le
+     * cocher, le solveur ne le voyait pas. C'est le dernier des codes « jamais
+     * implémentés » que la circulaire réclame nommément.
+     *
+     * <p>Les séances sans niveau renseigné sont écartées en amont plutôt que
+     * comptées comme un niveau nul : un niveau manquant est une donnée absente,
+     * pas un second niveau.
+     */
+    private Constraint teacherMinTwoLevels(ConstraintFactory f) {
+        return f.forEach(Lesson.class)
+                .filter(l -> l.getTeacher() != null && l.getStudentClassLevel() != null)
+                .groupBy(l -> l.getTeacher().getId(),
+                         ConstraintCollectors.toSet(Lesson::getStudentClassLevel))
+                .join(ActiveConstraintParam.class,
+                        Joiners.equal((t, niveaux) -> TEACHER_MIN_TWO_LEVELS,
+                                ActiveConstraintParam::getCode))
+                .filter((t, niveaux, p) -> niveaux.size() < niveauxExiges(p))
+                .penalize(HardMediumSoftScore.ofSoft(1),
+                        (t, niveaux, p) -> (niveauxExiges(p) - niveaux.size()) * p.getSoftWeight())
+                .asConstraint(TEACHER_MIN_TWO_LEVELS);
     }
 
     // ══════════════════════════════════════════════════════════════════════════
@@ -571,5 +809,86 @@ public class TimetableConstraintProvider implements ConstraintProvider {
 
     private static boolean isFridayOrSaturday(DayOfWeek day) {
         return day == DayOfWeek.FRIDAY || day == DayOfWeek.SATURDAY;
+    }
+
+    /** Deux heures, exprimées dans l'unité du solveur : des créneaux de 30 min. */
+    private static final int DEUX_HEURES_EN_CRENEAUX = 4;
+
+    /** Lundi à jeudi — les « quatre premiers jours » du § II.4. */
+    private static boolean estDansLesQuatrePremiersJours(DayOfWeek jour) {
+        return jour != null && jour.getValue() <= DayOfWeek.THURSDAY.getValue();
+    }
+
+    /** Deux jours qui se suivent dans la semaine scolaire, § III.2.c. */
+    private static boolean joursConsecutifs(DayOfWeek a, DayOfWeek b) {
+        return Math.abs(a.getValue() - b.getValue()) == 1;
+    }
+
+    /** Séance placée sur un créneau dont on connaît le jour et l'heure de début. */
+    private static boolean estDatee(Lesson l) {
+        return l.getTimeSlot() != null
+                && l.getTimeSlot().getDay() != null
+                && l.getTimeSlot().getStartTime() != null;
+    }
+
+    /**
+     * Écart en minutes entre les débuts de deux séances de la même semaine.
+     *
+     * <p>Le repère est la minute de la semaine — numéro de jour puis heure de
+     * début — plutôt qu'une différence de jours corrigée par une différence
+     * d'heures : la seconde forme se trompe de signe dès que la séance du jour
+     * suivant commence plus tôt, ce qui est exactement le cas que le § III.2.b
+     * cherche à interdire.
+     */
+    private static int minutesEntre(Lesson a, Lesson b) {
+        return Math.abs(minuteDeLaSemaine(a) - minuteDeLaSemaine(b));
+    }
+
+    private static int minuteDeLaSemaine(Lesson l) {
+        return l.getTimeSlot().getDay().getValue() * 24 * 60
+                + l.getTimeSlot().getStartTime().toSecondOfDay() / 60;
+    }
+
+    /** Séparation exigée par le § III.2.b, en minutes ; 24 h sauf réglage contraire. */
+    private static int separationExigeeEnMinutes(ActiveConstraintParam p) {
+        int heures = p.getInt("minHoursBetweenSessions",
+                p.getIntParam() > 0 ? p.getIntParam() : 24);
+        return heures * 60;
+    }
+
+    /**
+     * Heures manquantes, arrondies à l'heure supérieure et jamais nulles : une
+     * séparation trop courte d'une demi-heure reste une violation, et une
+     * pénalité de zéro la rendrait invisible.
+     */
+    private static int heuresManquantes(int reelles, int exigees) {
+        return Math.max(1, (exigees - reelles + 59) / 60);
+    }
+
+    /** Part du volume à placer le matin, § III.2.a — trois quarts par défaut. */
+    private static int quotaMatinalEnPourcent(ActiveConstraintParam p) {
+        int pourcent = p.getInt("morningPercent",
+                p.getIntParam() > 0 ? p.getIntParam() : 75);
+        return Math.min(100, Math.max(0, pourcent));
+    }
+
+    /**
+     * Créneaux matinaux récompensés : ceux qui sont placés le matin, plafonnés
+     * au quota. Le plafond est arrondi à l'entier inférieur — récompenser
+     * au-delà de ce que le quota autorise reviendrait à préférer une matière
+     * entièrement matinale, que le § III.2.a ne demande pas.
+     */
+    private static int creditMatinal(java.util.List<Lesson> seances, int pourcent) {
+        int total = volumeEnCreneaux(seances);
+        int matin = seances.stream()
+                .filter(l -> l.getTimeSlot().getPeriod() == DayPeriod.MORNING)
+                .mapToInt(Lesson::getDurationSlots)
+                .sum();
+        return Math.min(matin, total * pourcent / 100);
+    }
+
+    /** Nombre de niveaux exigé par le § II.5 — deux sauf réglage contraire. */
+    private static int niveauxExiges(ActiveConstraintParam p) {
+        return p.getInt("minLevels", p.getIntParam() > 0 ? p.getIntParam() : 2);
     }
 }

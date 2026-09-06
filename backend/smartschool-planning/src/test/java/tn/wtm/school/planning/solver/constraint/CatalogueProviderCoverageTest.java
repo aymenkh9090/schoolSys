@@ -66,11 +66,12 @@ class CatalogueProviderCoverageTest {
      * <p>Deux natures très différentes, et il faut les distinguer :
      *
      * <ul>
-     *   <li><b>Jamais implémentées</b> — les quatre SOFT restantes :
-     *       l'établissement peut les activer, elles ne font rien. C'est
-     *       l'étape D du plan. {@code RESPECT_OFFICIAL_SUBJECT_HOURS} et
+     *   <li><b>Jamais implémentées</b> — les trois SOFT restantes :
+     *       l'établissement peut les activer, elles ne font rien. Aucune ne
+     *       figure dans la circulaire, ce qui explique qu'elles survivent à
+     *       l'étape D. {@code RESPECT_OFFICIAL_SUBJECT_HOURS} et
      *       {@code PHYSICAL_EDUCATION_THREE_SESSIONS} figuraient ici jusqu'à
-     *       l'étape C, qui les a câblées.</li>
+     *       l'étape C, {@code TEACHER_MIN_TWO_LEVELS} jusqu'à l'étape D.</li>
      *   <li><b>Implémentées mais non pilotables</b> —
      *       {@code NO_STUDENT_IDLE_GAPS}, {@code SPECIAL_ROOM_REQUIRED} et
      *       {@code SPECIAL_ROOM_NO_OVERLAP} : le provider les applique en dur,
@@ -80,9 +81,15 @@ class CatalogueProviderCoverageTest {
      * </ul>
      */
     private static final Set<String> NON_CABLEES = new LinkedHashSet<>(Set.of(
-            // — jamais implémentées (étape D) —
+            // — jamais implémentées —
+            //
+            // Ces trois-là ne viennent pas de la circulaire : elle ne demande ni
+            // charge égale entre enseignants, ni répartition hebdomadaire des
+            // matières principales, ni équité des classes difficiles. Ce sont
+            // des préférences de confort, ajoutées au catalogue par anticipation.
+            // Elles restent donc en attente, sans échéance, là où l'étape D a
+            // câblé tout ce que le texte réclame nommément.
             "BALANCED_TEACHER_WORKLOAD",
-            "TEACHER_MIN_TWO_LEVELS",
             "MAIN_SUBJECT_BALANCED_DISTRIBUTION",
             "BALANCED_CLASS_DIFFICULTY_FOR_TEACHERS",
             // — appliquées en dur, non pilotables depuis le profil —

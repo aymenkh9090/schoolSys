@@ -1,0 +1,187 @@
+databaseChangeLog:
+  # ── Étape D du plan de mise en conformité à la circulaire n°66 ─────────────
+  #
+  # Cinq règles que la circulaire énonce et que le catalogue ignorait. Elles ne
+  # figuraient pas dans le seed 004 : contrairement aux contraintes câblées à
+  # l'étape C, ce ne sont pas des codes existants restés sans flux, mais des
+  # articles du texte qu'aucune ligne du système ne représentait.
+  #
+  # Les identifiants 19 à 23 prolongent la série manuelle du seed 004 ; la
+  # séquence seq_planning démarre à 1000, ils ne peuvent donc entrer en
+  # collision avec un identifiant attribué à l'exécution.
+  - changeSet:
+      id: 014-seed-circulaire-constraints
+      author: planning
+      changes:
+        # § III.2.c — « Les matières à deux heures hebdomadaires ne sont pas
+        # programmées sur deux jours consécutifs. »
+        - insert:
+            tableName: constraint_definition
+            columns:
+              - column: { name: id_constraint_definition, valueNumeric: 19 }
+              - column: { name: code, value: SUBJECT_TWO_HOURS_NOT_CONSECUTIVE_DAYS }
+              - column: { name: name, value: "Matière à 2 h : pas deux jours de suite" }
+              - column: { name: description, value: "Une matière à deux heures par semaine ne doit pas être programmée sur deux jours consécutifs (circulaire n°66, § III.2.c)." }
+              - column: { name: category, value: SUBJECT }
+              - column: { name: type, value: MEDIUM }
+              - column: { name: default_importance, value: HIGH }
+              - column: { name: default_enabled, valueBoolean: true }
+              - column: { name: parameter_schema, value: '{"enabled":{"type":"boolean","default":true}}' }
+              - column: { name: created_by, value: system }
+              - column: { name: updated_by, value: system }
+              - column: { name: version, valueNumeric: 0 }
+
+        # § III.2.b — « ... avec une séparation de vingt-quatre heures entre
+        # deux séances. » Mesurée de début à début (hypothèse assumée, § 1.6).
+        - insert:
+            tableName: constraint_definition
+            columns:
+              - column: { name: id_constraint_definition, valueNumeric: 20 }
+              - column: { name: code, value: PHYSICAL_EDUCATION_SESSION_SPACING }
+              - column: { name: name, value: "24 heures entre deux séances d'EPS" }
+              - column: { name: description, value: "Espacer d'au moins vingt-quatre heures deux séances d'éducation physique d'une même classe (circulaire n°66, § III.2.b)." }
+              - column: { name: category, value: SUBJECT }
+              - column: { name: type, value: MEDIUM }
+              - column: { name: default_importance, value: HIGH }
+              - column: { name: default_enabled, valueBoolean: true }
+              - column: { name: parameter_schema, value: '{"minHoursBetweenSessions":{"type":"number","default":24}}' }
+              - column: { name: created_by, value: system }
+              - column: { name: updated_by, value: system }
+              - column: { name: version, valueNumeric: 0 }
+
+        # § I.2 — « ... et deux heures au minimum par demi-journée. »
+        # Le plafond de six heures existait déjà ; c'est le plancher qui manquait.
+        - insert:
+            tableName: constraint_definition
+            columns:
+              - column: { name: id_constraint_definition, valueNumeric: 21 }
+              - column: { name: code, value: MIN_STUDENT_HOURS_PER_HALF_DAY }
+              - column: { name: name, value: "Minimum d'heures par demi-journée" }
+              - column: { name: description, value: "Une classe qui vient au collège doit y suivre au moins deux heures dans la demi-journée. Ne s'applique pas à une demi-journée entièrement consacrée à l'EPS (circulaire n°66, § I.2)." }
+              - column: { name: category, value: STUDENT }
+              - column: { name: type, value: HARD }
+              - column: { name: default_importance, value: CRITICAL }
+              - column: { name: default_enabled, valueBoolean: true }
+              - column: { name: parameter_schema, value: '{"minHours":{"type":"number","default":2}}' }
+              - column: { name: created_by, value: system }
+              - column: { name: updated_by, value: system }
+              - column: { name: version, valueNumeric: 0 }
+
+        # § III.2.a — « Les trois quarts du volume des matières fondamentales —
+        # arabe, français, mathématiques — sont programmés le matin. »
+        - insert:
+            tableName: constraint_definition
+            columns:
+              - column: { name: id_constraint_definition, valueNumeric: 22 }
+              - column: { name: code, value: MAIN_SUBJECTS_MORNING_QUOTA }
+              - column: { name: name, value: "Trois quarts des matières fondamentales le matin" }
+              - column: { name: description, value: "Placer le matin les trois quarts du volume des matières fondamentales ; le quart restant revient à l'après-midi (circulaire n°66, § III.2.a)." }
+              - column: { name: category, value: PEDAGOGICAL }
+              - column: { name: type, value: MEDIUM }
+              - column: { name: default_importance, value: HIGH }
+              - column: { name: default_enabled, valueBoolean: true }
+              - column: { name: parameter_schema, value: '{"morningPercent":{"type":"number","default":75}}' }
+              - column: { name: created_by, value: system }
+              - column: { name: updated_by, value: system }
+              - column: { name: version, valueNumeric: 0 }
+
+        # § I.4 — « Pas de changement de salle pour une classe au sein d'une
+        # demi-journée, sauf pour les matières en salle spécialisée. »
+        - insert:
+            tableName: constraint_definition
+            columns:
+              - column: { name: id_constraint_definition, valueNumeric: 23 }
+              - column: { name: code, value: CLASS_ROOM_STABILITY_PER_HALF_DAY }
+              - column: { name: name, value: "Salle stable sur une demi-journée" }
+              - column: { name: description, value: "Une classe garde la même salle pendant toute une demi-journée, sauf pour les matières qui exigent une salle spécialisée (circulaire n°66, § I.4)." }
+              - column: { name: category, value: ROOM }
+              - column: { name: type, value: MEDIUM }
+              - column: { name: default_importance, value: MEDIUM }
+              - column: { name: default_enabled, valueBoolean: true }
+              - column: { name: parameter_schema, value: '{"enabled":{"type":"boolean","default":true}}' }
+              - column: { name: created_by, value: system }
+              - column: { name: updated_by, value: system }
+              - column: { name: version, valueNumeric: 0 }
+
+  # ── Rattrapage des profils existants ───────────────────────────────────────
+  #
+  # ConstraintProfileServiceImpl.createDefault() ne sème un réglage par contrainte
+  # qu'à la CRÉATION du profil. Un profil déjà en base — celui d'un établissement
+  # qui tourne — n'aurait donc jamais vu ces cinq règles : elles seraient au
+  # catalogue, câblées dans le provider, et jamais chargées par
+  # ConstraintWeightMapper faute de constraint_setting. Autrement dit le défaut
+  # P1 à l'envers, et tout aussi silencieux.
+  #
+  # Le NOT EXISTS rend le rattrapage rejouable et laisse intact un réglage qu'un
+  # établissement aurait déjà ajusté. Les poids reprennent la table
+  # d'ConstraintProfileServiceImpl.importanceToWeight().
+  #
+  # Deux variantes : la syntaxe d'appel d'une séquence n'est pas la même sur
+  # PostgreSQL (production) et sur H2 (tests du changelog).
+  - changeSet:
+      id: 014-backfill-circulaire-settings-postgresql
+      author: planning
+      dbms: postgresql
+      changes:
+        - sql:
+            sql: |
+              INSERT INTO constraint_setting (
+                  id_constraint_setting, tenant_id, constraint_profile_id,
+                  constraint_definition_id, enabled, importance, weight, parameters_json)
+              SELECT nextval('seq_planning'),
+                     p.tenant_id,
+                     p.id_constraint_profile,
+                     d.id_constraint_definition,
+                     d.default_enabled,
+                     d.default_importance,
+                     CASE d.default_importance
+                          WHEN 'CRITICAL' THEN 1000
+                          WHEN 'HIGH'     THEN 100
+                          WHEN 'MEDIUM'   THEN 10
+                          ELSE 1 END,
+                     CASE d.code
+                          WHEN 'PHYSICAL_EDUCATION_SESSION_SPACING' THEN '{"minHoursBetweenSessions":24}'
+                          WHEN 'MIN_STUDENT_HOURS_PER_HALF_DAY'     THEN '{"minHours":2}'
+                          WHEN 'MAIN_SUBJECTS_MORNING_QUOTA'        THEN '{"morningPercent":75}'
+                          ELSE '{"enabled":true}' END
+              FROM constraint_profile p
+              CROSS JOIN constraint_definition d
+              WHERE d.id_constraint_definition BETWEEN 19 AND 23
+                AND NOT EXISTS (
+                    SELECT 1 FROM constraint_setting s
+                    WHERE s.constraint_profile_id    = p.id_constraint_profile
+                      AND s.constraint_definition_id = d.id_constraint_definition)
+
+  - changeSet:
+      id: 014-backfill-circulaire-settings-h2
+      author: planning
+      dbms: h2
+      changes:
+        - sql:
+            sql: |
+              INSERT INTO constraint_setting (
+                  id_constraint_setting, tenant_id, constraint_profile_id,
+                  constraint_definition_id, enabled, importance, weight, parameters_json)
+              SELECT NEXT VALUE FOR seq_planning,
+                     p.tenant_id,
+                     p.id_constraint_profile,
+                     d.id_constraint_definition,
+                     d.default_enabled,
+                     d.default_importance,
+                     CASE d.default_importance
+                          WHEN 'CRITICAL' THEN 1000
+                          WHEN 'HIGH'     THEN 100
+                          WHEN 'MEDIUM'   THEN 10
+                          ELSE 1 END,
+                     CASE d.code
+                          WHEN 'PHYSICAL_EDUCATION_SESSION_SPACING' THEN '{"minHoursBetweenSessions":24}'
+                          WHEN 'MIN_STUDENT_HOURS_PER_HALF_DAY'     THEN '{"minHours":2}'
+                          WHEN 'MAIN_SUBJECTS_MORNING_QUOTA'        THEN '{"morningPercent":75}'
+                          ELSE '{"enabled":true}' END
+              FROM constraint_profile p
+              CROSS JOIN constraint_definition d
+              WHERE d.id_constraint_definition BETWEEN 19 AND 23
+                AND NOT EXISTS (
+                    SELECT 1 FROM constraint_setting s
+                    WHERE s.constraint_profile_id    = p.id_constraint_profile
+                      AND s.constraint_definition_id = d.id_constraint_definition)
