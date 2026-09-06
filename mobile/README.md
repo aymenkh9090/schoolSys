@@ -6,17 +6,43 @@ ce qui n'a pas sa place devant un ordinateur.
 
 ## Les écrans
 
-Quatre onglets pour ce qu'on consulte, une pile pour ce qu'on fait — l'appel et
-le cahier ont un début et une fin, l'accueil et le planning non.
+Quatre onglets qui sont les quatre gestes de la journée — voir où on en est,
+faire l'appel, remplir le cahier, demander à l'assistant. Ce qu'on consulte une
+fois par semaine (l'emploi du temps, les classes) s'ouvre depuis l'accueil et se
+referme : la barre du bas ne porte que le quotidien.
 
 | Écran | Ce qu'on y trouve | API |
 |---|---|---|
-| **Accueil** (onglet) | Chiffres du jour, cinq actions, et les cours d'aujourd'hui avec « Faire l'appel » ou « Reprendre l'appel » selon qu'il est déjà ouvert | `/teachers/me`, `/planning/timetable/generated`, `/appel/seances` |
-| **Planning** (onglet) | La semaine, un jour à la fois | `GET /planning/timetable/jobs/{jobId}/view/teacher/{code}` |
-| **Mes classes** (onglet) | Classes, matières, effectifs ; dépliable sur la liste des élèves | `/teachers/me` (affectations), `/eleves/classe/{id}/actifs` |
-| **Assistant** (onglet) | Deux usages, un seul interlocuteur : *Mes cahiers* — question libre sur ses propres séances ; *Préparer un cours* — on joint un PDF, puis on demande ce qu'on veut | `POST /api/cahier/assistant/chat`, `POST /api/cours/document`, `POST /api/cours/chat` |
-| **Appel** | Toute la classe est présente par défaut : on ne touche que les exceptions. Clôture verrouillante | `PATCH /api/v1/appel/lignes/{id}/statut`, `POST /api/v1/appel/seances/{id}/verrouiller` |
+| **Accueil** (onglet) | La séance en cours, le bouton « Lancer l'appel », les présents/absents du moment, les **absences non justifiées de la classe** et la carte assistant | `/teachers/me`, `/planning/timetable/generated`, `/appel/seances`, `/appel/classes/{id}/signalements` |
+| **Appel** (onglet) | Choix de la séance du jour, puis feuille d'appel | `POST /api/v1/appel/seances/ouvrir` |
+| **Cahier de texte** (onglet) | Choix de la séance, puis saisie | `GET/POST /api/v1/cahier/seances/{id}` |
+| **Assistant IA** (onglet) | Deux usages, un seul interlocuteur : *Mes cahiers* — question libre sur ses propres séances ; *Préparer un cours* — on joint un PDF, puis on demande ce qu'on veut | `POST /api/cahier/assistant/chat`, `POST /api/cours/document`, `POST /api/cours/chat` |
+| **Feuille d'appel** | Toute la classe est présente par défaut : on marque les exceptions, **puis on enregistre**. Affiche ce que les collègues ont signalé. Clôture verrouillante | `PATCH /api/v1/appel/lignes/{id}/statut`, `GET /api/v1/appel/classes/{id}/signalements`, `POST /api/v1/appel/seances/{id}/verrouiller` |
 | **Cahier de séance** | Sujet, chapitre, activités, travail demandé | `POST /api/v1/cahier/seances/{id}` |
+| **Mon emploi du temps**, **Mes classes** | Ouverts depuis l'accueil | `/planning/timetable/jobs/{jobId}/view/teacher/{code}`, `/eleves/classe/{id}/actifs` |
+
+### L'appel s'enregistre en un geste
+
+Chaque tap partait auparavant seul vers le serveur. L'enseignant ne savait jamais
+s'il avait fini, une erreur de doigt était immédiatement écrite, et un réseau
+capricieux transformait la feuille en série d'états à moitié envoyés. La saisie
+vit désormais en local, une barre compte ce qui reste à envoyer, et le bouton
+**Enregistrer** engage tout — le geste qu'on faisait déjà en refermant le cahier
+papier. Quitter la feuille sans enregistrer demande confirmation.
+
+### Une absence suit l'élève, de séance en séance
+
+Un élève marqué absent en première heure était invisible pour le professeur de
+la deuxième : chacun ouvrait sa feuille sur une classe réputée entière.
+`GET /api/v1/appel/classes/{id}/signalements` renvoie les absences et exclusions
+de la **classe** — et non de l'enseignant — que personne n'a justifiées, sur les
+sept derniers jours. Elles s'affichent sur l'accueil et sous le nom de l'élève
+dans la feuille d'appel, avec l'heure, la matière et le collègue qui les a
+saisies.
+
+La liste ne se vide que d'une façon : la vie scolaire valide un justificatif
+depuis le web, ce qui marque la ligne d'appel justifiée. Un enseignant constate,
+il ne fait pas taire l'alerte d'un collègue.
 
 Le planning de la semaine n'est **pas** une grille horaire comme sur le web :
 la reproduire donnerait des cases de trois millimètres. Un sélecteur de jour et

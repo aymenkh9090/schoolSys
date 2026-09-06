@@ -16,6 +16,31 @@ export interface LigneAppelReponse {
   estJustifie: boolean
 }
 
+/**
+ * Une absence ou une exclusion qu'aucun justificatif validé n'a soldée.
+ *
+ * Rattachée à la CLASSE et non à l'enseignant qui l'a saisie : c'est ce qui la
+ * fait suivre l'élève de séance en séance, y compris chez un autre professeur,
+ * tant que la vie scolaire ne l'a pas justifiée.
+ */
+export interface SignalementEleve {
+  eleveId: number
+  ligneAppelId: number
+  seanceAppelId: number
+  statut: 'ABSENT' | 'EXCLU'
+  dateSeance: string
+  /** Heure de début du créneau — absente si la séance n'est pas au planning. */
+  heureDebut?: string
+  matiereId?: number
+  matiere?: string
+  enseignantId?: number
+  enseignant?: string
+  raisonExclusion?: string
+  justificatifId?: number
+  /** EN_ATTENTE : la famille a répondu, la vie scolaire ne s'est pas prononcée. */
+  statutJustificatif?: 'EN_ATTENTE' | 'VALIDE' | 'REFUSE'
+}
+
 export interface AppelReponse {
   id: number
   seancePlanningId: number

@@ -15,7 +15,7 @@ import { todayIso } from './planning'
  */
 export function useOuvrirAppel(
   enseignantId: number | undefined,
-  onOuvert: (appelId: number, titre: string) => void
+  onOuvert: (appelId: number, titre: string, groupeClasseId: number) => void
 ) {
   const qc = useQueryClient()
 
@@ -54,7 +54,9 @@ export function useOuvrirAppel(
     },
     onSuccess: (appel, session) => {
       void qc.invalidateQueries({ queryKey: ['appels-du-jour'] })
-      onOuvert(appel.id, `${session.classCode} · ${session.subjectName}`)
+      // La classe voyage avec l'appel : c'est elle, et non l'enseignant, qui
+      // porte les signalements que la feuille d'appel doit afficher.
+      onOuvert(appel.id, `${session.classCode} · ${session.subjectName}`, appel.groupeClasseId)
     },
     onError: (e: Error) => Alert.alert('Ouverture impossible', e.message),
   })

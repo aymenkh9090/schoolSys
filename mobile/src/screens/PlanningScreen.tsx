@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Ionicons } from '@expo/vector-icons'
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native'
+import { useNavigation } from '@react-navigation/native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 
 import type { SessionView } from '../api/types'
@@ -33,6 +34,7 @@ const HAUTEUR_BARRE = 46
  */
 export function PlanningScreen() {
   const insets = useSafeAreaInsets()
+  const navigation = useNavigation()
   const [jour, setJour] = useState(() => {
     const aujourdhui = dayCodeOf()
     return SEMAINE.includes(aujourdhui) ? aujourdhui : 'MONDAY'
@@ -50,6 +52,13 @@ export function PlanningScreen() {
   return (
     <View style={{ flex: 1, backgroundColor: colors.bg }}>
       <View style={[styles.entete, { paddingTop: insets.top + 14 }]}>
+        {/* L'écran s'ouvre depuis l'accueil et se referme : le retour vit dans
+            le bandeau, l'en-tête natif étant masqué pour ne pas doubler le
+            titre. */}
+        <Pressable onPress={() => navigation.goBack()} hitSlop={12} style={styles.retour}>
+          <Ionicons name="chevron-back" size={18} color={colors.white} />
+          <Text style={styles.retourTexte}>Accueil</Text>
+        </Pressable>
         <Text style={styles.titre}>Mon emploi du temps</Text>
         <Text style={styles.soustitre}>
           {total} séance(s) cette semaine
@@ -219,6 +228,8 @@ function Info({ icon, texte }: { icon: keyof typeof Ionicons.glyphMap; texte: st
 }
 
 const styles = StyleSheet.create({
+  retour: { flexDirection: 'row', alignItems: 'center', gap: 2, marginBottom: 8, marginLeft: -4 },
+  retourTexte: { color: colors.white, fontSize: 13, fontWeight: '600' },
   entete: {
     backgroundColor: colors.navy,
     paddingHorizontal: 16,

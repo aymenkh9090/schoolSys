@@ -18,7 +18,7 @@ import { CahierScreen } from './src/screens/CahierScreen'
 import { ClassesScreen } from './src/screens/ClassesScreen'
 import { LoginScreen } from './src/screens/LoginScreen'
 import { PlanningScreen } from './src/screens/PlanningScreen'
-import { SeancesScreen } from './src/screens/SeancesScreen'
+import { ChoixSeanceAppel, ChoixSeanceCahier } from './src/screens/SeancesScreen'
 import { colors } from './src/theme'
 
 const Stack = createNativeStackNavigator<RootStackParamList>()
@@ -26,9 +26,16 @@ const Tab = createBottomTabNavigator<TabParamList>()
 
 const ICONES: Record<keyof TabParamList, keyof typeof Ionicons.glyphMap> = {
   Accueil: 'home',
-  Planning: 'calendar',
-  Classes: 'people',
+  Appel: 'people',
+  Cahier: 'book',
   Assistant: 'sparkles',
+}
+
+const TITRES: Record<keyof TabParamList, string> = {
+  Accueil: 'Accueil',
+  Appel: 'Appel',
+  Cahier: 'Cahier de texte',
+  Assistant: 'Assistant IA',
 }
 
 const queryClient = new QueryClient({
@@ -44,9 +51,10 @@ const queryClient = new QueryClient({
 })
 
 /**
- * Quatre onglets pour ce qu'on consulte. Les écrans d'action — l'appel, le
- * cahier — s'empilent par-dessus et se referment : ils ont un début et une fin,
- * contrairement à l'accueil ou au planning, auxquels on revient sans cesse.
+ * Quatre onglets, qui sont les quatre gestes de la journée : voir où on en est,
+ * faire l'appel, remplir le cahier, demander à l'assistant. Les écrans de
+ * consultation — emploi du temps, classes — s'empilent par-dessus depuis
+ * l'accueil : on y va, on en revient.
  */
 function Onglets() {
   return (
@@ -55,8 +63,9 @@ function Onglets() {
         headerShown: false,
         tabBarActiveTintColor: colors.primary,
         tabBarInactiveTintColor: colors.textMuted,
-        tabBarStyle: { borderTopColor: colors.border, height: 58, paddingBottom: 6, paddingTop: 6 },
+        tabBarStyle: { borderTopColor: colors.border, height: 60, paddingBottom: 7, paddingTop: 7 },
         tabBarLabelStyle: { fontSize: 11, fontWeight: '600' },
+        title: TITRES[route.name],
         tabBarIcon: ({ color, size, focused }) => (
           <Ionicons
             name={focused ? ICONES[route.name] : (`${ICONES[route.name]}-outline` as never)}
@@ -67,8 +76,8 @@ function Onglets() {
       })}
     >
       <Tab.Screen name="Accueil" component={AccueilScreen} />
-      <Tab.Screen name="Planning" component={PlanningScreen} options={{ title: 'Planning' }} />
-      <Tab.Screen name="Classes" component={ClassesScreen} />
+      <Tab.Screen name="Appel" component={ChoixSeanceAppel} />
+      <Tab.Screen name="Cahier" component={ChoixSeanceCahier} />
       <Tab.Screen name="Assistant" component={AssistantScreen} />
     </Tab.Navigator>
   )
@@ -104,7 +113,7 @@ export default function App() {
   return (
     <SafeAreaProvider>
       <QueryClientProvider client={queryClient}>
-        <StatusBar style="light" />
+        <StatusBar style="dark" />
         {accessToken ? (
           <NavigationContainer>
             <Stack.Navigator
@@ -117,12 +126,25 @@ export default function App() {
             >
               <Stack.Screen name="Tabs" component={Onglets} options={{ headerShown: false }} />
               <Stack.Screen
-                name="Seances"
-                component={SeancesScreen}
-                options={{ title: 'Choisir une séance' }}
+                name="FeuilleAppel"
+                component={AppelScreen}
+                options={{ title: 'Appel' }}
               />
-              <Stack.Screen name="Appel" component={AppelScreen} options={{ title: 'Appel' }} />
-              <Stack.Screen name="Cahier" component={CahierScreen} options={{ title: 'Cahier' }} />
+              <Stack.Screen
+                name="CahierSeance"
+                component={CahierScreen}
+                options={{ title: 'Cahier de texte' }}
+              />
+              <Stack.Screen
+                name="Planning"
+                component={PlanningScreen}
+                options={{ headerShown: false }}
+              />
+              <Stack.Screen
+                name="Classes"
+                component={ClassesScreen}
+                options={{ headerShown: false }}
+              />
             </Stack.Navigator>
           </NavigationContainer>
         ) : (

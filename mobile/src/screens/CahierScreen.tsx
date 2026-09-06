@@ -9,7 +9,7 @@ import { Button, Field, Loading, Notice } from '../components/ui'
 import { colors } from '../theme'
 import type { RootStackParamList } from '../navigation'
 
-type Props = NativeStackScreenProps<RootStackParamList, 'Cahier'>
+type Props = NativeStackScreenProps<RootStackParamList, 'CahierSeance'>
 
 /**
  * Cahier de séance : ce qui a réellement été fait en classe.

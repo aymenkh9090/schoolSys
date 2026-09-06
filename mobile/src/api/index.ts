@@ -11,6 +11,7 @@ import type {
   OuvertureAppelRequete,
   SchoolClass,
   SchoolYear,
+  SignalementEleve,
   StatutPresence,
   Subject,
   Teacher,
@@ -29,6 +30,17 @@ export const appelApi = {
     ligneId: number,
     body: { statut: StatutPresence; arriveeAt?: string; raisonExclusion?: string }
   ) => api(`/api/v1/appel/lignes/${ligneId}/statut`, { method: 'PATCH', body }),
+  /**
+   * Absences et exclusions non justifiées de la classe, sur les jours récents.
+   *
+   * Interrogé par classe et non par enseignant : l'élève signalé absent en
+   * première heure doit apparaître au professeur de la deuxième, et à tous les
+   * suivants tant que la vie scolaire n'a rien tranché.
+   */
+  signalements: (groupeClasseId: number, params?: { depuis?: string; jusqua?: string }) =>
+    api<SignalementEleve[]>(
+      `/api/v1/appel/classes/${groupeClasseId}/signalements${query(params ?? {})}`
+    ),
   verrouiller: (seanceId: number) =>
     api(`/api/v1/appel/seances/${seanceId}/verrouiller`, { method: 'POST' }),
 }

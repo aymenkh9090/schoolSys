@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Ionicons } from '@expo/vector-icons'
 import { useMutation } from '@tanstack/react-query'
 import {
@@ -14,9 +14,12 @@ import {
 } from 'react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 
+import type { BottomTabScreenProps } from '@react-navigation/bottom-tabs'
+
 import { assistantApi } from '../api'
 import { Markdown } from '../components/Markdown'
 import { colors, radius } from '../theme'
+import type { TabParamList } from '../navigation'
 import { CoursPanel } from './CoursPanel'
 
 // Les suggestions décrivent les deux capacités réelles de l'assistant — le
@@ -64,9 +67,14 @@ export function EmblemeAssistant({ taille = 40 }: { taille?: number }) {
  * faire deux onglets aurait dilué la barre de navigation pour une distinction
  * qui n'existe que dans le code.
  */
-export function AssistantScreen() {
+export function AssistantScreen({ route }: BottomTabScreenProps<TabParamList, 'Assistant'>) {
   const insets = useSafeAreaInsets()
   const [mode, setMode] = useState<'questions' | 'cours'>('questions')
+
+  // Une question posée depuis l'accueil arrive par les paramètres de l'onglet :
+  // l'utilisateur a déjà formulé sa demande là-bas, la retaper ici serait la
+  // lui faire écrire deux fois.
+  const question = route.params?.question
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.bg }}>
@@ -104,15 +112,17 @@ export function AssistantScreen() {
         })}
       </View>
 
-      {mode === 'questions' ? <PanneauQuestions /> : <CoursPanel />}
+      {mode === 'questions' ? <PanneauQuestions question={question} /> : <CoursPanel />}
     </View>
   )
 }
 
-function PanneauQuestions() {
+function PanneauQuestions({ question }: { question?: string }) {
   const [messages, setMessages] = useState<Message[]>([])
   const [saisie, setSaisie] = useState('')
   const listeRef = useRef<ScrollView>(null)
+  /** Dernière question reçue de l'accueil : elle ne se rejoue pas au re-rendu. */
+  const posee = useRef<string | null>(null)
 
   const demander = useMutation({
     mutationFn: (question: string) => assistantApi.ask(question),
@@ -129,6 +139,14 @@ function PanneauQuestions() {
     setSaisie('')
     demander.mutate(question)
   }
+
+  useEffect(() => {
+    if (!question || posee.current === question) return
+    posee.current = question
+    envoyer(question)
+    // `envoyer` est stable pour la durée de vie du panneau.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [question])
 
   return (
     <KeyboardAvoidingView

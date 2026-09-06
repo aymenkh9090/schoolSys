@@ -1,23 +1,32 @@
 /**
- * Deux niveaux : quatre onglets pour ce qu'on consulte, une pile pour ce qu'on
- * fait. L'appel et le cahier se referment ; l'accueil, le planning, les classes
- * et l'assistant restent toujours à un doigt.
+ * Deux niveaux : quatre onglets pour la journée d'un enseignant, une pile pour
+ * ce qui s'ouvre et se referme.
+ *
+ * Les onglets suivent les trois gestes du métier — faire l'appel, remplir le
+ * cahier, demander à l'assistant — précédés de l'accueil qui les rassemble.
+ * L'emploi du temps et les classes ont quitté la barre : on les consulte une
+ * fois par semaine, pas une fois par heure, et ils restent à un doigt depuis
+ * l'accueil.
  */
 
 import type { NavigatorScreenParams } from '@react-navigation/native'
 
 export type TabParamList = {
   Accueil: undefined
-  Planning: undefined
-  Classes: undefined
-  Assistant: undefined
+  /** Choix d'une séance du jour, puis feuille d'appel. */
+  Appel: undefined
+  /** Choix d'une séance du jour, puis cahier de texte. */
+  Cahier: undefined
+  /** `question` : demande pré-remplie, envoyée depuis une carte de l'accueil. */
+  Assistant: { question?: string } | undefined
 }
 
 export type RootStackParamList = {
   /** `NavigatorScreenParams` : c'est ce qui autorise à viser un onglet précis. */
   Tabs: NavigatorScreenParams<TabParamList> | undefined
-  /** Choix d'une séance du jour, avant l'appel ou avant le cahier. */
-  Seances: { destination: 'appel' | 'cahier' }
-  Appel: { appelId: number; titre: string }
-  Cahier: { appelId: number; titre: string }
+  /** La feuille d'appel elle-même, une fois la séance choisie. */
+  FeuilleAppel: { appelId: number; titre: string; groupeClasseId?: number }
+  CahierSeance: { appelId: number; titre: string }
+  Planning: undefined
+  Classes: undefined
 }
