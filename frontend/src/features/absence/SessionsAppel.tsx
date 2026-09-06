@@ -4,9 +4,9 @@ import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { toast } from 'sonner'
-import { Plus, Info, Lock, LockOpen, CalendarDays } from 'lucide-react'
+import { Plus, Info, Lock, LockOpen, CalendarDays, ClipboardCheck, Users } from 'lucide-react'
 
-import { PageHeader } from '@/components/ui/PageHeader'
+import { PageHero } from '@/components/ui/PageHero'
 import { Button } from '@/components/ui/Button'
 import { Modal } from '@/components/ui/Modal'
 import { Input } from '@/components/ui/Input'
@@ -112,11 +112,15 @@ export default function SessionsAppel() {
 
   return (
     <div className="space-y-6">
-      <PageHeader
+      <PageHero
         title="Sessions d'appel"
-        subtitle="Gestion des appels de présence"
+        subtitle="Les appels ouverts par les enseignants, consultables par jour et par classe"
+        icon={ClipboardCheck}
         actions={
-          <Button variant={me ? 'outline' : 'primary'} onClick={() => setOpenModal(true)}>
+          <Button
+            className="bg-white/15 text-white hover:bg-white/25 backdrop-blur"
+            onClick={() => setOpenModal(true)}
+          >
             <Plus size={16} /> Ouvrir une session
           </Button>
         }
@@ -173,46 +177,81 @@ export default function SessionsAppel() {
       </div>
 
       {/* Liste des sessions du jour/filtre */}
-      {seancesLoading ? (
-        <div className="rounded-xl border border-brand-border bg-white p-12 text-center dark:border-slate-700 dark:bg-slate-900">
-          <p className="text-sm text-brand-textMuted dark:text-slate-400">Chargement...</p>
-        </div>
-      ) : seances.length === 0 ? (
-        <div className="rounded-xl border border-brand-border bg-white p-12 text-center dark:border-slate-700 dark:bg-slate-900">
-          <LockOpen size={32} className="mx-auto mb-3 text-brand-textMuted dark:text-slate-400" />
-          <p className="text-sm text-brand-textMuted dark:text-slate-400">Aucune séance d'appel pour ces filtres.</p>
-        </div>
-      ) : (
-        <div className="space-y-3">
-          {seances.map((appel) => (
-            <div
-              key={appel.id}
-              className="flex cursor-pointer items-center justify-between rounded-xl border border-brand-border bg-white p-4 hover:bg-brand-bgSecondary dark:border-slate-700 dark:bg-slate-900 dark:hover:bg-slate-800"
-              onClick={() => setDetailAppel(appel)}
-            >
-              <div className="space-y-1">
-                <p className="text-sm font-semibold text-brand-text dark:text-slate-100">Classe {classeNom(classes, appel.groupeClasseId)}</p>
-                <p className="text-xs text-brand-textMuted dark:text-slate-400">
-                  {enseignantNom(teachers, appel.enseignantId)} · {formatDate(appel.ouvertureAt)} · {appel.lignesAppel?.length ?? 0} élèves
-                </p>
-              </div>
-              <div className="flex items-center gap-3">
-                <Badge variant={appel.estVerrouille ? 'default' : 'success'}>
-                  {appel.estVerrouille ? <><Lock size={12} className="me-1 inline" />Verrouillée</> : <><LockOpen size={12} className="me-1 inline" />Ouverte</>}
-                </Badge>
-                <Button size="sm" variant="outline" onClick={(e) => { e.stopPropagation(); setDetailAppel(appel) }}>
-                  Voir détails
-                </Button>
-              </div>
-            </div>
+      {seancesLoading && (
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+          {[0, 1, 2, 3, 4, 5].map((i) => (
+            <div key={i} className="h-32 animate-pulse rounded-xl border border-brand-border bg-white dark:border-slate-700 dark:bg-slate-900" />
           ))}
         </div>
       )}
 
+      {!seancesLoading && seances.length === 0 && (
+        <div className="rounded-xl border border-dashed border-brand-border bg-white px-6 py-14 text-center dark:border-slate-700 dark:bg-slate-900">
+          <span className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-xl bg-teal-50 text-brand-teal dark:bg-teal-500/10 dark:text-teal-400">
+            <LockOpen size={22} />
+          </span>
+          <p className="text-sm font-medium text-brand-text dark:text-slate-200">
+            Aucune séance d'appel pour ces filtres
+          </p>
+          <p className="mx-auto mt-1 max-w-md text-sm text-brand-textMuted dark:text-slate-400">
+            Les enseignants n'ont rien ouvert ce jour-là, ou la journée n'est pas travaillée.
+          </p>
+        </div>
+      )}
+
+      {/* Une carte par session, cliquable en entier. */}
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+        {seances.map((appel) => (
+          <button
+            key={appel.id}
+            type="button"
+            onClick={() => setDetailAppel(appel)}
+            className="flex flex-col overflow-hidden rounded-xl border border-brand-border bg-white text-left transition-shadow hover:shadow-md dark:border-slate-700 dark:bg-slate-900"
+          >
+            <span className={`h-1 w-full ${appel.estVerrouille ? 'bg-slate-300 dark:bg-slate-600' : 'bg-brand-teal'}`} />
+
+            <span className="flex flex-1 flex-col gap-2.5 p-4">
+              <span className="flex items-start justify-between gap-2">
+                <span className="min-w-0">
+                  <span className="block truncate font-semibold text-brand-text dark:text-slate-100">
+                    Classe {classeNom(classes, appel.groupeClasseId)}
+                  </span>
+                  <span className="mt-0.5 block truncate text-xs text-brand-textMuted dark:text-slate-400">
+                    {enseignantNom(teachers, appel.enseignantId)}
+                  </span>
+                </span>
+                <Badge variant={appel.estVerrouille ? 'default' : 'success'}>
+                  {appel.estVerrouille
+                    ? <><Lock size={11} className="me-1 inline" />Clôturée</>
+                    : <><LockOpen size={11} className="me-1 inline" />Ouverte</>}
+                </Badge>
+              </span>
+
+              <span className="mt-auto flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-brand-textMuted dark:text-slate-400">
+                <span className="inline-flex items-center gap-1.5">
+                  <CalendarDays size={13} /> {formatDate(appel.ouvertureAt)}
+                </span>
+                <span className="inline-flex items-center gap-1.5">
+                  <Users size={13} />
+                  <strong className="font-semibold tabular-nums text-brand-text dark:text-slate-200">
+                    {appel.lignesAppel?.length ?? 0}
+                  </strong>
+                  élève{(appel.lignesAppel?.length ?? 0) > 1 ? 's' : ''}
+                </span>
+              </span>
+            </span>
+
+            <span className="flex justify-end border-t border-brand-border bg-brand-bgSecondary/40 px-4 py-2.5 text-xs font-medium text-brand-blue dark:border-slate-700 dark:bg-slate-800/40">
+              Voir le détail
+            </span>
+          </button>
+        ))}
+      </div>
+
       {/* Modal ouvrir session manuellement (secours : séance hors emploi du temps publié) */}
-      <Modal open={openModal} onClose={() => setOpenModal(false)} title="Ouvrir une session d'appel" size="md">
-        <form onSubmit={handleSubmit((d) => ouvrirMutation.mutate(d))} className="space-y-4">
-          <div className="grid grid-cols-2 gap-4">
+      <Modal open={openModal} onClose={() => setOpenModal(false)} title="Ouvrir une session d'appel" size="xl">
+        <form onSubmit={handleSubmit((d) => ouvrirMutation.mutate(d))} className="space-y-5">
+          <div className="grid gap-4 sm:grid-cols-2">
             <div>
               <Input
                 label="ID séance planning *"
@@ -220,7 +259,7 @@ export default function SessionsAppel() {
                 {...register('seancePlanningId')}
                 error={errors.seancePlanningId?.message}
               />
-              <p className="mt-1 text-xs text-brand-textMuted">Identifiant de la séance dans l'emploi du temps publié.</p>
+              <p className="mt-1 text-xs text-brand-textMuted dark:text-slate-400">Identifiant de la séance dans l'emploi du temps publié.</p>
             </div>
             <div>
               <Input
@@ -229,10 +268,10 @@ export default function SessionsAppel() {
                 {...register('dateSeance')}
                 error={errors.dateSeance?.message}
               />
-              <p className="mt-1 text-xs text-brand-textMuted">La séance étant hebdomadaire, le jour distingue chaque appel.</p>
+              <p className="mt-1 text-xs text-brand-textMuted dark:text-slate-400">La séance étant hebdomadaire, le jour distingue chaque appel.</p>
             </div>
           </div>
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid gap-4 sm:grid-cols-2">
             <Select
               label="Enseignant *"
               placeholder="Sélectionner un enseignant"

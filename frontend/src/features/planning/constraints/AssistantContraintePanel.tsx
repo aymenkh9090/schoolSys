@@ -218,7 +218,11 @@ export function AssistantContraintePanel({
         )}
       </header>
 
-      <div ref={filDiscussion} className="min-h-[20rem] flex-1 space-y-4 overflow-y-auto p-4">
+      {/* 30rem plutôt que 20 : à 320 px, deux échanges suffisaient à faire
+          défiler le fil, et la proposition de règle sortait du champ au moment
+          même où on devait la relire. Le conteneur parent plafonne toujours à
+          la hauteur de l'écran, donc le panneau ne peut pas déborder. */}
+      <div ref={filDiscussion} className="min-h-[30rem] flex-1 space-y-4 overflow-y-auto p-4">
         {!demande && !proposeMutation.isPending && (
           <EtatVide onChoisir={(exemple) => setSaisie(exemple)} />
         )}

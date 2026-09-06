@@ -3,9 +3,9 @@ import { useQuery } from '@tanstack/react-query'
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
 } from 'recharts'
-import { Users, AlertTriangle, CheckCircle, TrendingDown } from 'lucide-react'
+import { Users, AlertTriangle, CheckCircle, TrendingDown, BarChart3 } from 'lucide-react'
 
-import { PageHeader } from '@/components/ui/PageHeader'
+import { PageHero } from '@/components/ui/PageHero'
 import { StatCard } from '@/components/ui/StatCard'
 import { absenceApi } from '@/api/absence.api'
 
@@ -44,19 +44,21 @@ export default function StatistiquesAbsences() {
 
   return (
     <div className="space-y-6">
-      <PageHeader
+      <PageHero
         title="Statistiques des absences"
-        subtitle="Vue d'ensemble des présences et absences"
+        subtitle="L'absentéisme de l'établissement, sur la période de votre choix"
+        icon={BarChart3}
         actions={
-          <div className="flex gap-1 bg-brand-bgSecondary p-1 rounded-lg">
+          <div className="flex gap-1 rounded-lg bg-white/15 p-1 backdrop-blur">
             {PERIODES.map((p) => (
               <button
                 key={p.value}
                 onClick={() => setPeriode(p.value)}
-                className={`px-3 py-1.5 text-sm rounded-md transition-colors ${
+                aria-pressed={periode === p.value}
+                className={`rounded-md px-3 py-1.5 text-sm transition-colors ${
                   periode === p.value
-                    ? 'bg-white shadow-sm font-semibold text-brand-blue'
-                    : 'text-brand-textMuted hover:text-brand-text'
+                    ? 'bg-white font-semibold text-brand-teal shadow-sm'
+                    : 'text-white/85 hover:bg-white/10 hover:text-white'
                 }`}
               >
                 {p.label}
@@ -69,7 +71,7 @@ export default function StatistiquesAbsences() {
       {isLoading ? (
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           {Array.from({ length: 4 }).map((_, i) => (
-            <div key={i} className="h-24 bg-brand-bgSecondary rounded-xl animate-pulse" />
+            <div key={i} className="h-24 animate-pulse rounded-xl border border-brand-border bg-white dark:border-slate-700 dark:bg-slate-900" />
           ))}
         </div>
       ) : (
@@ -88,14 +90,14 @@ export default function StatistiquesAbsences() {
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Répartition des absences */}
-        <div className="lg:col-span-2 bg-white rounded-xl border border-brand-border p-5">
-          <h3 className="text-sm font-semibold text-brand-text mb-4">
+        <div className="rounded-xl border border-brand-border bg-white p-5 lg:col-span-2 dark:border-slate-700 dark:bg-slate-900">
+          <h3 className="mb-4 text-sm font-semibold text-brand-text dark:text-slate-100">
             Répartition sur la période
           </h3>
           {chartData.length > 0 && (data?.totalAbsences ?? 0) > 0 ? (
             <ResponsiveContainer width="100%" height={280}>
               <BarChart data={chartData} margin={{ top: 0, right: 10, left: -20, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                <CartesianGrid strokeDasharray="3 3" stroke="currentColor" className="text-brand-border dark:text-slate-700" />
                 <XAxis dataKey="name" tick={{ fontSize: 11 }} />
                 <YAxis tick={{ fontSize: 11 }} />
                 <Tooltip />
@@ -107,40 +109,40 @@ export default function StatistiquesAbsences() {
               </BarChart>
             </ResponsiveContainer>
           ) : (
-            <div className="h-64 flex items-center justify-center text-sm text-brand-textMuted">
+            <div className="flex h-64 items-center justify-center text-sm text-brand-textMuted dark:text-slate-400">
               Aucune donnée pour cette période
             </div>
           )}
         </div>
 
         {/* Détail période */}
-        <div className="bg-white rounded-xl border border-brand-border p-5">
-          <h3 className="text-sm font-semibold text-brand-text mb-4">Détails</h3>
+        <div className="rounded-xl border border-brand-border bg-white p-5 dark:border-slate-700 dark:bg-slate-900">
+          <h3 className="mb-4 text-sm font-semibold text-brand-text dark:text-slate-100">Détails</h3>
           {data ? (
             <div className="space-y-3 text-sm">
-              <div className="flex justify-between">
-                <span className="text-brand-textMuted">Période</span>
-                <span className="font-medium">{data.debut} → {data.fin}</span>
+              <div className="flex justify-between gap-2">
+                <span className="text-brand-textMuted dark:text-slate-400">Période</span>
+                <span className="font-medium text-brand-text dark:text-slate-200">{data.debut} → {data.fin}</span>
               </div>
-              <div className="flex justify-between">
-                <span className="text-brand-textMuted">Non justifiées</span>
-                <span className="font-medium text-red-600">{data.totalNonJustifiees}</span>
+              <div className="flex justify-between gap-2">
+                <span className="text-brand-textMuted dark:text-slate-400">Non justifiées</span>
+                <span className="font-medium tabular-nums text-red-600 dark:text-red-400">{data.totalNonJustifiees}</span>
               </div>
-              <div className="flex justify-between">
-                <span className="text-brand-textMuted">Retards</span>
-                <span className="font-medium text-amber-600">{data.totalRetards}</span>
+              <div className="flex justify-between gap-2">
+                <span className="text-brand-textMuted dark:text-slate-400">Retards</span>
+                <span className="font-medium tabular-nums text-amber-600 dark:text-amber-400">{data.totalRetards}</span>
               </div>
-              <div className="flex justify-between">
-                <span className="text-brand-textMuted">Exclusions</span>
-                <span className="font-medium">{data.totalExclusions}</span>
+              <div className="flex justify-between gap-2">
+                <span className="text-brand-textMuted dark:text-slate-400">Exclusions</span>
+                <span className="font-medium tabular-nums text-brand-text dark:text-slate-200">{data.totalExclusions}</span>
               </div>
-              <div className="flex justify-between border-t border-brand-border pt-3">
-                <span className="text-brand-textMuted">Taux d'absentéisme</span>
-                <span className="font-bold">{data.tauxAbsenteisme?.toFixed(1)}%</span>
+              <div className="flex justify-between gap-2 border-t border-brand-border pt-3 dark:border-slate-700">
+                <span className="text-brand-textMuted dark:text-slate-400">Taux d'absentéisme</span>
+                <span className="font-bold tabular-nums text-brand-text dark:text-slate-100">{data.tauxAbsenteisme?.toFixed(1)}%</span>
               </div>
             </div>
           ) : (
-            <p className="text-sm text-brand-textMuted text-center mt-8">Aucune donnée</p>
+            <p className="mt-8 text-center text-sm text-brand-textMuted dark:text-slate-400">Aucune donnée</p>
           )}
         </div>
       </div>

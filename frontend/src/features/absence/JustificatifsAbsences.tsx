@@ -4,6 +4,7 @@ import { toast } from 'sonner'
 import {
   CheckCircle,
   Clock,
+  FileCheck,
   FileText,
   Inbox,
   Search,
@@ -11,12 +12,11 @@ import {
   XCircle,
 } from 'lucide-react'
 
-import { PageHeader } from '@/components/ui/PageHeader'
+import { PageHero } from '@/components/ui/PageHero'
 import { Button } from '@/components/ui/Button'
 import { Modal } from '@/components/ui/Modal'
 import { Input } from '@/components/ui/Input'
 import { Badge } from '@/components/ui/Badge'
-import { Select } from '@/components/ui/Select'
 import { StatCard } from '@/components/ui/StatCard'
 import { Tabs } from '@/components/ui/Tabs'
 import { DataTable, type Column } from '@/components/ui/DataTable'
@@ -113,22 +113,16 @@ export default function JustificatifsAbsences() {
 
   const compte = (s: StatutJustificatif) => file.filter((j) => j.statut === s).length
 
-  // ── Colonnes : file d'attente ──────────────────────────────────────────────
-  function colonnesJustificatifs(avecEleve: boolean): Column<JustificatifReponse>[] {
+  /**
+   * Colonnes du dossier élève. La file d'attente, elle, est passée en cartes :
+   * on y prend une décision, on ne parcourt pas des lignes. Le dossier reste un
+   * tableau parce qu'il se lit comme un relevé — un élève, ses dates en ordre.
+   *
+   * Le paramètre `avecEleve` a disparu avec la file : ici l'élève est déjà en
+   * tête de page, sa colonne ne répétait qu'une seule et même valeur.
+   */
+  const colonnesJustificatifs = (): Column<JustificatifReponse>[] => {
     const colonnes: Column<JustificatifReponse>[] = []
-
-    if (avecEleve) {
-      colonnes.push({
-        key: 'eleve',
-        header: 'Élève',
-        render: (j) => (
-          <div>
-            <p className="font-medium text-brand-text dark:text-slate-200">{ref.nomEleve(j.eleveId)}</p>
-            <p className="text-xs text-brand-textMuted dark:text-slate-400">Classe {ref.classeEleve(j.eleveId)}</p>
-          </div>
-        ),
-      })
-    }
 
     colonnes.push(
       {
@@ -280,9 +274,10 @@ export default function JustificatifsAbsences() {
 
   return (
     <div className="space-y-6">
-      <PageHeader
+      <PageHero
         title="Justificatifs d'absence"
-        subtitle="Traitez les justificatifs déposés et régularisez les absences élève par élève"
+        subtitle="Traitez ce qui est déposé, et régularisez les absences élève par élève"
+        icon={FileCheck}
       />
 
       <Tabs
@@ -302,31 +297,133 @@ export default function JustificatifsAbsences() {
             <StatCard title="Refusés" value={compte('REFUSE')} icon={XCircle} color="red" />
           </div>
 
-          <div className="w-56">
-            <Select
-              label="Statut"
-              value={filtreStatut}
-              onChange={(e) => setFiltreStatut(e.target.value as StatutJustificatif | '')}
-              options={[
-                { value: 'EN_ATTENTE', label: 'En attente' },
-                { value: 'VALIDE', label: 'Validés' },
-                { value: 'REFUSE', label: 'Refusés' },
-                { value: '', label: 'Tous' },
-              ]}
-            />
+          {/* Le statut se filtre en pastilles portant leur compte. */}
+          <div className="rounded-xl border border-brand-border bg-white p-4 dark:border-slate-700 dark:bg-slate-900">
+            <p className="mb-2 text-sm font-medium text-brand-text dark:text-slate-200">Statut</p>
+            <div className="flex flex-wrap gap-2">
+              {([
+                ['EN_ATTENTE', 'En attente', compte('EN_ATTENTE')],
+                ['VALIDE', 'Validés', compte('VALIDE')],
+                ['REFUSE', 'Refusés', compte('REFUSE')],
+                ['', 'Tous', null],
+              ] as const).map(([valeur, libelle, nb]) => {
+                const actif = filtreStatut === valeur
+                return (
+                  <button
+                    key={libelle}
+                    onClick={() => setFiltreStatut(valeur as StatutJustificatif | '')}
+                    aria-pressed={actif}
+                    className={`inline-flex items-center gap-2 rounded-lg border px-3 py-1.5 text-sm font-medium transition-colors ${
+                      actif
+                        ? 'border-brand-teal bg-brand-teal text-white shadow-sm'
+                        : 'border-brand-border bg-white text-brand-text hover:border-brand-teal/40 hover:bg-teal-50/60 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800'
+                    }`}
+                  >
+                    {libelle}
+                    {nb !== null && (
+                      <span className={`rounded-full px-1.5 text-[11px] font-semibold tabular-nums ${
+                        actif ? 'bg-white/20 text-white' : 'bg-brand-bgSecondary text-brand-textMuted dark:bg-slate-800 dark:text-slate-400'
+                      }`}>
+                        {nb}
+                      </span>
+                    )}
+                  </button>
+                )
+              })}
+            </div>
           </div>
 
-          <DataTable
-            columns={colonnesJustificatifs(true)}
-            data={file}
-            keyField="id"
-            loading={fileLoading}
-            emptyMessage={
-              filtreStatut === 'EN_ATTENTE'
-                ? 'Aucun justificatif en attente — tout est traité.'
-                : 'Aucun justificatif pour ce filtre.'
-            }
-          />
+          {fileLoading && (
+            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+              {[0, 1, 2, 3, 4, 5].map((i) => (
+                <div key={i} className="h-44 animate-pulse rounded-xl border border-brand-border bg-white dark:border-slate-700 dark:bg-slate-900" />
+              ))}
+            </div>
+          )}
+
+          {!fileLoading && file.length === 0 && (
+            <div className="rounded-xl border border-dashed border-brand-border bg-white px-6 py-14 text-center dark:border-slate-700 dark:bg-slate-900">
+              <span className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600 dark:bg-emerald-500/10 dark:text-emerald-400">
+                <CheckCircle size={22} />
+              </span>
+              <p className="text-sm font-medium text-brand-text dark:text-slate-200">
+                {filtreStatut === 'EN_ATTENTE' ? 'Rien en attente — tout est traité' : 'Aucun justificatif pour ce filtre'}
+              </p>
+            </div>
+          )}
+
+          {/* Une carte par justificatif : c'est une décision à prendre, pas une
+              ligne à parcourir. Le motif et les notes sont du texte libre qui ne
+              tenait pas dans une cellule. */}
+          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+            {file.map((j) => (
+              <div
+                key={j.id}
+                className="flex flex-col overflow-hidden rounded-xl border border-brand-border bg-white transition-shadow hover:shadow-md dark:border-slate-700 dark:bg-slate-900"
+              >
+                <div className="flex flex-1 flex-col gap-2.5 p-4">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <h3 className="truncate font-semibold text-brand-text dark:text-slate-100">
+                        {ref.nomEleve(j.eleveId)}
+                      </h3>
+                      <p className="mt-0.5 truncate text-xs text-brand-textMuted dark:text-slate-400">
+                        Classe {ref.classeEleve(j.eleveId)}
+                      </p>
+                    </div>
+                    <Badge variant={STATUT_JUSTIFICATIF_VARIANTS[j.statut]}>
+                      {STATUT_JUSTIFICATIF_LABELS[j.statut]}
+                    </Badge>
+                  </div>
+
+                  <div className="rounded-lg bg-brand-bgSecondary/60 p-2.5 dark:bg-slate-800/50">
+                    <p className="text-xs font-medium text-brand-text dark:text-slate-200">
+                      {formatJour(j.dateSeance)}
+                    </p>
+                    <p className="mt-0.5 truncate text-xs text-brand-textMuted dark:text-slate-400">
+                      {ref.nomClasse(j.groupeClasseId)} · {ref.nomMatiere(j.matiereId)}
+                    </p>
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <Badge variant="info">{TYPE_JUSTIFICATIF_LABELS[j.typeDocument]}</Badge>
+                    {j.referenceDocument && (
+                      <span className="truncate font-mono text-[11px] text-brand-textMuted dark:text-slate-400">
+                        {j.referenceDocument}
+                      </span>
+                    )}
+                  </div>
+
+                  {j.notesAdmin && (
+                    <p className="rounded-lg bg-brand-bgSecondary/60 p-2 text-xs text-brand-textMuted dark:bg-slate-800/50 dark:text-slate-400">
+                      {j.notesAdmin}
+                    </p>
+                  )}
+
+                  <p className="mt-auto text-xs text-brand-textMuted dark:text-slate-400">
+                    Déposé le {formatDate(j.soumisAt)}
+                  </p>
+                </div>
+
+                <div className="flex items-center justify-end gap-2 border-t border-brand-border bg-brand-bgSecondary/40 px-4 py-2.5 dark:border-slate-700 dark:bg-slate-800/40">
+                  {j.statut === 'EN_ATTENTE' ? (
+                    <>
+                      <Button size="sm" variant="outline" onClick={() => { setDecision({ justif: j, approuver: false }); setNotes('') }}>
+                        <XCircle size={13} /> Refuser
+                      </Button>
+                      <Button size="sm" onClick={() => { setDecision({ justif: j, approuver: true }); setNotes('') }}>
+                        <CheckCircle size={13} /> Valider
+                      </Button>
+                    </>
+                  ) : (
+                    <span className="text-xs text-brand-textMuted dark:text-slate-400">
+                      {j.traiteAt ? `Traité le ${formatDate(j.traiteAt)}` : '—'}
+                    </span>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
         </>
       ) : (
         <>
@@ -412,7 +509,7 @@ export default function JustificatifsAbsences() {
                   Justificatifs de cet élève
                 </h2>
                 <DataTable
-                  columns={colonnesJustificatifs(false)}
+                  columns={colonnesJustificatifs()}
                   data={justificatifsEleve}
                   keyField="id"
                   loading={justifsEleveLoading}
@@ -430,7 +527,7 @@ export default function JustificatifsAbsences() {
         open={decision !== null}
         onClose={() => { setDecision(null); setNotes('') }}
         title={decision?.approuver ? 'Valider le justificatif' : 'Refuser le justificatif'}
-        size="md"
+        size="lg"
       >
         {decision && (
           <form
