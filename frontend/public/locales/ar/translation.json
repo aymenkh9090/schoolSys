@@ -20,7 +20,7 @@
     "teachers": "الأساتذة",
     "students": "التلاميذ",
     "assignments": "التكليفات",
-    "planning": "جدول التوقيت",
+    "planning": "التخطيط",
     "planningConsultation": "الاطلاع",
     "planningGenerate": "توليد",
     "planningAssistant": "المساعد",
@@ -44,9 +44,10 @@
     "categoryMain": "الرئيسية",
     "categoryConfiguration": "الإعدادات",
     "categoryAcademic": "الإدارة المدرسية",
-    "categoryPlanning": "التخطيط",
+    "categoryPlanning": "جدول التوقيت",
     "categoryFollowup": "المتابعة",
-    "categoryAnalytics": "التحليلات والتقارير"
+    "categoryAnalytics": "التحليلات والتقارير",
+    "categoryAccount": "الحساب"
   },
   "common": {
     "save": "حفظ",

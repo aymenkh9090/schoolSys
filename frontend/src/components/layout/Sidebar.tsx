@@ -74,10 +74,8 @@ function buildSchoolAdminNav(t: TFunction): NavEntry[] {
         { key: 'nationalProgram', label: t('nav.nationalProgram'), to: '/ecole/programme-national' },
         { key: 'schoolProgram', label: t('nav.schoolProgram'), to: '/ecole/programme-ecole' },
         { key: 'rooms', label: t('nav.rooms'), to: '/ecole/salles' },
-        { key: 'constraints', label: t('nav.constraints'), to: '/ecole/planning/contraintes' },
       ],
     },
-    { key: 'settings', label: t('nav.settings'), to: '/ecole/parametres', icon: SlidersHorizontal },
     {
       key: 'academic',
       label: t('nav.academic'),
@@ -97,10 +95,15 @@ function buildSchoolAdminNav(t: TFunction): NavEntry[] {
       key: 'planning',
       label: t('nav.planning'),
       icon: TableProperties,
+      // L'ordre suit le parcours réel : on règle les contraintes, on génère,
+      // puis on consulte le résultat. Consultation en tête laissait l'écran le
+      // plus utilisé du groupe pointer sur une grille vide tant qu'aucune
+      // génération n'avait tourné.
       children: [
         { key: 'planningOverview', label: t('nav.overview'), to: '/ecole/planning' },
-        { key: 'planningConsultation', label: t('nav.planningConsultation'), to: '/ecole/planning/consultation' },
+        { key: 'constraints', label: t('nav.constraints'), to: '/ecole/planning/contraintes' },
         { key: 'planningGenerate', label: t('nav.planningGenerate'), to: '/ecole/planning/generer' },
+        { key: 'planningConsultation', label: t('nav.planningConsultation'), to: '/ecole/planning/consultation' },
         { key: 'planningAssistant', label: t('nav.planningAssistant'), to: '/ecole/planning/assistant' },
       ],
     },
@@ -119,6 +122,9 @@ function buildSchoolAdminNav(t: TFunction): NavEntry[] {
     },
     { key: 'statistics', label: t('nav.statistics'), to: '/ecole/statistiques', icon: BarChart3 },
     { key: 'reports', label: t('nav.reports'), to: '/ecole/rapports', icon: FileBarChart },
+    // Les réglages du compte ferment le menu : on n'y va qu'une fois de
+    // temps en temps, et ce n'est jamais le début d'une tâche.
+    { key: 'settings', label: t('nav.settings'), to: '/ecole/parametres', icon: SlidersHorizontal },
   ]
 }
 
@@ -198,7 +204,7 @@ const CATEGORY_BY_KEY: Record<string, string> = {
   establishments: 'nav.categoryMain',
   establishment: 'nav.categoryConfiguration',
   configuration: 'nav.categoryConfiguration',
-  settings: 'nav.categoryConfiguration',
+  settings: 'nav.categoryAccount',
   academic: 'nav.categoryAcademic',
   users: 'nav.categoryAcademic',
   myClasses: 'nav.categoryAcademic',

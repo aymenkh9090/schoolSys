@@ -20,7 +20,7 @@
     "teachers": "Enseignants",
     "students": "Élèves",
     "assignments": "Affectations",
-    "planning": "Emploi du temps",
+    "planning": "Planning",
     "planningConsultation": "Consultation",
     "planningGenerate": "Générer",
     "planningAssistant": "Assistant",
@@ -44,9 +44,10 @@
     "categoryMain": "Principal",
     "categoryConfiguration": "Configuration",
     "categoryAcademic": "Gestion scolaire",
-    "categoryPlanning": "Planning",
+    "categoryPlanning": "Emploi du temps",
     "categoryFollowup": "Suivi",
-    "categoryAnalytics": "Analytics & Rapports"
+    "categoryAnalytics": "Analytics & Rapports",
+    "categoryAccount": "Compte"
   },
   "common": {
     "save": "Enregistrer",

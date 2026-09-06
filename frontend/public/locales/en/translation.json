@@ -20,7 +20,7 @@
     "teachers": "Teachers",
     "students": "Students",
     "assignments": "Assignments",
-    "planning": "Timetable",
+    "planning": "Planning",
     "planningConsultation": "View",
     "planningGenerate": "Generate",
     "planningAssistant": "Assistant",
@@ -44,9 +44,10 @@
     "categoryMain": "Main",
     "categoryConfiguration": "Configuration",
     "categoryAcademic": "School management",
-    "categoryPlanning": "Planning",
+    "categoryPlanning": "Timetable",
     "categoryFollowup": "Monitoring",
-    "categoryAnalytics": "Analytics & Reports"
+    "categoryAnalytics": "Analytics & Reports",
+    "categoryAccount": "Account"
   },
   "common": {
     "save": "Save",

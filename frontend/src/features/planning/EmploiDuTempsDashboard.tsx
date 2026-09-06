@@ -126,13 +126,16 @@ export default function EmploiDuTempsDashboard() {
       <PageHeader
         title="Emploi du temps"
         subtitle="Gérez et générez les emplois du temps de l'établissement"
+        // Générer avant Consulter : c'est l'ordre du parcours, et sur un
+        // établissement qui n'a pas encore lancé de génération, la consultation
+        // ne mène qu'à une grille vide.
         actions={
           <div className="flex gap-2">
-            <Button variant="outline" onClick={() => navigate('/ecole/planning/consultation')}>
-              <Eye size={16} /> Consultation
-            </Button>
             <Button onClick={() => navigate('/ecole/planning/generer')}>
               <Play size={16} /> Générer
+            </Button>
+            <Button variant="outline" onClick={() => navigate('/ecole/planning/consultation')}>
+              <Eye size={16} /> Consulter
             </Button>
           </div>
         }

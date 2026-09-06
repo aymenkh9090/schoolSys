@@ -1,4 +1,4 @@
-import { BookMarked, CalendarDays, Clock, DoorOpen, Sigma } from 'lucide-react'
+import { BookMarked, CalendarDays, Clock, DoorOpen, Layers, Search, Sigma } from 'lucide-react'
 
 import { AssistantChat, type Suggestion } from '@/components/assistant/AssistantChat'
 import { consigneApi } from '@/api/aiAssistant.api'
@@ -37,6 +37,22 @@ export function ConsigneAssistantChat() {
       placeholder="Combien d’heures d’arabe en 7ᵉ année ?"
       hauteur="h-[22rem]"
       ask={consigneApi.ask}
+      socle={
+        <>
+          {/* Trois chiffres qui disent d'où vient une réponse. Ce ne sont pas des
+              arguments de vente : ce sont les paramètres du corpus et de la
+              recherche, ceux-là mêmes qui rendent la citation vérifiable. */}
+          <span className="inline-flex items-center gap-1">
+            <Layers size={11} /> 22 articles indexés
+          </span>
+          <span aria-hidden>·</span>
+          <span className="inline-flex items-center gap-1">
+            <Search size={11} /> recherche hybride, sémantique et lexicale
+          </span>
+          <span aria-hidden>·</span>
+          <span>circulaire n°66/2024</span>
+        </>
+      }
       rappel={
         <>
           <BookMarked size={12} className="mt-0.5 shrink-0" />

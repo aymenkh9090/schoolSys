@@ -5,6 +5,7 @@ import {
   ChevronDown,
   ClipboardList,
   Info,
+  Lock,
   Sparkles,
   TrendingUp,
 } from 'lucide-react'
@@ -87,6 +88,15 @@ export function CahierAssistantPanel() {
             placeholder="Ex : quand ai-je traité les fractions en 7B ?"
             hauteur="h-[22rem]"
             ask={cahierAssistantApi.ask}
+            socle={
+              <>
+                <span className="inline-flex items-center gap-1">
+                  <Lock size={11} /> vos séances uniquement
+                </span>
+                <span aria-hidden>·</span>
+                <span>recherche sémantique sur le cahier renseigné</span>
+              </>
+            }
             rappel={
               <>
                 <Info size={12} className="mt-0.5 shrink-0" />

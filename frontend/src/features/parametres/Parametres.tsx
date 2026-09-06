@@ -190,7 +190,7 @@ function PedagogieTab() {
     { label: 'Programme national', description: 'Curriculum officiel à appliquer aux niveaux', to: '/ecole/programme-national' },
     { label: "Programme de l'école", description: 'Patterns hebdomadaires par matière et niveau', to: '/ecole/programme-ecole' },
     { label: 'Affectations', description: 'Enseignant ↔ classe ↔ matière', to: '/ecole/affectations' },
-    { label: 'Contraintes du solveur', description: 'Profils de contraintes de génération', to: '/ecole/planning/contraintes' },
+    { label: 'Contraintes', description: 'Les règles que le planning doit respecter', to: '/ecole/planning/contraintes' },
   ]
 
   return (

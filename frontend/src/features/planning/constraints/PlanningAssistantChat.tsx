@@ -44,13 +44,20 @@ export function PlanningAssistantChat({ schoolYearId, profileId }: Props) {
       emptyIndication="Écrivez votre question en français, ou partez d’une de celles-ci."
       attenteLabel="Consultation du planning…"
       ask={(question) => planningAssistantApi.ask(question, { schoolYearId, profileId })}
+      socle={
+        <>
+          <span>lit l’emploi du temps et les contraintes de l’établissement</span>
+          <span aria-hidden>·</span>
+          <span>chaque réponse indique les outils consultés</span>
+        </>
+      }
       rappel={
         <>
           <HelpCircle size={12} className="mt-0.5 shrink-0" />
           <span>
             L’assistant consulte, mais ne modifie rien. Pour ajouter une règle, passez par{' '}
             <strong className="font-medium text-brand-text dark:text-slate-300">
-              Configuration › Contraintes
+              Planning › Contraintes
             </strong>
             .
           </span>

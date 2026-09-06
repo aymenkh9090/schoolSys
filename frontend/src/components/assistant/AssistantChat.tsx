@@ -1,9 +1,22 @@
 import { useEffect, useRef, useState } from 'react'
-import { Bot, Database, Eye, Send, Timer } from 'lucide-react'
+import { BookOpen, Bot, ChevronDown, Database, Eye, Send, ShieldCheck, Timer } from 'lucide-react'
 
-import type { ChatResponse } from '@/api/aiAssistant.api'
+import type { ChatResponse, ConsigneArticle } from '@/api/aiAssistant.api'
 import { useAuth } from '@/hooks/useAuth'
 import { cn } from '@/lib/utils'
+import { ReponseMarkdown } from './ReponseMarkdown'
+
+/**
+ * Ce qu'un assistant peut renvoyer en plus de sa réponse.
+ *
+ * `sources` n'existe que pour la circulaire : c'est le seul assistant dont la
+ * réponse s'appuie sur un texte officiel citable article par article. Les
+ * autres restent sur `ChatResponse`, qui reste assignable — aucun n'a eu à
+ * changer.
+ */
+export interface ReponseAssistant extends ChatResponse {
+  sources?: ConsigneArticle[]
+}
 
 export interface Suggestion {
   icon: React.ElementType
@@ -25,7 +38,13 @@ interface Props {
   rappel: React.ReactNode
   placeholder?: string
   /** L'appel réseau. Le composant ne sait pas quel assistant il interroge. */
-  ask: (question: string) => Promise<ChatResponse>
+  ask: (question: string) => Promise<ReponseAssistant>
+  /**
+   * Ce sur quoi l'assistant repose, en quelques mots chiffrés — la taille du
+   * corpus, la nature de la recherche. Affiché en permanence sous le titre :
+   * c'est ce qui distingue un assistant ancré d'une boîte à texte.
+   */
+  socle?: React.ReactNode
   /** Hauteur du fil une fois la conversation entamée. */
   hauteur?: string
 }
@@ -35,6 +54,7 @@ interface Message {
   text: string
   toolsUsed?: string[]
   durationMs?: number
+  sources?: ConsigneArticle[]
   /** Vrai quand le service n'a pas répondu : la bulle prend l'habillage d'alerte. */
   failed?: boolean
 }
@@ -69,6 +89,7 @@ export function AssistantChat({
   rappel,
   placeholder = 'Posez votre question…',
   ask,
+  socle,
   hauteur = 'h-[26rem]',
 }: Props) {
   const { user } = useAuth()
@@ -105,6 +126,7 @@ export function AssistantChat({
           text: res.answer,
           toolsUsed: res.tools_used,
           durationMs: res.duration_ms,
+          sources: res.sources,
         },
       ])
     } catch {
@@ -136,6 +158,11 @@ export function AssistantChat({
               <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
               {soustitre}
             </p>
+            {socle && (
+              <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-brand-textMuted dark:text-slate-500">
+                {socle}
+              </p>
+            )}
           </div>
         </div>
 
@@ -314,19 +341,31 @@ function Bubble({ message, initials }: { message: Message; initials: string }) {
         <AssistantAvatar />
       )}
 
-      <div className={cn('flex min-w-0 max-w-[80%] flex-col gap-1', mine && 'items-end')}>
+      {/* Une réponse structurée — un QCM, un corrigé, un tableau d'horaires —
+          ne tient pas dans la largeur d'une réplique de conversation. La bulle
+          de l'assistant est donc plus large que celle de l'utilisateur. */}
+      <div
+        className={cn(
+          'flex min-w-0 flex-col gap-1',
+          mine ? 'max-w-[80%] items-end' : 'max-w-[94%]'
+        )}
+      >
         <div
           className={cn(
-            'whitespace-pre-line rounded-2xl px-3.5 py-2.5 text-sm leading-relaxed',
+            'rounded-2xl px-3.5 py-2.5 text-sm leading-relaxed',
             mine
-              ? 'rounded-tr-sm bg-brand-blue text-white'
+              ? 'whitespace-pre-line rounded-tr-sm bg-brand-blue text-white'
               : message.failed
-                ? 'rounded-tl-sm border border-amber-200 bg-amber-50 text-amber-900 dark:border-amber-500/25 dark:bg-amber-500/10 dark:text-amber-200'
+                ? 'whitespace-pre-line rounded-tl-sm border border-amber-200 bg-amber-50 text-amber-900 dark:border-amber-500/25 dark:bg-amber-500/10 dark:text-amber-200'
                 : 'rounded-tl-sm border border-brand-border bg-brand-bgSecondary/60 text-brand-text dark:border-slate-700 dark:bg-slate-800/60 dark:text-slate-100'
           )}
         >
-          {message.text}
+          {mine || message.failed ? message.text : <ReponseMarkdown texte={message.text} />}
         </div>
+
+        {message.sources && message.sources.length > 0 && (
+          <SourcesCitees sources={message.sources} />
+        )}
 
         {/* Transparence : l'utilisateur voit sur quelles données la réponse
             s'appuie. Sans cela, un chiffre juste et un chiffre inventé se
@@ -349,6 +388,85 @@ function Bubble({ message, initials }: { message: Message; initials: string }) {
           </div>
         )}
       </div>
+    </div>
+  )
+}
+
+/**
+ * Les articles sur lesquels la réponse s'appuie.
+ *
+ * C'est la pièce qui distingue cet assistant d'un modèle qui répond de
+ * mémoire, et elle mérite mieux qu'une pastille grise : chaque source est
+ * dépliable sur le TEXTE de l'article, en français et dans l'arabe d'origine.
+ * Un directeur qui doute d'une réponse peut la vérifier sans quitter l'écran,
+ * puis retrouver le passage dans le document papier grâce au numéro de page.
+ *
+ * L'arabe est cité tel quel, jamais reformulé : c'est la version qui fait foi.
+ */
+function SourcesCitees({ sources }: { sources: ConsigneArticle[] }) {
+  const [ouvert, setOuvert] = useState<string | null>(null)
+
+  return (
+    <div className="w-full overflow-hidden rounded-xl border border-teal-200/70 bg-teal-50/40 dark:border-teal-500/25 dark:bg-teal-500/5">
+      <p className="flex items-center gap-1.5 border-b border-teal-200/70 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-teal-800 dark:border-teal-500/25 dark:text-teal-300">
+        <BookOpen size={12} />
+        {sources.length === 1 ? "Article cité" : `${sources.length} articles cités`}
+      </p>
+
+      <ul className="divide-y divide-teal-200/60 dark:divide-teal-500/20">
+        {sources.map((article) => {
+          const deplie = ouvert === article.id
+          return (
+            <li key={article.id}>
+              <button
+                type="button"
+                onClick={() => setOuvert(deplie ? null : article.id)}
+                aria-expanded={deplie}
+                className="flex w-full items-center gap-2 px-3 py-2 text-left transition-colors hover:bg-teal-100/40 dark:hover:bg-teal-500/10"
+              >
+                <span className="rounded-md bg-white px-1.5 py-0.5 font-mono text-[11px] font-semibold text-teal-800 shadow-sm dark:bg-slate-800 dark:text-teal-300">
+                  {article.citation}
+                </span>
+                <span className="min-w-0 flex-1 truncate text-xs text-brand-textMuted dark:text-slate-400">
+                  {article.section} · page {article.page}
+                </span>
+                {/* `portee` n'est pas décoratif : il signale les articles qui se
+                    traduisent en contrainte de solveur, et non ceux qui
+                    décrivent seulement une organisation. */}
+                {article.portee && (
+                  <span className="hidden shrink-0 items-center gap-1 rounded-full bg-white px-2 py-0.5 text-[10px] font-medium text-teal-700 shadow-sm sm:inline-flex dark:bg-slate-800 dark:text-teal-300">
+                    <ShieldCheck size={10} /> {article.portee}
+                  </span>
+                )}
+                <ChevronDown
+                  size={14}
+                  className={cn(
+                    'shrink-0 text-teal-700 transition-transform dark:text-teal-400',
+                    deplie && 'rotate-180'
+                  )}
+                />
+              </button>
+
+              {deplie && (
+                <div className="space-y-2 bg-white/70 px-3 pb-3 pt-1 dark:bg-slate-900/50">
+                  <p className="text-xs leading-relaxed text-brand-text dark:text-slate-200">
+                    {article.texte}
+                  </p>
+                  {article.texte_ar && (
+                    <p
+                      dir="rtl"
+                      lang="ar"
+                      className="rounded-lg bg-brand-bgSecondary px-2.5 py-2 text-right text-xs leading-loose text-brand-textMuted dark:bg-slate-800 dark:text-slate-400"
+                    >
+                      {article.texte_ar}
+                    </p>
+                  )}
+                </div>
+              )}
+            </li>
+          )
+        })}
+      </ul>
     </div>
   )
 }

@@ -226,26 +226,30 @@ export const consigneApi = {
     aiClient.get<ConsigneArticlesResponse>('/api/consigne/articles').then((r) => r.data),
 
   /**
-   * Question libre sur la circulaire, adaptée au contrat de `AssistantChat`.
+   * Question libre sur la circulaire.
    *
-   * Le composant partagé affiche les sources d'une réponse dans `tools_used` —
-   * c'est l'emplacement prévu pour « sur quoi cette réponse s'appuie », et les
-   * citations d'articles sont exactement cela. L'adaptation se fait donc ici
-   * plutôt qu'en dupliquant une interface de conversation qui a déjà coûté cher
-   * à mettre au point pour les deux autres assistants.
+   * Les articles cités remontent ENTIERS jusqu'à l'écran, et non résumés en
+   * étiquettes « § III.2.a · p. 4 » comme ils l'étaient d'abord. C'était sous-
+   * vendre la seule chose qui distingue cet assistant d'un modèle répondant de
+   * mémoire : la réponse est vérifiable, texte à l'appui, arabe d'origine
+   * compris. Le composant les affiche dépliables sous la réponse.
    *
    * La borne de temps est plus courte que celle des autres : ce service n'a pas
    * de boucle d'outils, donc au plus une génération. Mesuré entre 1 et 7 s avec
    * articles, et environ 100 ms quand la circulaire ne couvre pas la question —
    * le modèle n'est alors pas appelé du tout.
    */
-  ask: (message: string): Promise<ChatResponse> =>
+  ask: (message: string) =>
     aiClient
       .post<ConsigneChatResponse>('/api/consigne/chat', { message }, { timeout: 90_000 })
       .then((r) => ({
         answer: r.data.answer,
-        tools_used: r.data.sources.map((s) => `§ ${s.id} · p. ${s.page}`),
+        // Vide, et volontairement : les sources ont désormais leur propre
+        // rendu. Les répéter en pastilles ferait dire deux fois la même chose,
+        // dont une fois mal.
+        tools_used: [],
         duration_ms: r.data.duration_ms,
+        sources: r.data.sources,
       })),
 }
 
