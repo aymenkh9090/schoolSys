@@ -161,6 +161,75 @@ class TimetableSolverServicePersistResultTest {
         assertThat(jobCaptor.getValue().getStatus()).isEqualTo(SolverStatus.INFEASIBLE);
     }
 
+    // ── le second verrou : la validation métier (étape E) ─────────────────────
+
+    @Test
+    void feasibleScoreButBusinessInvalid_setsJobStatusToINFEASIBLE() {
+        stubJobFound();
+        // Le score dit « aucune contrainte activée n'est violée ». Il ne dit rien
+        // du volume officiel, que l'établissement peut avoir décoché : ici 1 h
+        // placée contre 2 h au programme.
+        TimetableSolution sol = solution(FEASIBLE_SCORE, List.of(volumeAmpute(1L)));
+
+        persist(sol);
+
+        verify(jobRepository).save(jobCaptor.capture());
+        assertThat(jobCaptor.getValue().getStatus()).isEqualTo(SolverStatus.INFEASIBLE);
+    }
+
+    @Test
+    void businessInvalid_archivesTheReasonOnTheJob() {
+        stubJobFound();
+
+        persist(solution(FEASIBLE_SCORE, List.of(volumeAmpute(1L))));
+
+        verify(jobRepository).save(jobCaptor.capture());
+        assertThat(jobCaptor.getValue().getValidationReport())
+                .as("le motif du refus doit survivre à la solution en mémoire")
+                .contains("VOLUME_HORAIRE")
+                .contains("7A / MATH");
+    }
+
+    @Test
+    void businessInvalid_marksTheGeneratedTimetableAsNotFeasible() {
+        stubJobFound();
+
+        persist(solution(FEASIBLE_SCORE, List.of(volumeAmpute(1L))));
+
+        verify(generatedTimetableRepository).save(timetableCaptor.capture());
+        assertThat(timetableCaptor.getValue().isFeasible())
+                .as("l'écran ne doit pas afficher « faisable » sur un emploi du temps refusé")
+                .isFalse();
+    }
+
+    @Test
+    void conformSolution_leavesTheValidationReportEmpty() {
+        stubJobFound();
+
+        persist(solution(FEASIBLE_SCORE, List.of(volumeConforme(1L))));
+
+        verify(jobRepository).save(jobCaptor.capture());
+        assertThat(jobCaptor.getValue().getStatus()).isEqualTo(SolverStatus.SOLVED);
+        assertThat(jobCaptor.getValue().getValidationReport())
+                .as("une colonne vide et « rien à signaler » ne se lisent pas pareil")
+                .isNull();
+    }
+
+    @Test
+    void aWarningIsArchivedWithoutRefusingTheTimetable() {
+        stubJobFound();
+        // placedLesson ne porte aucun volume officiel : la validation ne peut pas
+        // vérifier sa conformité au programme, et elle le dit plutôt que de se
+        // taire. Un avertissement s'archive, il ne refuse pas.
+        persist(solution(FEASIBLE_SCORE, List.of(placedLesson(1L))));
+
+        verify(jobRepository).save(jobCaptor.capture());
+        assertThat(jobCaptor.getValue().getStatus()).isEqualTo(SolverStatus.SOLVED);
+        assertThat(jobCaptor.getValue().getValidationReport())
+                .contains("[avertissement]")
+                .contains("VOLUME_NON_VERIFIABLE");
+    }
+
     // ══════════════════════════════════════════════════════════════════════════
     // 2. Champs du job — finishedAt et scoreAchieved
     // ══════════════════════════════════════════════════════════════════════════
@@ -503,14 +572,18 @@ class TimetableSolverServicePersistResultTest {
     void publishesFinalProgressWithStatusAndSessionCounts() {
         stubJobFound();
 
+        // Une séance sans salle : le score Timefold est stubé faisable, mais
+        // l'emploi du temps ne l'est pas — cette séance n'apparaîtra nulle part.
+        // C'est exactement le trou que la validation métier ferme (étape E) : le
+        // job est refusé, et « faisable » suit le refus au lieu de le contredire.
         persist(solution(FEASIBLE_SCORE, List.of(placedLesson(1L), lessonWithoutRoom(2L))));
 
         verify(progressPublisher).publish(eq(TENANT), progressCaptor.capture());
         SolverProgress published = progressCaptor.getValue();
         assertThat(published.jobId()).isEqualTo(JOB_ID);
-        assertThat(published.status()).isEqualTo(SolverStatus.SOLVED);
+        assertThat(published.status()).isEqualTo(SolverStatus.INFEASIBLE);
         assertThat(published.score()).isEqualTo(FEASIBLE_SCORE.toString());
-        assertThat(published.feasible()).isTrue();
+        assertThat(published.feasible()).isFalse();
         // Seule la leçon complètement placée compte, sur un total de deux.
         assertThat(published.placedSessions()).isEqualTo(1);
         assertThat(published.totalSessions()).isEqualTo(2);
@@ -628,11 +701,35 @@ class TimetableSolverServicePersistResultTest {
                         .id(1L).code("T1").name("Mr. Dupont").maxHoursPerDay(6).build())
                 .room(RoomRef.builder()
                         .id(1L).code("A1").type(RoomType.NORMALE).capacity(30).build())
+                // Une heure distincte par séance. Depuis que persistResult passe
+                // par TimetableBusinessValidator, un décor où trois séances de la
+                // même classe se superposent n'est plus un décor neutre : c'est un
+                // emploi du temps impossible, et il est refusé — à juste titre.
                 .timeSlot(TimeSlotRef.builder()
-                        .id(id).day(DayOfWeek.MONDAY).orderIndex(1)
-                        .startTime(LocalTime.of(8, 0)).endTime(LocalTime.of(9, 0))
+                        .id(id).day(DayOfWeek.MONDAY).orderIndex(id.intValue())
+                        .startTime(LocalTime.of(8, 0).plusHours(id - 1))
+                        .endTime(LocalTime.of(9, 0).plusHours(id - 1))
                         .active(true).build())
                 .build();
+    }
+
+    /**
+     * Une séance d'une heure là où le programme en prévoit deux — le défaut que
+     * seule la validation métier voit, puisque le solveur ne le compte que si
+     * l'établissement a laissé RESPECT_OFFICIAL_SUBJECT_HOURS activée.
+     */
+    private Lesson volumeAmpute(Long id) {
+        Lesson l = placedLesson(id);
+        l.setDurationSlots(2);
+        l.setOfficialWeeklySlots(4);
+        return l;
+    }
+
+    /** La même séance, dont le volume placé rejoint exactement le programme. */
+    private Lesson volumeConforme(Long id) {
+        Lesson l = placedLesson(id);
+        l.setOfficialWeeklySlots(l.getDurationSlots());
+        return l;
     }
 
     private Lesson lessonWithoutTimeSlot(Long id) {

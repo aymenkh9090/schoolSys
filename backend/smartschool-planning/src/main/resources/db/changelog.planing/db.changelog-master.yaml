@@ -28,4 +28,6 @@ databaseChangeLog:
       file: db/changelog.planing/007-create-timetable-session.yaml
   - include:
       file: db/changelog.planing/008-fix-room-type-check.yaml
+  - include:
+      file: db/changelog.planing/015-timetable-job-validation-report.yaml
 

@@ -1,0 +1,23 @@
+databaseChangeLog:
+  # ── Étape E du plan de mise en conformité à la circulaire n°66 ─────────────
+  #
+  # Le job portait son score, jamais la raison pour laquelle il avait été refusé.
+  # Un emploi du temps INFEASIBLE ne disait donc que « -3hard » : l'administrateur
+  # devait ouvrir /score-explanation, qui ne répond que tant que la solution est
+  # encore en mémoire — c'est-à-dire pas après un redémarrage.
+  #
+  # La colonne archive le verdict de TimetableBusinessValidator, en texte lisible
+  # et déjà résumé (voir ValidationReport.resume()). TEXT et non VARCHAR : le
+  # résumé est borné par construction, mais un établissement de trente classes
+  # dont la génération part de travers produit un rapport que 1000 caractères
+  # tronqueraient au milieu d'une phrase.
+  - changeSet:
+      id: 015-timetable-job-validation-report
+      author: planning
+      changes:
+        - addColumn:
+            tableName: planning_timetable_job
+            columns:
+              - column:
+                  name: validation_report
+                  type: TEXT

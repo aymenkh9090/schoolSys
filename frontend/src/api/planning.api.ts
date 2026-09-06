@@ -195,6 +195,12 @@ export interface TimetableJob {
   startedAt?: string
   finishedAt?: string
   errorMessage?: string
+  /**
+   * Ce que la validation métier reproche à cet emploi du temps, en clair.
+   * Distinct de `errorMessage`, qui signale un plantage du solveur : ici le
+   * planning existe et se consulte, c'est sa conformité qui est en cause.
+   */
+  validationReport?: string | null
 }
 
 // ── Score explanation (panneau "pourquoi ce planning ?") ───────────────────
@@ -207,6 +213,20 @@ export interface ConstraintViolation {
   suggestion?: string
 }
 
+/**
+ * Un constat de la validation métier — le contrôle indépendant du solveur.
+ *
+ * Les `ConstraintViolation` disent ce que *les contraintes activées* reprochent
+ * au planning ; ceci dit ce qu'il a de faux quoi qu'on ait activé : une séance
+ * perdue, un volume horaire amputé, deux classes dans la même salle.
+ */
+export interface BusinessFinding {
+  severity: 'BLOQUANT' | 'AVERTISSEMENT'
+  code: string
+  scope?: string
+  message: string
+}
+
 export interface ScoreExplanation {
   jobId: number
   score: string
@@ -214,6 +234,9 @@ export interface ScoreExplanation {
   hardViolations: ConstraintViolation[]
   mediumViolations: ConstraintViolation[]
   softViolations: ConstraintViolation[]
+  /** Absent des réponses produites avant l'ajout de la validation métier. */
+  businessValidation?: BusinessFinding[]
+  businessValid?: boolean
 }
 
 export interface GeneratedTimetable {

@@ -52,6 +52,19 @@ public class TimetableJob extends TenantEntity {
     @Column(name = "error_message", length = 1000)
     private String errorMessage;
 
+    /**
+     * Verdict de {@code TimetableBusinessValidator}, déjà résumé et lisible.
+     *
+     * <p>Distinct de {@link #errorMessage}, qui reste réservé aux plantages du
+     * solveur : ici l'emploi du temps existe et il est consultable, c'est sa
+     * conformité qui est en cause. Confondre les deux ferait afficher « la
+     * génération a échoué » sur un planning parfaitement complet.
+     *
+     * <p>{@code null} quand la validation ne trouve rien à redire.
+     */
+    @Column(name = "validation_report", columnDefinition = "TEXT")
+    private String validationReport;
+
     /** Timefold SolverManager problem ID — same as idTimetableJob but stored for auditability. */
     @Column(name = "solver_job_id", length = 50)
     private String solverJobId;

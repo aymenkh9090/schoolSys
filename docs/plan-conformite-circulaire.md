@@ -23,7 +23,7 @@
 | B3 — Alignement `total_hours` / `heures_semaine` | **fait** — 0 pattern incohérent, tous établissements |
 | C — Les deux contraintes dures manquantes | **fait** — `RESPECT_OFFICIAL_SUBJECT_HOURS` et `PHYSICAL_EDUCATION_THREE_SESSIONS` câblées, 13 tests ; `NON_CABLEES` tombe de 9 à 7 |
 | D — Règles de la circulaire absentes | **fait** — 5 règles créées, 1 corrigée, 1 réveillée ; 37 tests ; `NON_CABLEES` tombe de 7 à 6 |
-| E — Validation métier post-solve | à faire |
+| E — Validation métier post-solve | **fait** — `TimetableBusinessValidator`, 14 contrôles, verrou sur `SOLVED`, rapport archivé ; 33 tests |
 | F — Correction de la consécutivité | à faire |
 
 ### Ce que l'étape D a livré
@@ -69,13 +69,52 @@ rien ne pouvait combler : la contrainte pénalisait un emploi du temps régulier
 le solveur dépensait son budget à courir après un équilibre impossible. Elle ne
 regarde plus que lundi à jeudi, comme le § II.4 le borne.
 
+### Ce que l'étape E a livré
+
+`TimetableBusinessValidator` — une fonction pure de la solution, sans Timefold,
+sans profil, sans configuration. Quatorze contrôles, rangés en trois familles et
+en trois seulement :
+
+| Famille | Contrôles | Pourquoi le solveur ne suffisait pas |
+|---|---|---|
+| **Intégrité de la génération** | séance non placée, séance dupliquée, enseignant manquant, demi-groupe désapparié | Le solveur y est **structurellement aveugle** : une séance jamais engendrée n'est dans aucun flux de contraintes, donc ne coûte rien. |
+| **Impossibilité physique** | conflit enseignant / classe / salle, indisponibilité, capacité, salle spécialisée, pause méridienne, séance débordante | Ces contraintes existent au provider, mais elles sont **décochables dans le profil**. |
+| **Programme officiel** | volume par classe et matière (§ T.1–T.3) | Idem — et c'était le cas concret : décocher `RESPECT_OFFICIAL_SUBJECT_HOURS` suffisait à obtenir un planning « conforme » où chaque classe perdait des heures. |
+
+**Ce qu'il ne fait pas, délibérément.** Aucune règle pédagogique n'y figure — ni
+le quota matinal du § III.2.a, ni l'espacement des séances d'EPS du § III.2.b, ni
+la stabilité de salle du § I.4. Ce sont des contraintes MEDIUM : elles orientent
+le solveur, elles ne justifient pas de refuser un emploi du temps à un
+établissement. Les réimplémenter ici dupliquerait le provider et ferait diverger
+deux définitions de la même règle — c'est-à-dire recréerait P1.
+
+**Le verrou.** `persistResult` ne passe `SOLVED` que si `score.isFeasible()`
+**et** `report.estConforme()`. Trois conséquences, toutes voulues :
+
+1. Le motif du refus est **archivé** sur le job (`timetable_job.validation_report`,
+   migration 015). `/score-explanation` ne répond qu'aussi longtemps que la
+   solution est en mémoire — c'est-à-dire pas après un redémarrage ; le rapport,
+   lui, survit.
+2. `feasible` veut désormais dire **« remettable »**, partout : sur le job, sur le
+   `GeneratedTimetable` et dans l'instantané diffusé. Publier la faisabilité
+   Timefold seule affichait « faisable » à côté d'un statut INFEASIBLE.
+3. Un **avertissement** s'archive sans refuser. Le seul aujourd'hui —
+   `VOLUME_NON_VERIFIABLE` — dit que le volume officiel manque en base pour
+   certains couples classe / matière. Un contrôle qui se tait faute de donnée
+   doit dire qu'il s'est tu, sans quoi l'absence de constat se lit comme une
+   conformité.
+
+Côté interface, `ScoreExplanationPanel` gagne une section « Vérification métier »,
+placée **avant** les violations Timefold : ce qu'elle reproche est vrai quelles
+que soient les règles activées.
+
 ### Où reprendre
 
-**Prochaine action : étape E — validation métier post-solve.** Le job ne devrait
-passer `SOLVED` que si `score.isFeasible()` **et** une vérification indépendante
-de Timefold : heures par matière et par classe, nombre de séances, conflits
-enseignant / classe / salle, disponibilités, lessons manquantes ou dupliquées,
-conformité T.1–T.3.
+**Prochaine action : étape F — consécutivité.** Réécrire
+`MAX_TWO_CONSECUTIVE_SESSIONS` sur les `orderIndex` contigus, ou la supprimer si
+`AVOID_SUBJECT_CONCENTRATION_SAME_DAY` suffit : les deux ont aujourd'hui le même
+`groupBy` et comptent les séances du même jour, pas les séances contiguës (P6).
+C'est la dernière étape du plan, et la moins lourde.
 
 **Points ouverts à trancher :**
 
@@ -84,11 +123,11 @@ conformité T.1–T.3.
    (pilote) dit MATH 5 h et EN `(2)+1+1+1` 5 h. Six heures de mathématiques ne
    correspondent à aucun des deux, et la séance de groupe de l'anglais a
    disparu dans les deux cas. Ramener MATH à 4 h retire des heures à toutes les
-   classes : **décision non prise**. C'est le dernier point ouvert qui bloque
-   une lecture stricte du § T.1.
+   classes : **décision non prise**. Ce point devient plus pressant depuis
+   l'étape E : le contrôle `VOLUME_HORAIRE` est bloquant, et il compare aux
+   volumes tels qu'ils sont en base.
 2. **Mesure des 24 h du § III.2.b** — de début à début, hypothèse **retenue et
-   implémentée**. Elle est la lecture stricte : elle refuse lundi 10 h puis
-   mardi 8 h, que la mesure de fin à début accepterait. À confirmer auprès de
+   implémentée** ; c'est la lecture stricte. À confirmer auprès de
    l'établissement.
 3. **Alternance des quinzaines** — `LessonGenerator.mapWeekParity()`, hypothèse
    retenue (§ 1.6, point 6).
@@ -110,9 +149,9 @@ circulaire** — ce sont des préférences de confort ajoutées par anticipation
 C'est ce qui explique qu'elles survivent à l'étape D, et pourquoi la liste ne se
 videra pas d'elle-même.
 
-**État des tests :** `smartschool-planning` 297, `smartschool-api` 5,
+**État des tests :** `smartschool-planning` 330, `smartschool-api` 5,
 `organisation-business` 300, `absence-business` 10, `tenant-business` 19 —
-**0 échec**.
+**0 échec**. Le front compile.
 
 **Pour relancer une génération et mesurer l'effet** : l'API exige un compte
 porteur du rôle `SCHOOL_ADMIN` et du claim `tenant_id` ; le compte de service
@@ -309,10 +348,16 @@ séances à 8 h et 16 h comptent comme consécutives ; trois d'affilée séparé
 une autre matière ne comptent pas. Doublon de fait avec
 `AVOID_SUBJECT_CONCENTRATION_SAME_DAY`, qui a le même `groupBy`.
 
-### P7 — Aucune validation métier du planning produit
+### P7 — Aucune validation métier du planning produit — **corrigé**
 
-`TimetableSolverService` ne connaît qu'un critère : `score.isFeasible()`. Aucune
-vérification des heures, des séances, ou de la conformité au texte.
+> **Corrigé à l'étape E.** `TimetableSolverService` ne connaissait qu'un critère :
+> `score.isFeasible()`. Or ce score ne dit qu'une chose — aucune des contraintes
+> *activées par cet établissement* n'est violée. Il ne dit rien des autres, et
+> décocher `RESPECT_OFFICIAL_SUBJECT_HOURS` suffisait à obtenir un emploi du temps
+> déclaré conforme où chaque classe perdait des heures : tout le reste du plan
+> était révocable d'un clic. `TimetableBusinessValidator` juge indépendamment du
+> profil et du solveur, et le job ne passe `SOLVED` que si les deux verdicts
+> concordent.
 
 ### P8 — Données hors circulaire (établissement 28)
 
@@ -349,7 +394,7 @@ vérification des heures, des séances, ou de la conformité au texte.
 | `solver/builder/TimetableProblemBuilder.java` | faits injectés |
 | `solver/ref/TeacherRef.java` | volume hebdomadaire, jours de formation |
 | `solver/service/TimetableSolverService.java` | branchement de la validation |
-| **nouveau** `solver/validation/TimetableBusinessValidator.java` | validation métier |
+| `solver/validation/` | **créé à l'étape E** — `TimetableBusinessValidator`, `ValidationReport`, `ValidationFinding`, `ValidationSeverity` |
 | migration Liquibase | alignement catalogue ↔ provider ; `014-seed-circulaire-constraints.yaml` sème les 5 codes de l'étape D et rattrape les profils existants |
 | données `patterns` / `pattern_details` | durées `(N)` |
 
@@ -386,11 +431,17 @@ Les cinq premières sont de nouveaux codes, semés par la migration 014 avec le
 rattrapage des profils déjà en base ; les deux dernières corrigent l'existant.
 Couverture : `ConformiteCirculaireEtapeDTest`, 37 tests.
 
-### Étape E — Validation métier post-solve
+### Étape E — Validation métier post-solve — **faite**
 Indépendante de Timefold : heures par matière et par classe, nombre de séances,
 conflits enseignant / classe / salle, disponibilités, lessons manquantes,
 dupliquées ou en trop, conformité T.1–T.3. Le job ne passe `SOLVED` que si
 `isFeasible()` **et** validation métier OK.
+
+Livré dans `solver/validation/` : 14 contrôles répartis en intégrité de la
+génération, impossibilité physique et programme officiel. Le motif du refus est
+archivé sur le job (migration 015) et affiché dans le panneau d'explication.
+Couverture : `TimetableBusinessValidatorTest`, 28 tests, plus 5 sur le verrou
+lui-même dans `TimetableSolverServicePersistResultTest`.
 
 ### Étape F — Consécutivité
 Réécrire `MAX_TWO_CONSECUTIVE_SESSIONS` sur les `orderIndex` contigus, ou la

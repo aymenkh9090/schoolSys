@@ -23,6 +23,9 @@ import tn.wtm.school.planning.solver.builder.TimetableProblemBuilder;
 import tn.wtm.school.planning.solver.constraint.ConstraintCodes;
 import tn.wtm.school.planning.solver.domain.Lesson;
 import tn.wtm.school.planning.solver.domain.TimetableSolution;
+import tn.wtm.school.planning.solver.validation.TimetableBusinessValidator;
+import tn.wtm.school.planning.solver.validation.ValidationFinding;
+import tn.wtm.school.planning.solver.validation.ValidationReport;
 import tn.wtm.school.planning.solver.domain.TimetableSession;
 import tn.wtm.school.planning.solver.dto.request.MoveSessionRequest;
 import tn.wtm.school.planning.solver.dto.request.TimetableGenerationRequest;
@@ -90,6 +93,17 @@ public class TimetableSolverService extends TenantService {
      * de l'un ne prive pas les autres de l'événement.
      */
     private final ObjectProvider<SolverProgressPublisher> progressPublishers;
+
+    /**
+     * Contrôle métier de l'emploi du temps produit — étape E du plan de mise en
+     * conformité.
+     *
+     * <p>Instancié plutôt qu'injecté : c'est une fonction pure de la solution,
+     * sans état, sans collaborateur et sans réglage. En faire un bean n'ouvrirait
+     * la porte qu'à une chose — le remplacer par un double complaisant dans un
+     * test, et perdre en silence la garantie qu'il apporte.
+     */
+    private final TimetableBusinessValidator businessValidator = new TimetableBusinessValidator();
 
     private final Map<Long, TimetableSolution>                bestSolutions = new ConcurrentHashMap<>();
     private final Map<Long, SolverJob<TimetableSolution, Long>> solverJobs  = new ConcurrentHashMap<>();
@@ -314,19 +328,60 @@ public class TimetableSolverService extends TenantService {
                     .jobId(jobId).score(job.getScoreAchieved()).feasible(false)
                     .hardViolations(List.of(unavailable))
                     .mediumViolations(List.of()).softViolations(List.of())
+                    // Le rapport métier, lui, a été archivé sur le job : il reste
+                    // lisible quand le détail Timefold ne l'est plus. C'est
+                    // précisément le cas que la colonne validation_report sert.
+                    .businessValidation(constatsArchives(job))
+                    .businessValid(job.getValidationReport() == null)
                     .build();
         }
 
         ScoreExplanation<TimetableSolution, HardMediumSoftScore> explanation =
                 solutionManager.explain(solution);
         HardMediumSoftScore score = explanation.getScore();
+        ValidationReport    validation = businessValidator.valider(solution);
 
         return ScoreExplanationResponse.builder()
-                .jobId(jobId).score(score.toString()).feasible(score.isFeasible())
+                .jobId(jobId).score(score.toString())
+                // « Faisable » veut dire « remettable », ici comme sur le job.
+                .feasible(score.isFeasible() && validation.estConforme())
                 .hardViolations(explainLevel(explanation, "HARD"))
                 .mediumViolations(explainLevel(explanation, "MEDIUM"))
                 .softViolations(explainLevel(explanation, "SOFT"))
+                .businessValidation(validation.findings().stream()
+                        .map(TimetableSolverService::toBusinessFinding)
+                        .toList())
+                .businessValid(validation.estConforme())
                 .build();
+    }
+
+    private static ScoreExplanationResponse.BusinessFinding toBusinessFinding(ValidationFinding f) {
+        return ScoreExplanationResponse.BusinessFinding.builder()
+                .severity(f.severity().name())
+                .code(f.code())
+                .scope(f.scope())
+                .message(f.message())
+                .build();
+    }
+
+    /**
+     * Le rapport archivé, rendu sous la même forme que les constats vivants.
+     *
+     * <p>Il a perdu sa structure en devenant du texte : on le restitue en une
+     * seule entrée plutôt que de tenter de le réanalyser. Un rapport relu est un
+     * rapport, pas une liste de constats — prétendre le contraire donnerait des
+     * champs {@code code} et {@code scope} inventés.
+     */
+    private static List<ScoreExplanationResponse.BusinessFinding> constatsArchives(TimetableJob job) {
+        if (job.getValidationReport() == null || job.getValidationReport().isBlank()) {
+            return List.of();
+        }
+        return List.of(ScoreExplanationResponse.BusinessFinding.builder()
+                .severity("BLOQUANT")
+                .code("RAPPORT_ARCHIVE")
+                .scope("validation métier")
+                .message(job.getValidationReport())
+                .build());
     }
 
     // ── list jobs ─────────────────────────────────────────────────────────────
@@ -800,8 +855,29 @@ public class TimetableSolverService extends TenantService {
                 : lastProgressPublishNanos.replace(jobId, previous, now);
     }
 
-    /** Construit un instantané de progression à partir d'une solution du solveur. */
+    /**
+     * Construit un instantané de progression à partir d'une solution du solveur.
+     *
+     * <p>Pendant la résolution, « faisable » ne peut vouloir dire que ce que le
+     * score en dit : lancer la validation métier à chaque nouvelle meilleure
+     * solution — plusieurs fois par seconde — coûterait plus cher que la
+     * résolution elle-même.
+     */
     private SolverProgress toProgress(Long jobId, SolverStatus status, TimetableSolution solution) {
+        HardMediumSoftScore score = solution.getScore();
+        return toProgress(jobId, status, solution, score != null ? score.isFeasible() : null);
+    }
+
+    /**
+     * Même instantané, avec le verdict définitif imposé de l'extérieur.
+     *
+     * <p>À la fin du job, « faisable » doit vouloir dire « remettable » : score
+     * faisable <em>et</em> validation métier conforme. Publier la faisabilité
+     * Timefold seule afficherait un emploi du temps « faisable » à côté d'un
+     * statut INFEASIBLE, ce que personne ne saurait interpréter.
+     */
+    private SolverProgress toProgress(Long jobId, SolverStatus status,
+                                      TimetableSolution solution, Boolean feasible) {
         HardMediumSoftScore score = solution.getScore();
         List<Lesson> lessons = solution.getLessons() != null ? solution.getLessons() : List.of();
         int placed = (int) lessons.stream()
@@ -811,11 +887,23 @@ public class TimetableSolverService extends TenantService {
                 jobId,
                 status,
                 score != null ? score.toString() : null,
-                score != null ? score.isFeasible() : null,
+                feasible,
                 placed,
                 lessons.size(),
                 null,
                 Instant.now());
+    }
+
+    /**
+     * Le résumé de la validation, ou {@code null} quand il n'y a rien à dire.
+     *
+     * <p>Une colonne vide et une colonne contenant une chaîne vide ne se lisent
+     * pas de la même façon dans un rapport : la première dit « rien à signaler »,
+     * la seconde « on a essayé de dire quelque chose et on a échoué ».
+     */
+    private static String resumeOuNull(ValidationReport rapport) {
+        String resume = rapport.resume();
+        return resume.isEmpty() ? null : resume;
     }
 
     /**
@@ -872,7 +960,10 @@ public class TimetableSolverService extends TenantService {
      */
     protected void persistResult(Long jobId, String tenantId, TimetableSolution solution) {
         TimetableSolution best = bestSolutions.getOrDefault(jobId, solution);
-        AtomicReference<SolverStatus> finalStatus = new AtomicReference<>();
+        AtomicReference<SolverStatus>  finalStatus   = new AtomicReference<>();
+        // Le verdict retenu, et non la seule faisabilité Timefold : l'écran ne doit
+        // pas afficher « faisable » sur un job que la validation métier a refusé.
+        AtomicReference<Boolean>       finalFeasible = new AtomicReference<>();
         // TenantContext already set by the CompletableFuture lambda in startGeneration()
         txTemplate.execute(new TransactionCallbackWithoutResult() {
             @Override
@@ -882,17 +973,24 @@ public class TimetableSolverService extends TenantService {
                     HardMediumSoftScore score    = best.getScore();
                     boolean             feasible = score != null && score.isFeasible();
 
+                    // Deuxième avis, indépendant du solveur et du profil : le score
+                    // ne dit que « aucune des contraintes activées n'est violée ».
+                    // Voir TimetableBusinessValidator pour ce que cela laissait passer.
+                    ValidationReport validation = businessValidator.valider(best);
+                    boolean          retenu     = feasible && validation.estConforme();
+
                     // 1. Mise à jour du job
-                    job.setStatus(feasible ? SolverStatus.SOLVED : SolverStatus.INFEASIBLE);
+                    job.setStatus(retenu ? SolverStatus.SOLVED : SolverStatus.INFEASIBLE);
                     job.setFinishedAt(Instant.now());
                     if (score != null) job.setScoreAchieved(score.toString());
+                    job.setValidationReport(resumeOuNull(validation));
                     jobRepository.save(job);
 
                     // 2. Sauvegarde des sessions
                     int sessionCount = saveSessions(jobId, tenantId, best);
 
                     // 3. Création / mise à jour du GeneratedTimetable
-                    saveGeneratedTimetable(job, tenantId, score, sessionCount);
+                    saveGeneratedTimetable(job, tenantId, score, sessionCount, retenu);
 
                     // 4. bestSolutions volontairement conservée : /score-explanation doit
                     // rester utilisable après la fin du job (notamment pour les jobs INFEASIBLE,
@@ -900,10 +998,18 @@ public class TimetableSolverService extends TenantService {
                     // assumé (voir doc de la classe) — à revoir avec une éviction bornée
                     // (LRU/TTL) si le volume de jobs devient un problème en pratique.
 
-                    log.info("[planning] Job {} {} — score={} sessions={} feasible={}",
-                            jobId, job.getStatus(), job.getScoreAchieved(), sessionCount, feasible);
+                    log.info("[planning] Job {} {} — score={} sessions={} feasible={} conforme={}",
+                            jobId, job.getStatus(), job.getScoreAchieved(), sessionCount,
+                            feasible, validation.estConforme());
+                    if (!validation.estConforme()) {
+                        // En WARN et en entier : c'est la seule trace serveur du
+                        // motif de refus, et elle doit survivre au job en mémoire.
+                        log.warn("[planning] Job {} refusé par la validation métier :\n{}",
+                                jobId, validation.resume());
+                    }
 
                     finalStatus.set(job.getStatus());
+                    finalFeasible.set(retenu);
                 });
             }
         });
@@ -912,7 +1018,7 @@ public class TimetableSolverService extends TenantService {
         // via l'API doit lire le statut définitif, pas celui d'avant la transaction.
         SolverStatus status = finalStatus.get();
         if (status != null) {
-            publishProgress(tenantId, toProgress(jobId, status, best));
+            publishProgress(tenantId, toProgress(jobId, status, best, finalFeasible.get()));
         }
     }
 
@@ -943,7 +1049,8 @@ public class TimetableSolverService extends TenantService {
      * action explicite de l'administrateur.
      */
     private void saveGeneratedTimetable(TimetableJob job, String tenantId,
-                                         HardMediumSoftScore score, int sessionCount) {
+                                         HardMediumSoftScore score, int sessionCount,
+                                         boolean retenu) {
         Long jobId = job.getIdTimetableJob();
 
         // Upsert : retrouve l'existant ou crée un nouvel objet
@@ -955,7 +1062,10 @@ public class TimetableSolverService extends TenantService {
         timetable.setAcademicYearId(job.getAcademicYearId());
         timetable.setConstraintProfileId(job.getConstraintProfileId());
         timetable.setScoreAchieved(job.getScoreAchieved());
-        timetable.setFeasible(score != null && score.isFeasible());
+        // Le verdict complet, pas la seule faisabilité Timefold : c'est ce drapeau
+        // que l'écran « Emplois du temps générés » affiche, et il doit dire la
+        // même chose que le statut du job.
+        timetable.setFeasible(retenu);
         timetable.setTotalSessions(sessionCount);
         timetable.setHardViolations(score != null ? Math.abs(score.hardScore())   : 0);
         timetable.setMediumViolations(score != null ? Math.abs(score.mediumScore()) : 0);
@@ -1005,6 +1115,7 @@ public class TimetableSolverService extends TenantService {
                 .status(job.getStatus()).scoreAchieved(job.getScoreAchieved())
                 .startedAt(job.getStartedAt()).finishedAt(job.getFinishedAt())
                 .errorMessage(job.getErrorMessage())
+                .validationReport(job.getValidationReport())
                 .build();
     }
 
