@@ -26,6 +26,7 @@
 | E — Validation métier post-solve | **fait** — `TimetableBusinessValidator`, 14 contrôles, verrou sur `SOLVED`, rapport archivé ; 33 tests |
 | F — Correction de la consécutivité | **fait** — mesurée sur les créneaux contigus, parité comprise ; 14 tests |
 | G — Parité de semaine dans la continuité | **fait** — `noStudentIdleGaps` et `MIN_STUDENT_HOURS_PER_HALF_DAY` lisent la quinzaine ; 12 tests |
+| H — Programme national conforme (§ T.1 + § T.3) | **fait** — MATH 4 h, EN `(2)+1+1`, FR `2+1+1+①` ; jeu pilote ajouté ; rattrapage des bases semées ; 12 tests |
 
 ### Ce que l'étape D a livré
 
@@ -183,23 +184,86 @@ La pénalité reste comptée **par demi-journée**, non par semaine : c'est la
 demi-journée qui est mal construite, et la compter deux fois quand le défaut
 existe les deux semaines gonflerait le score sans rien ajouter au diagnostic.
 
+### Ce que l'étape H a livré
+
+Le programme national semé se disait « officiel » et « § T.1 » en donnant des
+volumes qui n'étaient d'aucun des deux tableaux. C'était le point bloquant
+depuis l'étape E : `VOLUME_HORAIRE` compare le placé au volume en base, et le
+volume en base était faux.
+
+| Matière | Semé jusqu'ici | § T.1 — retenu | § T.3 — ajouté |
+|---|---|---|---|
+| Mathématiques | 6 h, `1×6` | **4 h**, `1+1+1+1` | 5 h, `1+1+1+1+1` |
+| Anglais | 5 h, classe entière | **4 h**, `(2)+1+1` | 5 h, `(2)+1+1+1` |
+| Français | 5 h, `2+1+1+1` | **`2+1+1+①`** en 7ᵉ et 8ᵉ, `2+1+1+1` en 9ᵉ | 5 h pleines |
+| tout le reste | — | inchangé | identique au § T.1 |
+
+Trois choses méritent d'être retenues.
+
+**La séance de groupe de l'anglais avait purement disparu.** Le § T.1 note
+`(2)+1+1` : la première séance est en système de groupes. Le seed donnait quatre
+séances en classe entière. Ce n'est pas une heure de moins seulement, c'est une
+séance d'une autre nature — l'enseignant la donne deux fois, l'élève la reçoit
+une.
+
+**Le collège pilote a désormais son propre programme.** `COLLEGE_*_PILOTE`
+sème le § T.3, dont les écarts avec le § T.1 sont exactement les trois lignes
+ci-dessus. Reste à décider lequel s'applique quand une demande ne dit que le
+niveau : `findActiveWithDetailsByCountryAndLevel` trie par version décroissante
+et le service prend le premier. Le § T.1 étant le cas général, la version du
+programme ordinaire est définie comme *celle du pilote plus un* — une règle, pas
+un nombre, qui restera vraie après le prochain changement de programme. Un
+collège pilote applique le § T.3 en désignant le programme par son identifiant.
+
+**Le garde-fou du seeder était le défaut de l'étape D, encore une fois.**
+« Des programmes TN existent, ne rien faire » : une correction du programme
+officiel n'atteignait jamais une base en service, c'est-à-dire précisément
+celles où elle compte. Chaque programme est maintenant comparé à sa version et
+ses lignes remplacées si elle est dépassée. Les suppressions sont vidées en base
+avant les insertions — `national_pattern_details` porte un index unique
+(programme, matière), et l'ordre inverse violerait la contrainte sur toutes les
+matières conservées.
+
+**Ce que le seed ne rattrape pas, et qui reste à faire à la main.** Les patterns
+déjà copiés chez un établissement ne bougent pas : « Appliquer le programme
+national » saute tout pattern dont le nom existe déjà, pour ne pas écraser ce
+qu'un établissement a réglé lui-même. `docs/sql/rattrapage-volumes-t1.sql`
+supprime les trois patterns divergents et réaligne `heures_semaine`, après quoi
+« Appliquer le programme national » les recrée depuis le seed corrigé — plutôt
+que de réécrire les séances en SQL, chemin que rien ne couvre. **Ramener les
+mathématiques de 6 h à 4 h retire deux heures à chaque classe : les affectations
+d'enseignants bâties sur six heures deviennent excédentaires et doivent être
+revues.** Le script ne les touche pas.
+
+**Convention de total, à noter parce qu'elle diverge de la circulaire en
+apparence.** Le texte écrit « 4 h + quinzaine » et laisse la séance `①` hors du
+total. Ici le total est la somme des durées de séances, quinzaine comprise :
+français 7ᵉ vaut 5 h. Ce n'est pas une autre lecture, c'est la seule utilisable
+en aval — une séance de quinzaine occupe un créneau entier de la grille, et
+`RESPECT_OFFICIAL_SUBJECT_HOURS` compare des créneaux placés à ce total. La
+compter pour une demi-heure ferait échouer la contrainte sur un emploi du temps
+correct.
+
+**Un erratum du corpus repéré au passage**, à confirmer sur le PDF : le § T.3
+porte en note « Anglais : 4 h au lieu de 3 », alors que son propre tableau note
+`(2)+1+1+1 · 5 h` et que le § T.1 en donne 4. La note ne s'accorde ni avec sa
+table ni avec l'autre. Les tables étant la transcription et les notes le
+commentaire, c'est la table qui a été suivie.
+
 ### Où reprendre
 
-**Les sept étapes du plan sont faites, et la dette qu'elles avaient identifiée
-est soldée.** Ce qui reste tient en une décision qui n'appartient pas au code, et
-en un ménage de catalogue.
+**Les huit étapes du plan sont faites, et la dette qu'elles avaient identifiée
+est soldée.** Ce qui reste tient en un rattrapage de données à exécuter, deux
+hypothèses à confirmer auprès de l'établissement, et un ménage de catalogue.
 
 **Points ouverts, par ordre d'urgence :**
 
-1. **`COLLEGE_*_OFFICIEL` : T.1 ou T.3 ?** — **bloquant en pratique depuis
-   l'étape E.** Le seed donne MATH 6 h et EN 5 h en `2+1+1+1`. Le § T.1 (collège)
-   dit MATH 4 h et EN `(2)+1+1` 4 h ; le § T.3 (pilote) dit MATH 5 h et EN
-   `(2)+1+1+1` 5 h. Six heures de mathématiques ne correspondent à aucun des
-   deux, et la séance de groupe de l'anglais a disparu dans les deux cas. Le
-   contrôle `VOLUME_HORAIRE` étant bloquant et comparant aux volumes tels qu'ils
-   sont en base, les générations de l'établissement 28 seront refusées sur ce
-   point tant que la décision n'est pas prise. Ramener MATH à 4 h retire des
-   heures à toutes les classes : **décision non prise**.
+1. **Rattrapage des données de l'établissement 28** — la décision est prise
+   (§ T.1, avec un jeu pilote séparé) et le seed est corrigé, mais les patterns
+   déjà copiés chez l'établissement doivent être supprimés pour être recréés :
+   `docs/sql/rattrapage-volumes-t1.sql`, à exécuter base démarrée, puis
+   « Appliquer le programme national ». Les affectations d'enseignants bâties
+   sur 6 h de mathématiques sont à revoir dans la foulée.
 2. **Mesure des 24 h du § III.2.b** — de début à début, hypothèse retenue et
    implémentée ; c'est la lecture stricte. À confirmer auprès de l'établissement.
 3. **Alternance des quinzaines** — `LessonGenerator.mapWeekParity()`, hypothèse
@@ -225,7 +289,7 @@ formation), § II.2 (« répartition équilibrée » que le texte ne chiffre pas
 § 1.6 point 4), § II.3 (écrit comme un plafond journalier et non comme une
 dérogation) et § III.1.
 
-**État des tests :** `smartschool-planning` 356, `smartschool-api` 5,
+**État des tests :** `smartschool-planning` 356, `smartschool-api` 12,
 `organisation-business` 300, `absence-business` 10, `tenant-business` 19 —
 **0 échec**. Le front compile.
 
@@ -440,9 +504,14 @@ comme un plafond et non comme une dérogation) et le § III.1.
 
 ### P8 — Données hors circulaire (établissement 28)
 
-- **MATH 6 h** en 7ᵉ — la circulaire dit 4 h (T.1) ou 5 h (T.3).
-- **EN 5 h en `2+1+1+1`** — la séance de groupe `(2)` a disparu.
-- **ISL / CIV comptés 2 h** — T.1 dit « 1 h + quinzaine ».
+- ~~**MATH 6 h** en 7ᵉ~~ — **corrigé à l'étape H** : le seed dit 4 h (§ T.1).
+  Les données de l'établissement se rattrapent par
+  `docs/sql/rattrapage-volumes-t1.sql`.
+- ~~**EN 5 h en `2+1+1+1`**~~ — **corrigé à l'étape H** : `(2)+1+1`, séance de
+  groupe rétablie.
+- **ISL / CIV comptés 2 h** — T.1 dit « 1 h + quinzaine ». Écart assumé : le
+  total est la somme des durées de séances, la quinzaine occupant un créneau
+  entier de la grille (voir l'étape H).
 - Vendredi et samedi **sans après-midi** : choix local licite, mais c'est ce qui
   produit les 10 doubles réservations du job 11864.
 
@@ -475,6 +544,8 @@ comme un plafond et non comme une dérogation) et le § III.1.
 | `solver/service/TimetableSolverService.java` | branchement de la validation |
 | `solver/validation/` | **créé à l'étape E** — `TimetableBusinessValidator`, `ValidationReport`, `ValidationFinding`, `ValidationSeverity` |
 | migration Liquibase | alignement catalogue ↔ provider ; `014-seed-circulaire-constraints.yaml` sème les 5 codes de l'étape D et rattrape les profils existants |
+| `api/NationalPatternSeeder.java` | programmes § T.1 et § T.3, rattrapage par version |
+| `docs/sql/rattrapage-volumes-t1.sql` | remise à niveau des patterns déjà copiés chez un établissement |
 | données `patterns` / `pattern_details` | durées `(N)` |
 
 ---
@@ -540,6 +611,15 @@ sa lecture de la quinzaine. L'exemption sportive du § I.2 se réévalue elle au
 semaine par semaine.
 Couverture : `PariteSemaineContinuiteTest`, 12 tests.
 
+### Étape H — Le programme national, § T.1 et § T.3 — **faite**
+Corriger `COLLEGE_*_OFFICIEL` sur le § T.1 — mathématiques 4 h, anglais
+`(2)+1+1` avec sa séance de groupe, français `2+1+1+①` en 7ᵉ et 8ᵉ — et ajouter
+`COLLEGE_*_PILOTE` pour le § T.3. Le seeder compare les versions au lieu de se
+taire quand des programmes existent, sans quoi la correction n'atteindrait
+aucune base en service. Les données déjà copiées chez un établissement se
+rattrapent par `docs/sql/rattrapage-volumes-t1.sql`.
+Couverture : `NationalPatternSeederTest`, 12 tests.
+
 ---
 
 ## 6. Impact attendu
@@ -554,6 +634,7 @@ Couverture : `PariteSemaineContinuiteTest`, 12 tests.
 | E | Des jobs aujourd'hui `SOLVED` passeront `INFEASIBLE`. C'est l'objectif. |
 | F | Corrige un doublon ; effet marginal. |
 | G | Déplace des violations dans les deux sens : quelques-unes apparaissent (trous et demi-journées courtes que la quinzaine masquait), quelques-unes disparaissent (trous qu'aucune semaine ne voit). Sensible seulement là où il y a des quinzaines. |
+| H | Retire 2 h de mathématiques et 1 h d'anglais à chaque classe, et rend à l'anglais sa séance de groupe. C'est ce qui débloque `VOLUME_HORAIRE`. Les affectations d'enseignants bâties sur les anciens volumes deviennent excédentaires. |
 
 ---
 
@@ -562,6 +643,14 @@ Couverture : `PariteSemaineContinuiteTest`, 12 tests.
 Conformément à la règle finale : **aucune lesson ne sera supprimée, aucun volume
 horaire diminué, aucune contrainte affaiblie** dans le seul but d'obtenir un
 score positif.
+
+L'étape H ramène les mathématiques de 6 h à 4 h : c'est une diminution, et il
+faut dire pourquoi elle ne contredit pas cette règle. Elle n'est pas faite pour
+alléger le problème mais parce que le § T.1 dit 4 h. Le sens de la règle est
+qu'on ne rabote pas le programme pour faire passer le solveur ; ici c'est
+l'inverse — les données s'écartaient du programme, et le solveur, mieux
+contraint, l'a rendu visible. Le fait que ce soit plus facile à placer est une
+conséquence, pas un motif.
 
 Avec 3 professeurs d'EPS pour 23 classes à 3 séances hebdomadaires, et vendredi
 et samedi sans après-midi, l'établissement 28 **restera infaisable** après ces
