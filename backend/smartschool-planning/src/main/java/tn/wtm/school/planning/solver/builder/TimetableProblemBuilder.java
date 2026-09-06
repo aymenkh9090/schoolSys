@@ -21,6 +21,7 @@ import tn.wtm.school.planning.solver.constraint.ConstraintWeightMapper;
 import tn.wtm.school.planning.solver.domain.Lesson;
 import tn.wtm.school.planning.solver.domain.TimetableSolution;
 import tn.wtm.school.planning.solver.enums.RoomType;
+import tn.wtm.school.planning.solver.ref.ExpectedCourse;
 import tn.wtm.school.planning.solver.ref.RoomRef;
 import tn.wtm.school.planning.solver.ref.TeacherRef;
 import tn.wtm.school.planning.solver.ref.TimeSlotRef;
@@ -51,6 +52,7 @@ public class TimetableProblemBuilder {
     private final TeacherRepository           teacherRepository;
     private final ConstraintProfileRepository constraintProfileRepository;
     private final LessonGenerator             lessonGenerator;
+    private final CurriculumLoader            curriculumLoader;
     private final ConstraintWeightMapper      constraintWeightMapper;
     private final CustomConstraintLoader      customConstraintLoader;
 
@@ -65,6 +67,7 @@ public class TimetableProblemBuilder {
         List<TeacherRef>          teachers         = buildTeachers(tenantId);
         List<RoomRef>             rooms            = buildRooms(tenantId);
         List<Lesson>              lessons          = lessonGenerator.generate(tenantId, academicYearId);
+        List<ExpectedCourse>      curriculum       = curriculumLoader.load(tenantId, academicYearId);
         List<ActiveConstraintParam> constraintParams =
                 constraintWeightMapper.load(tenantId, profile.getIdConstraintProfile());
         List<CompiledConstraint>    customConstraints =
@@ -88,6 +91,7 @@ public class TimetableProblemBuilder {
                 .teachers(teachers)
                 .rooms(rooms)
                 .lessons(lessons)
+                .expectedCurriculum(curriculum)
                 .activeConstraintParams(constraintParams)
                 .customConstraints(customConstraints)
                 .build();

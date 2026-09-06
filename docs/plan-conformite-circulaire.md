@@ -28,6 +28,8 @@
 | G — Parité de semaine dans la continuité | **fait** — `noStudentIdleGaps` et `MIN_STUDENT_HOURS_PER_HALF_DAY` lisent la quinzaine ; 12 tests |
 | H — Programme national conforme (§ T.1 + § T.3) | **fait** — MATH 4 h, EN `(2)+1+1`, FR `2+1+1+①` ; jeu pilote ajouté ; rattrapage des bases semées ; 12 tests |
 | I — Catalogue vidé de ses mensonges | **fait** — § II.2 et § III.1 écrites, 4 codes retirés ; `NON_CABLEES` est **vide** ; 11 tests |
+| J — Contrôle avant génération | **fait** — `PreGenerationValidator`, 8 contrôles décidables, endpoint `/preflight` et bouton « Vérifier les données » ; 20 tests |
+| K — L'angle mort de la matière absente | **fait** — le programme attendu voyage avec la solution ; `MATIERE_ABSENTE` bloquant ; 4 tests |
 
 ### Ce que l'étape D a livré
 
@@ -307,11 +309,87 @@ affichait leur code brut — `MIN_STUDENT_HOURS_PER_HALF_DAY` — à un directeu
 d'établissement. Les dix libellés et suggestions manquants sont écrits, avec le
 § d'origine.
 
+### Ce que les étapes J et K ont livré
+
+Elles ne viennent pas de la circulaire mais d'une question posée après coup :
+*puis-je modifier les heures d'une matière, en ajouter une, en retirer une, et
+obtenir quand même un emploi du temps ?* La réponse était non, pour une raison
+qui n'était écrite nulle part : **le système découvrait les problèmes de données
+au mauvais moment — après le solve, ou jamais.**
+
+`startGeneration` construisait le problème et lançait le solveur sans rien
+vérifier. Un volume changé d'un côté et pas de l'autre se payait de trois
+minutes de calcul avant un refus ; une matière déclarée sans affectation
+d'enseignant ne se payait de rien du tout, et c'est bien pire.
+
+**L'angle mort, d'abord (étape K).** `TimetableBusinessValidator` est une
+fonction pure des séances de la solution, et c'était voulu. Mais une fonction des
+séances ne peut rien dire d'une séance qui n'existe pas : sans affectation,
+`LessonGenerator` n'engendre rien, le couple classe / matière n'apparaît dans
+aucun groupe, et l'emploi du temps était déclaré **conforme** avec la matière
+purement absente. Il manquait une seule chose pour fermer ce trou : savoir ce
+que la classe *devait* recevoir.
+
+`CurriculumLoader` le charge — les classes de l'année, les matières de leur
+niveau, leur volume — et le programme attendu voyage désormais avec la solution.
+Sa source n'est pas celle des séances, et c'est tout l'intérêt : `LessonGenerator`
+part des affectations, ce chargeur part du niveau. Une matière que personne
+n'enseigne existe dans l'un et pas dans l'autre. `MATIERE_ABSENTE` est bloquant.
+
+> **Comment déclarer qu'une matière n'est pas enseignée** : mettre son volume à
+> zéro dans `niveaux_matieres.heures_semaine`. Désactiver son pattern ne suffit
+> pas — `LessonGenerator` retombe alors sur le type de séance et engendre quand
+> même.
+
+**Le contrôle avant génération, ensuite (étape J).** `PreGenerationValidator`
+est une fonction pure du problème *non résolu*. Huit contrôles, tous
+**décidables par le calcul**, sans rien placer :
+
+| Constat | Ce qu'il prouve |
+|---|---|
+| `MATIERE_SANS_ENSEIGNANT` | le programme la prévoit, aucune séance n'est engendrée |
+| `VOLUME_INCOHERENT` | le pattern et `heures_semaine` ne disent pas la même chose |
+| `SEANCE_HORS_PROGRAMME` | une affectation porte sur une matière hors du niveau *(avertissement)* |
+| `TYPE_DE_SALLE_ABSENT` | une séance exige un type de salle dont il n'existe aucun exemplaire |
+| `AUCUNE_SALLE_ASSEZ_GRANDE` | aucune salle ne peut contenir la classe |
+| `SERVICE_IMPOSSIBLE` | le service dépasse jours de présence × plafond journalier |
+| `SEMAINE_TROP_COURTE` | le programme d'une classe dépasse les créneaux ouverts |
+| `PROGRAMME_INCONNU` | aucune matière déclarée : rien ne pourra être vérifié *(avertissement)* |
+
+**Ce ne sont pas des heuristiques.** Chaque constat est une preuve : « trois
+professeurs d'EPS pour vingt-trois classes à trois séances » est une
+soustraction, pas une exploration, et le résultat ne devient pas faux parce que
+le solveur chercherait mieux. C'est ce qui autorise à refuser avant de chercher.
+
+**Et ce n'est pas une promesse.** Un problème qui passe les huit contrôles peut
+parfaitement rester infaisable : les impossibilités croisées — deux matières qui
+se disputent la seule salle informatique aux seules heures où leur enseignant est
+là — ne se voient qu'en cherchant. Ce validateur écarte l'évident. Un test le
+dit explicitement, pour que personne ne lise « données valides » comme « emploi
+du temps garanti ».
+
+**Deux points d'entrée.** `GET /api/planning/timetable/preflight` répond à la
+demande — c'est le bouton « Vérifier les données » de l'écran de génération, et
+c'est ce qui rend une modification du programme vérifiable **en une seconde**.
+Et `startGeneration` refuse de partir quand le contrôle est bloquant :
+l'exception annule la transaction, donc le job créé plus haut ; l'historique ne
+garde pas trace d'une génération qui n'a jamais commencé.
+
+**Effet de bord bienvenu sur l'étape E.** L'avertissement `VOLUME_NON_VERIFIABLE`
+se déclenchait dès qu'une séance ne portait pas son volume officiel. Le programme
+attendu sait souvent répondre à sa place : le contrôle conclut là où il se taisait.
+
 ### Où reprendre
 
-**Les neuf étapes du plan sont faites, la dette qu'elles avaient identifiée est
+**Les onze étapes du plan sont faites, la dette qu'elles avaient identifiée est
 soldée et `NON_CABLEES` est vide.** Ce qui reste tient en un rattrapage de
 données à exécuter et deux hypothèses à confirmer auprès de l'établissement.
+
+Les étapes J et K sortent du cadre de la circulaire : elles ne traitent pas
+d'une règle du texte mais du moment où le système dit qu'une donnée ne va pas.
+Elles ont leur place ici parce que tout le reste du plan en dépend — une règle
+correctement écrite ne sert à rien si l'établissement ne peut pas modifier son
+programme sans casser la génération, ni savoir ce qu'il a cassé.
 
 **Points ouverts, par ordre d'urgence :**
 
@@ -341,7 +419,7 @@ qu'implicite dans `isBreakSlot`), § II.1 (aucune source ne peuple les jours de
 formation — c'est une donnée qui manque, pas une règle), § II.3 (écrit comme un
 plafond journalier et non comme la dérogation qu'il est).
 
-**État des tests :** `smartschool-planning` 367, `smartschool-api` 12,
+**État des tests :** `smartschool-planning` 393, `smartschool-api` 12,
 `organisation-business` 300, `absence-business` 10, `tenant-business` 19 —
 **0 échec**. Le front compile.
 
@@ -593,7 +671,8 @@ plafond et non comme une dérogation).
 | `solver/builder/TimetableProblemBuilder.java` | faits injectés |
 | `solver/ref/TeacherRef.java` | volume hebdomadaire, jours de formation |
 | `solver/service/TimetableSolverService.java` | branchement de la validation |
-| `solver/validation/` | **créé à l'étape E** — `TimetableBusinessValidator`, `ValidationReport`, `ValidationFinding`, `ValidationSeverity` |
+| `solver/validation/` | **créé à l'étape E** — `TimetableBusinessValidator`, `ValidationReport`, `ValidationFinding`, `ValidationSeverity` ; **`PreGenerationValidator` à l'étape J** |
+| `solver/builder/CurriculumLoader.java` | **créé à l'étape K** — le programme attendu, lu depuis les niveaux et non depuis les affectations |
 | migration Liquibase | alignement catalogue ↔ provider ; `014-seed-circulaire-constraints.yaml` sème les 5 codes de l'étape D et rattrape les profils existants ; `016-vider-catalogue-non-cable.yaml` retire les 4 codes de l'étape I et redit ce que font les 2 écrites |
 | `api/NationalPatternSeeder.java` | programmes § T.1 et § T.3, rattrapage par version |
 | `docs/sql/rattrapage-volumes-t1.sql` | remise à niveau des patterns déjà copiés chez un établissement |
@@ -680,6 +759,23 @@ circulaire ne demande nulle part. `NON_CABLEES` est vide. Les dix libellés
 manquants du panneau d'explication sont écrits au passage.
 Couverture : `RepartitionHebdomadaireTest`, 11 tests ; migration 016.
 
+### Étape J — Le contrôle avant génération — **faite**
+Une fonction pure du problème non résolu, qui refuse de lancer le solveur sur des
+données que l'arithmétique condamne : matière sans enseignant, volume que le
+pattern contredit, type de salle inexistant, service ou semaine trop courts.
+Exposée en `GET /timetable/preflight` pour être appelée à volonté, et appelée en
+tête de `startGeneration`. Chaque constat est une preuve, jamais une conjecture —
+et passer le contrôle n'est pas une promesse de faisabilité.
+Couverture : `PreGenerationValidatorTest` 15 tests, `CurriculumLoaderTest` 5,
+plus 2 sur le refus lui-même.
+
+### Étape K — L'angle mort de la matière absente — **faite**
+Donner à `TimetableBusinessValidator` le programme attendu, pour qu'il puisse
+constater ce qui <em>manque</em> et non seulement ce qui est faux. Une matière
+déclarée sans affectation d'enseignant n'engendrait aucune séance et sortait de
+la validation sans un mot. `MATIERE_ABSENTE` est bloquant.
+Couverture : 4 tests dans `TimetableBusinessValidatorTest`.
+
 ---
 
 ## 6. Impact attendu
@@ -696,6 +792,8 @@ Couverture : `RepartitionHebdomadaireTest`, 11 tests ; migration 016.
 | G | Déplace des violations dans les deux sens : quelques-unes apparaissent (trous et demi-journées courtes que la quinzaine masquait), quelques-unes disparaissent (trous qu'aucune semaine ne voit). Sensible seulement là où il y a des quinzaines. |
 | H | Retire 2 h de mathématiques et 1 h d'anglais à chaque classe, et rend à l'anglais sa séance de groupe. C'est ce qui débloque `VOLUME_HORAIRE`. Les affectations d'enseignants bâties sur les anciens volumes deviennent excédentaires. |
 | I | Deux préférences SOFT de plus à satisfaire, donc un score souple plus bas à emploi du temps constant. Aucune règle dure ne change : les codes retirés du catalogue étaient appliqués en dur et le restent. |
+| J | Des générations qui partaient et échouaient sont refusées tout de suite, avec le motif. Aucune ne devient possible : le contrôle ne résout rien, il dit plus tôt. |
+| K | Des jobs aujourd'hui `SOLVED` passeront `INFEASIBLE` : ceux dont une matière déclarée n'a aucune séance. C'est l'objectif — ils étaient faux. |
 
 ---
 

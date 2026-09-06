@@ -23,6 +23,7 @@ import tn.wtm.school.planning.solver.builder.TimetableProblemBuilder;
 import tn.wtm.school.planning.solver.constraint.ConstraintCodes;
 import tn.wtm.school.planning.solver.domain.Lesson;
 import tn.wtm.school.planning.solver.domain.TimetableSolution;
+import tn.wtm.school.planning.solver.validation.PreGenerationValidator;
 import tn.wtm.school.planning.solver.validation.TimetableBusinessValidator;
 import tn.wtm.school.planning.solver.validation.ValidationFinding;
 import tn.wtm.school.planning.solver.validation.ValidationReport;
@@ -33,6 +34,7 @@ import tn.wtm.school.planning.solver.dto.response.ClassTimetableView;
 import tn.wtm.school.planning.solver.dto.response.RoomTimetableView;
 import tn.wtm.school.planning.solver.dto.response.TeacherTimetableView;
 import tn.wtm.school.planning.constraints.dsl.CompiledConstraint;
+import tn.wtm.school.planning.solver.dto.response.PreflightResponse;
 import tn.wtm.school.planning.solver.dto.response.ScoreExplanationResponse;
 import tn.wtm.school.planning.solver.dto.response.TimetableJobResponse;
 import tn.wtm.school.planning.solver.dto.response.TimetableSessionResponse;
@@ -78,6 +80,7 @@ import java.util.stream.Collectors;
 public class TimetableSolverService extends TenantService {
 
     private final TimetableProblemBuilder        problemBuilder;
+    private final PreGenerationValidator         preGenerationValidator;
     private final TimetableJobRepository         jobRepository;
     private final TimetableSessionRepository     sessionRepository;
     private final GeneratedTimetableRepository   generatedTimetableRepository;
@@ -262,6 +265,33 @@ public class TimetableSolverService extends TenantService {
             "Corrigez manuellement les séances concernées depuis la Consultation du planning, "
                     + "ou relancez la génération avec un profil de contraintes différent.";
 
+    // ── contrôle avant génération ─────────────────────────────────────────────
+
+    /**
+     * Ce que les données disent avant qu'on lance quoi que ce soit.
+     *
+     * <p>Appelable à volonté : c'est ce qui rend une modification du programme —
+     * un volume horaire changé, une matière ajoutée, une affectation retirée —
+     * vérifiable tout de suite, au lieu d'attendre la fin d'une génération pour
+     * apprendre qu'elle a été refusée.
+     */
+    @Transactional(readOnly = true)
+    public PreflightResponse preflight(Long schoolYearId, Long constraintProfileId) {
+        TimetableSolution probleme = problemBuilder.build(
+                currentTenant(), schoolYearId, constraintProfileId);
+        ValidationReport rapport = preGenerationValidator.valider(probleme);
+
+        return PreflightResponse.builder()
+                .ready(rapport.estConforme())
+                .blockingCount(rapport.bloquants().size())
+                .warningCount(rapport.avertissements().size())
+                .findings(java.util.stream.Stream
+                        .concat(rapport.bloquants().stream(), rapport.avertissements().stream())
+                        .map(TimetableSolverService::toBusinessFinding)
+                        .toList())
+                .build();
+    }
+
     // ── start ─────────────────────────────────────────────────────────────────
 
     @Transactional
@@ -279,6 +309,19 @@ public class TimetableSolverService extends TenantService {
 
         TimetableSolution problem = problemBuilder.build(
                 tenantId, req.getSchoolYearId(), req.getConstraintProfileId());
+
+        // Rien ne servait de chercher trois minutes une solution que les données
+        // rendent impossible. L'exception annule la transaction, donc le job créé
+        // plus haut : l'historique ne garde pas trace d'une génération qui n'a
+        // jamais commencé.
+        ValidationReport avantVol = preGenerationValidator.valider(problem);
+        if (!avantVol.estConforme()) {
+            throw new BadRequestException(
+                    "La génération n'a pas été lancée : les données de cette année scolaire "
+                            + "comportent " + avantVol.bloquants().size()
+                            + " anomalie(s) bloquante(s).\n" + avantVol.resume());
+        }
+
         bestSolutions.put(jobId, problem);
 
         final String capturedTenant = tenantId;

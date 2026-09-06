@@ -9,6 +9,7 @@ import ai.timefold.solver.core.api.score.buildin.hardmediumsoft.HardMediumSoftSc
 import lombok.*;
 import tn.wtm.school.planning.constraints.dsl.CompiledConstraint;
 import tn.wtm.school.planning.solver.constraint.ActiveConstraintParam;
+import tn.wtm.school.planning.solver.ref.ExpectedCourse;
 import tn.wtm.school.planning.solver.ref.RoomRef;
 import tn.wtm.school.planning.solver.ref.TeacherRef;
 import tn.wtm.school.planning.solver.ref.TimeSlotRef;
@@ -81,6 +82,25 @@ public class TimetableSolution {
     @ProblemFactCollectionProperty
     @Builder.Default
     private List<CompiledConstraint> customConstraints = new ArrayList<>();
+
+    // ── programme attendu (ni fait Timefold, ni entité) ──────────────────────
+
+    /**
+     * Ce que les classes doivent recevoir, matière par matière — lu depuis les
+     * données d'organisation, pas depuis les séances.
+     *
+     * <p><b>Aucune contrainte ne le joint</b>, et c'est pour cela qu'il n'est pas
+     * déclaré comme fait Timefold : il ne sert pas au solveur mais à la
+     * validation, avant la génération comme après. Il voyage ici pour que
+     * {@code TimetableBusinessValidator} reste une fonction de son seul argument
+     * tout en pouvant constater ce qui <em>manque</em> — une matière sans
+     * affectation n'engendre aucune séance, et une fonction des séances est
+     * aveugle à ce qui n'en a produit aucune.
+     *
+     * <p>Chargé par {@link tn.wtm.school.planning.solver.builder.CurriculumLoader}.
+     */
+    @Builder.Default
+    private List<ExpectedCourse> expectedCurriculum = new ArrayList<>();
 
     // ── planning entities ─────────────────────────────────────────────────────
 

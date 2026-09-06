@@ -11,6 +11,7 @@ import tn.wtm.school.planning.solver.dto.response.ClassTimetableView;
 import tn.wtm.school.planning.solver.dto.response.RoomTimetableView;
 import tn.wtm.school.planning.solver.dto.response.TeacherTimetableView;
 import tn.wtm.school.planning.solver.dto.response.GeneratedTimetableResponse;
+import tn.wtm.school.planning.solver.dto.response.PreflightResponse;
 import tn.wtm.school.planning.solver.dto.response.ScoreExplanationResponse;
 import tn.wtm.school.planning.solver.dto.response.TimetableJobResponse;
 import tn.wtm.school.planning.solver.dto.response.TimetableSessionResponse;
@@ -42,6 +43,26 @@ public class TimetableController {
     // ══════════════════════════════════════════════════════════════════════════
     // Jobs — génération et suivi
     // ══════════════════════════════════════════════════════════════════════════
+
+    /**
+     * Dit si les données de cette année scolaire permettent d'engendrer un
+     * emploi du temps — sans rien engendrer, et en une seconde.
+     *
+     * <p>À appeler après toute modification du programme : un volume horaire
+     * changé, une matière ajoutée ou retirée, une affectation d'enseignant
+     * déplacée. Une matière déclarée que personne n'enseigne, un pattern qui ne
+     * dit plus le même volume que le niveau, un service qui ne tient pas dans
+     * une semaine : tout cela se voit ici, avant de lancer quoi que ce soit.
+     *
+     * <p>{@code constraintProfileId} est optionnel, comme pour la génération.
+     */
+    @PreAuthorize("hasRole('SCHOOL_ADMIN')")
+    @GetMapping("/preflight")
+    public PreflightResponse preflight(
+            @RequestParam Long schoolYearId,
+            @RequestParam(required = false) @Nullable Long constraintProfileId) {
+        return solverService.preflight(schoolYearId, constraintProfileId);
+    }
 
     /**
      * Lance une génération d'emploi du temps de façon asynchrone.

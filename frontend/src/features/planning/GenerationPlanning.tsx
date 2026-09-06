@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { Play, StopCircle, RefreshCw, CheckCircle, XCircle, AlertTriangle, Clock, Zap, HelpCircle, Trash2 } from 'lucide-react'
+import { Play, StopCircle, RefreshCw, CheckCircle, XCircle, AlertTriangle, Clock, Zap, HelpCircle, Trash2, Stethoscope } from 'lucide-react'
 
 import { PageHeader } from '@/components/ui/PageHeader'
 import { Button } from '@/components/ui/Button'
@@ -9,10 +9,11 @@ import { Modal } from '@/components/ui/Modal'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { Badge } from '@/components/ui/Badge'
 import { DataTable, type Column } from '@/components/ui/DataTable'
-import { planningApi, type TimetableJob, type SolverStatus, type ConstraintProfile } from '@/api/planning.api'
+import { planningApi, type TimetableJob, type SolverStatus, type ConstraintProfile, type PreflightReport } from '@/api/planning.api'
 import { organisationApi } from '@/api/organisation.api'
 import { formatDate } from '@/lib/utils'
 import { ScoreExplanationPanel } from './ScoreExplanationPanel'
+import { BusinessCard, groupFindings } from './businessFindings'
 import { STATUS_LABELS, STATUS_VARIANTS, hasTimetable, describeScore } from './jobStatus'
 import { useSolverProgress } from './useSolverProgress'
 
@@ -31,6 +32,7 @@ export default function GenerationPlanning() {
   const [explainJobId, setExplainJobId] = useState<number | null>(null)
   const [publishJobId, setPublishJobId] = useState<number | null>(null)
   const [deleteJobId, setDeleteJobId] = useState<number | null>(null)
+  const [preflight, setPreflight] = useState<PreflightReport | null>(null)
 
   const { data: years = [] } = useQuery({ queryKey: ['school-years'], queryFn: organisationApi.schoolYears.list })
   const { data: profiles = [] } = useQuery({
@@ -53,6 +55,24 @@ export default function GenerationPlanning() {
         ? 3000
         : false,
   })
+
+  /**
+   * Le contrôle des données, à la demande. Il ne lance rien : il dit ce qui
+   * empêcherait la génération d'aboutir — une matière sans enseignant, un
+   * pattern qui ne dit plus le même volume que le niveau, un service qui ne
+   * tient pas dans la semaine — sans faire attendre le résultat d'un solve.
+   */
+  const preflightMutation = useMutation({
+    mutationFn: () =>
+      planningApi.timetable.preflight(
+        Number(schoolYearId), profileId ? Number(profileId) : undefined),
+    onSuccess: setPreflight,
+    onError: (e: { response?: { data?: { message?: string } } }) =>
+      toast.error(e.response?.data?.message ?? 'Vérification impossible'),
+  })
+
+  /** Un changement d'année ou de profil périme le verdict précédent. */
+  const oublierLeControle = () => setPreflight(null)
 
   const generateMutation = useMutation({
     mutationFn: (dto: { schoolYearId: number; constraintProfileId?: number }) =>
@@ -223,28 +243,56 @@ export default function GenerationPlanning() {
 
       <DataTable columns={columns} data={jobs as TimetableJob[]} keyField="jobId" loading={isLoading} emptyMessage="Aucun job de génération lancé" />
 
-      <Modal open={open} onClose={() => setOpen(false)} title="Lancer la génération du planning" size="md">
+      <Modal open={open} onClose={() => { setOpen(false); oublierLeControle() }} title="Lancer la génération du planning" size="md">
         <div className="space-y-4">
           <div>
             <label className="text-sm font-medium text-brand-text dark:text-slate-200 block mb-1">Année scolaire *</label>
-            <select value={schoolYearId} onChange={(e) => setSchoolYearId(e.target.value)} className="w-full border border-brand-border dark:border-slate-700 rounded-lg px-3 py-2 text-sm bg-white dark:bg-slate-900 text-brand-text dark:text-slate-200">
+            <select value={schoolYearId} onChange={(e) => { setSchoolYearId(e.target.value); oublierLeControle() }} className="w-full border border-brand-border dark:border-slate-700 rounded-lg px-3 py-2 text-sm bg-white dark:bg-slate-900 text-brand-text dark:text-slate-200">
               <option value="">Sélectionner</option>
               {years.filter((y) => y.estActive).map((y) => <option key={y.idAnnee} value={y.idAnnee}>{y.nom}</option>)}
             </select>
           </div>
           <div>
             <label className="text-sm font-medium text-brand-text dark:text-slate-200 block mb-1">Profil de contraintes (optionnel)</label>
-            <select value={profileId} onChange={(e) => setProfileId(e.target.value)} className="w-full border border-brand-border dark:border-slate-700 rounded-lg px-3 py-2 text-sm bg-white dark:bg-slate-900 text-brand-text dark:text-slate-200">
+            <select value={profileId} onChange={(e) => { setProfileId(e.target.value); oublierLeControle() }} className="w-full border border-brand-border dark:border-slate-700 rounded-lg px-3 py-2 text-sm bg-white dark:bg-slate-900 text-brand-text dark:text-slate-200">
               {/* Sans choix explicite, le solveur prend le profil actif de l'année : on le nomme au lieu de dire « par défaut ». */}
               <option value="">Profil actif de l'année</option>
               {(profiles as ConstraintProfile[]).map((p) => <option key={p.idConstraintProfile} value={p.idConstraintProfile}>{p.name}{p.active ? ' (actif)' : ''}</option>)}
             </select>
           </div>
+          {preflight && (
+            <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
+              {preflight.ready ? (
+                <div className="p-3 rounded-lg bg-green-50 dark:bg-emerald-500/10 border border-green-200 dark:border-emerald-500/20 text-xs text-green-800 dark:text-emerald-300">
+                  Aucune anomalie bloquante dans les données. La génération peut partir — sans que
+                  ce soit pour autant la promesse d'un emploi du temps sans conflit : les
+                  impossibilités croisées ne se voient qu'en cherchant.
+                </div>
+              ) : (
+                <div className="p-3 rounded-lg bg-red-50 dark:bg-red-500/10 border border-red-200 dark:border-red-500/20 text-xs text-red-800 dark:text-red-300">
+                  {preflight.blockingCount} anomalie(s) empêchent la génération. Elles viennent des
+                  données du programme, pas du solveur : les corriger est la seule façon d'aboutir.
+                </div>
+              )}
+              {groupFindings(preflight.findings).map(([code, findings]) => (
+                <BusinessCard key={code} code={code} findings={findings} />
+              ))}
+            </div>
+          )}
           <div className="p-3 rounded-lg bg-yellow-50 dark:bg-amber-500/10 border border-yellow-200 dark:border-amber-500/20 text-xs text-yellow-800 dark:text-amber-300">
             La génération peut prendre plusieurs minutes selon la complexité de l'emploi du temps. Vous pouvez fermer cette fenêtre, le job continuera en arrière-plan.
           </div>
           <div className="flex justify-end gap-2 pt-2">
-            <Button variant="outline" type="button" onClick={() => setOpen(false)}>Annuler</Button>
+            <Button variant="outline" type="button" onClick={() => { setOpen(false); oublierLeControle() }}>Annuler</Button>
+            <Button
+              variant="outline"
+              type="button"
+              onClick={() => preflightMutation.mutate()}
+              loading={preflightMutation.isPending}
+              disabled={!schoolYearId}
+            >
+              <Stethoscope size={15} /> Vérifier les données
+            </Button>
             <Button
               onClick={() => generateMutation.mutate({
                 schoolYearId: Number(schoolYearId),

@@ -4,6 +4,7 @@ import { Modal } from '@/components/ui/Modal'
 import { Badge } from '@/components/ui/Badge'
 import { planningApi, type BusinessFinding, type ConstraintViolation } from '@/api/planning.api'
 import { describeScore } from './jobStatus'
+import { BusinessCard, FINDING_TONE_CLASSES, groupFindings } from './businessFindings'
 import { cn } from '@/lib/utils'
 
 interface Props {
@@ -17,88 +18,9 @@ const LEVELS = [
   { key: 'softViolations' as const, title: 'Préférences non respectées', icon: Info, tone: 'info' as const },
 ]
 
-const TONE_CLASSES: Record<'danger' | 'warning' | 'info', string> = {
-  danger: 'border-red-200 bg-red-50/60 dark:border-red-500/20 dark:bg-red-500/5',
-  warning: 'border-amber-200 bg-amber-50/60 dark:border-amber-500/20 dark:bg-amber-500/5',
-  info: 'border-blue-200 bg-blue-50/60 dark:border-blue-500/20 dark:bg-blue-500/5',
-}
-
-/**
- * Libellés des contrôles métier. Le backend renvoie un code stable ; on ne
- * l'affiche pas tel quel — « SEANCE_NON_PLACEE » ne veut rien dire pour un
- * directeur d'établissement. Un code inconnu retombe sur lui-même plutôt que de
- * disparaître : un contrôle ajouté côté serveur doit rester visible ici avant
- * même qu'on lui ait écrit un libellé.
- */
-const BUSINESS_LABELS: Record<string, string> = {
-  SEANCE_NON_PLACEE: 'Séances jamais placées',
-  SEANCE_DUPLIQUEE: 'Séances comptées deux fois',
-  ENSEIGNANT_MANQUANT: 'Séances sans enseignant',
-  DEMI_GROUPE_DESAPPARIE: 'Demi-groupes désappariés',
-  VOLUME_HORAIRE: 'Volume horaire hors programme officiel',
-  VOLUME_NON_VERIFIABLE: 'Volume officiel absent des données',
-  CONFLIT_ENSEIGNANT: 'Enseignant attendu à deux endroits',
-  CONFLIT_CLASSE: 'Classe à deux cours en même temps',
-  CONFLIT_SALLE: 'Salle occupée deux fois',
-  ENSEIGNANT_INDISPONIBLE: 'Cours un jour d\'indisponibilité',
-  CAPACITE_SALLE: 'Salle trop petite',
-  SALLE_INADAPTEE: 'Salle spécialisée manquante',
-  COURS_PENDANT_LA_PAUSE: 'Cours sur la pause méridienne',
-  SEANCE_DEBORDANTE: 'Séance débordant de la demi-journée',
-  RAPPORT_ARCHIVE: 'Rapport archivé de la génération',
-}
-
-/** Nombre d'exemples cités par famille — au-delà, on annonce le reste. */
-const BUSINESS_EXAMPLES = 3
-
-/**
- * Regroupe les constats par code, en conservant l'ordre d'arrivée : le backend
- * les émet contrôle par contrôle, et cet ordre est celui du diagnostic.
- */
-function groupFindings(findings: BusinessFinding[]) {
-  const groups = new Map<string, BusinessFinding[]>()
-  for (const f of findings) {
-    const existing = groups.get(f.code)
-    if (existing) existing.push(f)
-    else groups.set(f.code, [f])
-  }
-  return [...groups.entries()]
-}
-
-function BusinessCard({ code, findings }: { code: string; findings: BusinessFinding[] }) {
-  const blocking = findings[0].severity === 'BLOQUANT'
-  const tone = blocking ? 'danger' : 'warning'
-  const rest = findings.length - BUSINESS_EXAMPLES
-  return (
-    <div className={cn('rounded-lg border p-3', TONE_CLASSES[tone])}>
-      <div className="flex items-center justify-between gap-2">
-        <p className="text-sm font-medium text-brand-text dark:text-slate-100">
-          {BUSINESS_LABELS[code] ?? code}
-        </p>
-        <Badge variant={tone} className="shrink-0">
-          {findings.length} {blocking ? 'bloquant(s)' : 'à vérifier'}
-        </Badge>
-      </div>
-      <ul className="mt-2 space-y-1">
-        {findings.slice(0, BUSINESS_EXAMPLES).map((f, i) => (
-          <li key={i} className="text-xs text-brand-textMuted dark:text-slate-400 pl-3 border-l-2 border-brand-border dark:border-slate-700">
-            {f.scope ? <strong className="font-medium">{f.scope}</strong> : null}
-            {f.scope ? ' — ' : ''}{f.message}
-          </li>
-        ))}
-      </ul>
-      {rest > 0 && (
-        <p className="mt-1.5 text-xs text-brand-textMuted dark:text-slate-500">
-          … et {rest} autre{rest > 1 ? 's' : ''}
-        </p>
-      )}
-    </div>
-  )
-}
-
 function ViolationCard({ v, tone }: { v: ConstraintViolation; tone: 'danger' | 'warning' | 'info' }) {
   return (
-    <div className={cn('rounded-lg border p-3', TONE_CLASSES[tone])} title={v.score}>
+    <div className={cn('rounded-lg border p-3', FINDING_TONE_CLASSES[tone])} title={v.score}>
       <div className="flex items-center justify-between gap-2">
         <p className="text-sm font-medium text-brand-text dark:text-slate-100">{v.label}</p>
         <Badge variant={tone} className="shrink-0">{v.count} fois</Badge>

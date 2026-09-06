@@ -39,6 +39,7 @@ class TimetableProblemBuilderTest {
     @Mock private LessonGenerator             lessonGenerator;
     @Mock private ConstraintWeightMapper      constraintWeightMapper;
     @Mock private CustomConstraintLoader      customConstraintLoader;
+    @Mock private CurriculumLoader            curriculumLoader;
 
     private TimetableProblemBuilder builder;
 
@@ -46,8 +47,8 @@ class TimetableProblemBuilderTest {
     void setUp() {
         builder = new TimetableProblemBuilder(
                 timeSlotRepository, roomRepository, teacherRepository,
-                constraintProfileRepository, lessonGenerator, constraintWeightMapper,
-                customConstraintLoader);
+                constraintProfileRepository, lessonGenerator, curriculumLoader,
+                constraintWeightMapper, customConstraintLoader);
     }
 
     @AfterEach

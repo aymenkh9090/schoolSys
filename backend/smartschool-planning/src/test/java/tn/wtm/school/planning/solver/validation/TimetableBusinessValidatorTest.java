@@ -9,6 +9,7 @@ import tn.wtm.school.planning.solver.domain.TimetableSolution;
 import tn.wtm.school.planning.solver.enums.RoomType;
 import tn.wtm.school.planning.solver.enums.SessionType;
 import tn.wtm.school.planning.solver.enums.WeekParity;
+import tn.wtm.school.planning.solver.ref.ExpectedCourse;
 import tn.wtm.school.planning.solver.ref.RoomRef;
 import tn.wtm.school.planning.solver.ref.TeacherRef;
 import tn.wtm.school.planning.solver.ref.TimeSlotRef;
@@ -325,6 +326,71 @@ class TimetableBusinessValidatorTest {
     }
 
     // ══════════════════════════════════════════════════════════════════════════
+    // Programme attendu — ce qui manque, et non ce qui est faux
+    // ══════════════════════════════════════════════════════════════════════════
+
+    @Nested
+    @DisplayName("Matière absente de l'emploi du temps")
+    class ProgrammeAttendu {
+
+        @Test
+        @DisplayName("Une matière du programme sans aucune séance est bloquante")
+        void matiereSansAucuneSeance() {
+            // Le trou que l'étape E n'avait pas fermé : sans affectation
+            // d'enseignant, aucune séance n'est engendrée, le couple
+            // n'apparaît dans aucun groupe, et l'emploi du temps passait pour
+            // conforme avec la matière purement absente.
+            Lesson math = cours(1L, "7A", "MATH", lun8h, DEUX_HEURES, DEUX_HEURES);
+
+            ValidationReport rapport = validateur.valider(planning(
+                    List.of(attendu("7A", "MATH", DEUX_HEURES),
+                            attendu("7A", "MUS", UNE_HEURE)),
+                    math));
+
+            assertThat(rapport.estConforme()).isFalse();
+            assertThat(rapport.bloquants()).singleElement()
+                    .satisfies(c -> {
+                        assertThat(c.code()).isEqualTo(TimetableBusinessValidator.MATIERE_ABSENTE);
+                        assertThat(c.scope()).contains("MUS");
+                    });
+        }
+
+        @Test
+        @DisplayName("Un programme entièrement servi ne dit rien")
+        void programmeServi() {
+            Lesson math = cours(1L, "7A", "MATH", lun8h, DEUX_HEURES, DEUX_HEURES);
+
+            assertThat(validateur.valider(planning(
+                    List.of(attendu("7A", "MATH", DEUX_HEURES)), math)).estConforme())
+                    .isTrue();
+        }
+
+        @Test
+        @DisplayName("Le programme répond là où la séance ne porte aucun volume")
+        void programmeCombleLeVolumeManquant() {
+            // Sans programme attendu, ce cas ressortait en avertissement
+            // « volume non vérifiable ». Un contrôle qui peut conclure ne doit
+            // pas se déclarer muet.
+            Lesson ampute = cours(1L, "7A", "HGEO", lun8h, UNE_HEURE, 0);
+
+            ValidationReport rapport = validateur.valider(planning(
+                    List.of(attendu("7A", "HGEO", DEUX_HEURES)), ampute));
+
+            assertThat(rapport.avertissements()).isEmpty();
+            assertThat(codesBloquants(rapport))
+                    .containsExactly(TimetableBusinessValidator.VOLUME_HORAIRE);
+        }
+
+        @Test
+        @DisplayName("Sans programme attendu, la validation se comporte comme avant")
+        void programmeInconnu() {
+            Lesson math = cours(1L, "7A", "MATH", lun8h, DEUX_HEURES, DEUX_HEURES);
+
+            assertThat(validateur.valider(planning(math)).estConforme()).isTrue();
+        }
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════
     // Ce que la validation ne juge pas
     // ══════════════════════════════════════════════════════════════════════════
 
@@ -412,6 +478,19 @@ class TimetableBusinessValidatorTest {
                 .tenantId("ecole-1").academicYearId(2026L).constraintProfileId(1L)
                 .lessons(List.of(seances))
                 .build();
+    }
+
+    /** Le même planning, avec le programme que les classes doivent recevoir. */
+    private TimetableSolution planning(List<ExpectedCourse> programme, Lesson... seances) {
+        return TimetableSolution.builder()
+                .tenantId("ecole-1").academicYearId(2026L).constraintProfileId(1L)
+                .lessons(List.of(seances))
+                .expectedCurriculum(programme)
+                .build();
+    }
+
+    private static ExpectedCourse attendu(String classe, String matiere, int creneaux) {
+        return new ExpectedCourse(classe, matiere, matiere, creneaux);
     }
 
     private Lesson cours(Long id, String classe, String matiere,

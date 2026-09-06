@@ -17,7 +17,17 @@ import org.springframework.transaction.support.TransactionCallback;
 import org.springframework.transaction.support.TransactionTemplate;
 import tn.wtm.school.planning.solver.builder.TimetableProblemBuilder;
 import tn.wtm.school.planning.solver.domain.Lesson;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.DisplayName;
+import tn.wtm.school.common.context.TenantContext;
+import tn.wtm.school.common.exceptions.BadRequestException;
 import tn.wtm.school.planning.solver.domain.TimetableSolution;
+import tn.wtm.school.planning.solver.dto.request.TimetableGenerationRequest;
+import tn.wtm.school.planning.solver.dto.response.PreflightResponse;
+import tn.wtm.school.planning.solver.dto.response.ScoreExplanationResponse;
+import tn.wtm.school.planning.solver.validation.PreGenerationValidator;
+import tn.wtm.school.planning.solver.validation.ValidationFinding;
+import tn.wtm.school.planning.solver.validation.ValidationReport;
 import tn.wtm.school.planning.solver.domain.TimetableSession;
 import tn.wtm.school.planning.solver.entity.GeneratedTimetable;
 import tn.wtm.school.planning.solver.entity.TimetableJob;
@@ -42,6 +52,7 @@ import java.util.Optional;
 import java.util.stream.Stream;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
@@ -60,6 +71,13 @@ import static org.mockito.Mockito.doAnswer;
  *   4. GeneratedTimetable — create vs upsert, tous les champs, préservation du statut
  *   5. Cache mémoire  — priorité et nettoyage de bestSolutions
  *   6. Job introuvable — aucun effet de bord
+ *   7. Refus avant génération — le verrou symétrique, à l'autre bout
+ *
+ * <p>La section 7 tient ici et non dans sa propre classe pour une raison de
+ * fond : {@code persistResult} et {@code startGeneration} sont les deux
+ * extrémités du même verrou. L'un refuse de rendre un emploi du temps faux,
+ * l'autre refuse d'en chercher un que les données condamnent. Les éprouver sur
+ * le même harnais de simulacres évite d'en écrire un second à l'identique.
  */
 @ExtendWith(MockitoExtension.class)
 class TimetableSolverServicePersistResultTest {
@@ -67,6 +85,7 @@ class TimetableSolverServicePersistResultTest {
     // ── dépendances mockées ───────────────────────────────────────────────────
 
     @Mock private TimetableProblemBuilder       problemBuilder;
+    @Mock private PreGenerationValidator        preGenerationValidator;
     @Mock private TimetableJobRepository        jobRepository;
     @Mock private TimetableSessionRepository    sessionRepository;
     @Mock private GeneratedTimetableRepository  generatedTimetableRepository;
@@ -102,7 +121,7 @@ class TimetableSolverServicePersistResultTest {
     @BeforeEach
     void setUp() {
         service = new TimetableSolverService(
-                problemBuilder, jobRepository, sessionRepository,
+                problemBuilder, preGenerationValidator, jobRepository, sessionRepository,
                 generatedTimetableRepository, solverManager, solutionManager, txTemplate,
                 progressPublisherProvider);
 
@@ -112,7 +131,8 @@ class TimetableSolverServicePersistResultTest {
                 .thenAnswer(inv -> Stream.of(progressPublisher));
 
         // TransactionTemplate exécute le callback directement (pas de vrai contexte tx).
-        doAnswer(inv -> {
+        // lenient() : les tests de la section 7 s'arrêtent avant toute persistance.
+        lenient().doAnswer(inv -> {
             TransactionCallback<?> cb = inv.getArgument(0);
             cb.doInTransaction(null);
             return null;
@@ -122,6 +142,65 @@ class TimetableSolverServicePersistResultTest {
         // lenient() car les tests "job introuvable" n'atteignent jamais ce stub.
         lenient().when(generatedTimetableRepository.findByJobIdAndTenantId(JOB_ID, TENANT))
                 .thenReturn(Optional.empty());
+    }
+
+    /** Le tenant posé par la section 7 ne doit pas déborder sur les autres. */
+    @AfterEach
+    void viderLeTenant() {
+        TenantContext.clear();
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════
+    // 7. Refus avant génération
+    // ══════════════════════════════════════════════════════════════════════════
+
+    @Test
+    @DisplayName("Une donnée qui condamne la génération l'empêche de partir")
+    void preGenerationBloquante_refuseDeLancerLeSolveur() {
+        // Avant, le solveur partait quoi qu'il arrive : on découvrait le défaut
+        // après trois minutes de calcul, ou jamais.
+        TenantContext.setTenantId(TENANT);
+        when(jobRepository.save(any())).thenAnswer(inv -> {
+            TimetableJob j = inv.getArgument(0);
+            j.setIdTimetableJob(JOB_ID);
+            return j;
+        });
+        when(problemBuilder.build(TENANT, YEAR_ID, PROFILE_ID))
+                .thenReturn(solution(FEASIBLE_SCORE, List.of()));
+        when(preGenerationValidator.valider(any())).thenReturn(new ValidationReport(List.of(
+                ValidationFinding.bloquant("MATIERE_SANS_ENSEIGNANT", "7A / Musique",
+                        "aucune séance n'est engendrée"))));
+
+        TimetableGenerationRequest req = new TimetableGenerationRequest();
+        req.setSchoolYearId(YEAR_ID);
+        req.setConstraintProfileId(PROFILE_ID);
+
+        assertThatThrownBy(() -> service.startGeneration(req))
+                .isInstanceOf(BadRequestException.class)
+                .hasMessageContaining("7A / Musique");
+
+        verify(solverManager, never()).solveAndListen(any(), any(TimetableSolution.class), any());
+    }
+
+    @Test
+    @DisplayName("Le contrôle rend ses constats, bloquants d'abord")
+    void preflight_rendLesConstats() {
+        TenantContext.setTenantId(TENANT);
+        when(problemBuilder.build(TENANT, YEAR_ID, PROFILE_ID))
+                .thenReturn(solution(FEASIBLE_SCORE, List.of()));
+        when(preGenerationValidator.valider(any())).thenReturn(new ValidationReport(List.of(
+                ValidationFinding.avertissement("SEANCE_HORS_PROGRAMME", "7A / LATIN", "hors programme"),
+                ValidationFinding.bloquant("SERVICE_IMPOSSIBLE", "M. Trabelsi", "trop d'heures"))));
+
+        PreflightResponse reponse = service.preflight(YEAR_ID, PROFILE_ID);
+
+        assertThat(reponse.isReady()).isFalse();
+        assertThat(reponse.getBlockingCount()).isEqualTo(1);
+        assertThat(reponse.getWarningCount()).isEqualTo(1);
+        assertThat(reponse.getFindings())
+                .extracting(ScoreExplanationResponse.BusinessFinding::getCode)
+                .as("le bloquant se lit avant l'avertissement")
+                .containsExactly("SERVICE_IMPOSSIBLE", "SEANCE_HORS_PROGRAMME");
     }
 
     // ══════════════════════════════════════════════════════════════════════════

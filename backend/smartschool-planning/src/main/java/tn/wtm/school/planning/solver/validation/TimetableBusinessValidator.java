@@ -3,6 +3,7 @@ package tn.wtm.school.planning.solver.validation;
 import tn.wtm.school.planning.solver.domain.Lesson;
 import tn.wtm.school.planning.solver.domain.TimetableSolution;
 import tn.wtm.school.planning.solver.enums.SessionType;
+import tn.wtm.school.planning.solver.ref.ExpectedCourse;
 import tn.wtm.school.planning.solver.ref.TimeSlotRef;
 
 import java.time.DayOfWeek;
@@ -11,6 +12,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
@@ -79,6 +81,7 @@ public class TimetableBusinessValidator {
     static final String ENSEIGNANT_MANQUANT    = "ENSEIGNANT_MANQUANT";
     static final String DEMI_GROUPE_DESAPPARIE = "DEMI_GROUPE_DESAPPARIE";
     static final String VOLUME_HORAIRE         = "VOLUME_HORAIRE";
+    static final String MATIERE_ABSENTE        = "MATIERE_ABSENTE";
     static final String VOLUME_NON_VERIFIABLE  = "VOLUME_NON_VERIFIABLE";
     static final String CONFLIT_ENSEIGNANT     = "CONFLIT_ENSEIGNANT";
     static final String CONFLIT_CLASSE         = "CONFLIT_CLASSE";
@@ -113,7 +116,8 @@ public class TimetableBusinessValidator {
         creneauxInterdits(seances, constats);
 
         // 3. Programme officiel — § T.1 à T.3
-        volumesOfficiels(seances, constats);
+        volumesOfficiels(solution, constats);
+        matieresAbsentes(solution, constats);
 
         return new ValidationReport(constats);
     }
@@ -348,7 +352,9 @@ public class TimetableBusinessValidator {
      * sont <em>signalés</em>. Un contrôle qui se tait faute de donnée doit dire
      * qu'il s'est tu ; sinon l'absence de constat se lit comme une conformité.
      */
-    private void volumesOfficiels(List<Lesson> seances, List<ValidationFinding> constats) {
+    private void volumesOfficiels(TimetableSolution solution, List<ValidationFinding> constats) {
+        List<Lesson> seances = solution.getLessons();
+        Map<String, Integer> volumeAttendu = programmeAttendu(solution);
         Map<String, List<Lesson>> parCouple = seances.stream()
                 .filter(l -> l.getGroupIndex() != 2)
                 .collect(Collectors.groupingBy(
@@ -358,15 +364,23 @@ public class TimetableBusinessValidator {
         List<String> nonVerifiables = new ArrayList<>();
 
         parCouple.forEach((couple, lecons) -> {
+            // Le volume porté par la séance vient de l'affectation ; le programme
+            // attendu vient des matières du niveau. Quand la séance ne porte
+            // rien, le second sait souvent répondre — et un contrôle qui peut
+            // conclure ne doit pas se déclarer muet.
             int officiel = lecons.get(0).getOfficialWeeklySlots();
+            if (officiel <= 0) {
+                officiel = volumeAttendu.getOrDefault(couple, 0);
+            }
             if (officiel <= 0) {
                 nonVerifiables.add(couple);
                 return;
             }
+            final int attendu = officiel;
             int place = lecons.stream().mapToInt(Lesson::getDurationSlots).sum();
-            if (place != officiel) {
+            if (place != attendu) {
                 constats.add(ValidationFinding.bloquant(VOLUME_HORAIRE, couple,
-                        "le programme prévoit " + enHeures(officiel)
+                        "le programme prévoit " + enHeures(attendu)
                                 + ", l'emploi du temps en place " + enHeures(place)));
             }
         });
@@ -377,6 +391,51 @@ public class TimetableBusinessValidator {
                     nonVerifiables.size() + " couple(s) classe / matière sans volume officiel "
                             + "en base : leur conformité au programme n'a pas pu être vérifiée"));
         }
+    }
+
+    /**
+     * Une matière du programme dont l'emploi du temps ne porte <em>aucune</em>
+     * séance.
+     *
+     * <p>C'est le seul contrôle de ce validateur qui ne parte pas des séances,
+     * et il fallait bien qu'il y en ait un : {@link #volumesOfficiels} regroupe
+     * les séances existantes, si bien qu'un couple classe / matière qui n'en a
+     * produit aucune n'apparaît dans aucun groupe et ne se voit reprocher rien.
+     * L'emploi du temps était déclaré conforme, la matière simplement absente.
+     *
+     * <p>La cause ordinaire est une matière déclarée au niveau sans affectation
+     * d'enseignant. {@code PreGenerationValidator} l'attrape avant la génération,
+     * ce qui est infiniment plus utile ; ce contrôle-ci est le dernier verrou
+     * avant {@code SOLVED}, et il doit tenir seul — c'est tout le principe de
+     * l'étape E.
+     */
+    private void matieresAbsentes(TimetableSolution solution, List<ValidationFinding> constats) {
+        List<ExpectedCourse> attendu = solution.getExpectedCurriculum();
+        if (attendu == null || attendu.isEmpty()) {
+            return; // programme inconnu : PreGenerationValidator le signale déjà
+        }
+        Set<String> couplesPresents = solution.getLessons().stream()
+                .map(l -> l.getStudentClassName() + " / " + l.getSubjectCode())
+                .collect(Collectors.toSet());
+
+        for (ExpectedCourse cours : attendu) {
+            if (!couplesPresents.contains(cours.couple())) {
+                constats.add(ValidationFinding.bloquant(MATIERE_ABSENTE, cours.designation(),
+                        "le programme prévoit " + enHeures(cours.weeklySlots())
+                                + " et l'emploi du temps n'en porte aucune séance"));
+            }
+        }
+    }
+
+    /** Le volume attendu par couple classe / matière, indexé comme les séances. */
+    private static Map<String, Integer> programmeAttendu(TimetableSolution solution) {
+        List<ExpectedCourse> attendu = solution.getExpectedCurriculum();
+        if (attendu == null || attendu.isEmpty()) {
+            return Map.of();
+        }
+        Map<String, Integer> parCouple = new LinkedHashMap<>();
+        attendu.forEach(c -> parCouple.put(c.couple(), c.weeklySlots()));
+        return parCouple;
     }
 
     // ── mise en mots ──────────────────────────────────────────────────────────

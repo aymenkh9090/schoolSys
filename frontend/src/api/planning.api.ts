@@ -227,6 +227,22 @@ export interface BusinessFinding {
   message: string
 }
 
+/**
+ * Verdict du contrôle qui précède la génération.
+ *
+ * Il répond en une seconde à « les données de cette année permettent-elles
+ * d'engendrer un emploi du temps ? ». Rien n'est placé pour y répondre : chaque
+ * constat est un dénombrement — une matière sans enseignant, un service qui ne
+ * tient pas dans une semaine — et non le résultat d'une recherche. Passer le
+ * contrôle n'est donc pas une promesse de faisabilité.
+ */
+export interface PreflightReport {
+  ready: boolean
+  blockingCount: number
+  warningCount: number
+  findings: BusinessFinding[]
+}
+
 export interface ScoreExplanation {
   jobId: number
   score: string
@@ -383,6 +399,12 @@ export const planningApi = {
 
   // Solver
   timetable: {
+    /** Ce que les données disent avant qu'on lance quoi que ce soit. */
+    preflight: (schoolYearId: number, constraintProfileId?: number) =>
+      apiClient.get<PreflightReport>('/api/planning/timetable/preflight', {
+        params: { schoolYearId, constraintProfileId },
+      }).then((r) => r.data),
+
     generate: (dto: { schoolYearId: number; constraintProfileId?: number }) =>
       apiClient.post<TimetableJob>('/api/planning/timetable/generate', dto).then((r) => r.data),
 
