@@ -25,6 +25,7 @@
 | D — Règles de la circulaire absentes | **fait** — 5 règles créées, 1 corrigée, 1 réveillée ; 37 tests ; `NON_CABLEES` tombe de 7 à 6 |
 | E — Validation métier post-solve | **fait** — `TimetableBusinessValidator`, 14 contrôles, verrou sur `SOLVED`, rapport archivé ; 33 tests |
 | F — Correction de la consécutivité | **fait** — mesurée sur les créneaux contigus, parité comprise ; 14 tests |
+| G — Parité de semaine dans la continuité | **fait** — `noStudentIdleGaps` et `MIN_STUDENT_HOURS_PER_HALF_DAY` lisent la quinzaine ; 12 tests |
 
 ### Ce que l'étape D a livré
 
@@ -131,8 +132,8 @@ précisions qui comptent :
   semaines où elle a lieu.
 
 Ce dernier point mérite d'être noté : c'est le traitement que la dette
-`noStudentIdleGaps` réclame, appliqué ici pour la première fois. Il servira de
-modèle quand on la reprendra.
+`noStudentIdleGaps` réclamait, appliqué ici pour la première fois. Il a servi de
+modèle à l'étape G, qui l'a généralisé.
 
 Le libellé du catalogue — « Éviter plus de deux séances consécutives de la même
 matière » — n'a pas bougé : **il décrivait déjà le comportement attendu**. C'est
@@ -144,10 +145,49 @@ matin et deux fois l'après-midi concentre sans enchaîner ; quatre heures
 d'affilée enchaînent sans concentrer davantage. Elles restent toutes deux au
 catalogue, et disent maintenant deux choses différentes.
 
+### Ce que l'étape G a livré
+
+L'étape F avait corrigé la consécutivité en évaluant la semaine impaire et la
+semaine paire séparément, et signalait dans la foulée que deux autres
+contraintes souffraient du même angle mort. Elles le souffrent au même endroit :
+toutes trois regroupent les séances d'une demi-journée, et toutes trois lisaient
+ce groupe comme si chaque séance avait lieu chaque semaine.
+
+| Contrainte | § | Ce qu'elle disait | Ce qu'elle dit |
+|---|---|---|---|
+| `NO_STUDENT_IDLE_GAPS` | I.5 | une quinzaine bouchait le trou les deux semaines | le trou est cherché dans chaque semaine |
+| `MIN_STUDENT_HOURS_PER_HALF_DAY` | I.2 | une quinzaine remplissait la demi-journée les deux semaines | le volume est compté dans chaque semaine, la pire décide |
+
+Le filtre de parité, écrit trois fois, est désormais écrit une seule :
+`seancesDeLaSemaine(seances, semaine)`. C'était la condition pour que les trois
+contraintes ne re-divergent pas — elles avaient chacune eu sa version du même
+oubli.
+
+**La correction va dans les deux sens, et c'est ce qui la rend juste.** Elle
+signale des violations qui n'étaient pas vues : une quinzaine placée entre deux
+cours laisse un vrai trou la semaine où elle n'a pas lieu ; une matinée d'une
+heure de cours plus une heure de quinzaine ne fait deux heures qu'une semaine sur
+deux. Mais elle en retire aussi : deux quinzaines opposées de part et d'autre
+d'un créneau libre étaient comptées comme un trou, alors qu'aucune semaine ne
+voit les deux, et une quinzaine de deux heures seule dans sa matinée était une
+demi-journée trop courte la semaine où la classe ne se déplace même pas.
+
+**Un point de lecture a été tranché au passage** : l'exemption de l'EPS du § I.2
+se réévalue semaine par semaine. Une matinée composée d'une heure de sport
+hebdomadaire et d'une heure de quinzaine est, la semaine paire, une matinée
+entièrement sportive — donc exemptée. Appliquer l'exemption sur la liste brute
+des séances l'aurait refusée, au motif qu'une séance de maths y figure une
+semaine sur deux.
+
+La pénalité reste comptée **par demi-journée**, non par semaine : c'est la
+demi-journée qui est mal construite, et la compter deux fois quand le défaut
+existe les deux semaines gonflerait le score sans rien ajouter au diagnostic.
+
 ### Où reprendre
 
-**Les six étapes du plan sont faites.** Ce qui reste n'est plus du rattrapage
-mais des décisions et de la dette identifiée.
+**Les sept étapes du plan sont faites, et la dette qu'elles avaient identifiée
+est soldée.** Ce qui reste tient en une décision qui n'appartient pas au code, et
+en un ménage de catalogue.
 
 **Points ouverts, par ordre d'urgence :**
 
@@ -165,14 +205,10 @@ mais des décisions et de la dette identifiée.
 3. **Alternance des quinzaines** — `LessonGenerator.mapWeekParity()`, hypothèse
    retenue (§ 1.6, point 6).
 
-**Dette identifiée, non traitée :** `noStudentIdleGaps` (§ I.5) regroupe les
-séances sans regarder la parité de semaine. Une séance de quinzaine y crée donc
-un trou la semaine où elle n'a pas lieu, ou en masque un.
-`MIN_STUDENT_HOURS_PER_HALF_DAY` hérite exactement du même angle mort : une
-demi-journée dont l'unique séance est de quinzaine paraît occupée les deux
-semaines. Les deux se corrigeront ensemble, sur le modèle de
-`plusLongueSuite()` — évaluer semaine impaire et semaine paire séparément et
-retenir la pire.
+**Dette identifiée, traitée à l'étape G :** `noStudentIdleGaps` et
+`MIN_STUDENT_HOURS_PER_HALF_DAY` regroupaient les séances sans regarder la parité
+de semaine. Les deux lisent désormais la quinzaine, par le même filtre que la
+consécutivité.
 
 **Restant dans `NON_CABLEES`** (6 codes) : les 3 SOFT jamais implémentées
 (`BALANCED_TEACHER_WORKLOAD`, `MAIN_SUBJECT_BALANCED_DISTRIBUTION`,
@@ -189,7 +225,7 @@ formation), § II.2 (« répartition équilibrée » que le texte ne chiffre pas
 § 1.6 point 4), § II.3 (écrit comme un plafond journalier et non comme une
 dérogation) et § III.1.
 
-**État des tests :** `smartschool-planning` 344, `smartschool-api` 5,
+**État des tests :** `smartschool-planning` 356, `smartschool-api` 5,
 `organisation-business` 300, `absence-business` 10, `tenant-business` 19 —
 **0 échec**. Le front compile.
 
@@ -495,6 +531,15 @@ contraintes ne disent plus la même chose. Groupement à la demi-journée, duré
 réelles lues, parité de semaine évaluée séparément.
 Couverture : `ConsecutiviteConstraintTest`, 14 tests.
 
+### Étape G — La parité de semaine dans la continuité — **faite**
+Appliquer à `NO_STUDENT_IDLE_GAPS` (§ I.5) et `MIN_STUDENT_HOURS_PER_HALF_DAY`
+(§ I.2) le traitement de parité écrit à l'étape F : évaluer la semaine impaire
+et la semaine paire séparément, retenir la pire. Le filtre est mis en commun —
+`seancesDeLaSemaine()` — pour que les trois contraintes cessent d'avoir chacune
+sa lecture de la quinzaine. L'exemption sportive du § I.2 se réévalue elle aussi
+semaine par semaine.
+Couverture : `PariteSemaineContinuiteTest`, 12 tests.
+
 ---
 
 ## 6. Impact attendu
@@ -508,6 +553,7 @@ Couverture : `ConsecutiviteConstraintTest`, 14 tests.
 | D | Contraint davantage ; peut rendre le problème infaisable avec les ressources actuelles. |
 | E | Des jobs aujourd'hui `SOLVED` passeront `INFEASIBLE`. C'est l'objectif. |
 | F | Corrige un doublon ; effet marginal. |
+| G | Déplace des violations dans les deux sens : quelques-unes apparaissent (trous et demi-journées courtes que la quinzaine masquait), quelques-unes disparaissent (trous qu'aucune semaine ne voit). Sensible seulement là où il y a des quinzaines. |
 
 ---
 

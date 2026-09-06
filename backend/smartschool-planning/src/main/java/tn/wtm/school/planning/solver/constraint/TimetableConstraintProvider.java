@@ -141,10 +141,22 @@ public class TimetableConstraintProvider implements ConstraintProvider {
                 .asConstraint(TEACHER_AVAILABILITY);
     }
 
-    // Un élève ne doit pas avoir de trou dans son emploi du temps au sein d'une même
-    // demi-journée (matin OU après-midi). On regroupe toutes les leçons par (classe, jour, période)
-    // et on vérifie sur la liste triée qu'il n'y a pas de créneau libre entre deux leçons
-    // successives. Multi-slots : une leçon de N slots couvre [startOrder, startOrder+N-1].
+    /**
+     * Aucune heure creuse chez l'élève, au sein d'une même demi-journée — § I.5.
+     *
+     * <p>Les séances sont regroupées par (classe, jour, demi-journée) et la
+     * suite triée doit être contiguë : une séance de N créneaux couvre
+     * {@code [orderIndex, orderIndex + N - 1]}, la suivante doit commencer au
+     * créneau d'après.
+     *
+     * <p><b>La parité de semaine est évaluée à part</b>, semaine impaire puis
+     * semaine paire. Une séance de quinzaine n'occupe son créneau qu'une semaine
+     * sur deux : la compter toutes les semaines bouche un trou que l'élève subit
+     * réellement l'autre semaine, et le trou disparaît du score sans avoir
+     * disparu de l'emploi du temps. La réciproque compte tout autant : deux
+     * quinzaines opposées de part et d'autre d'un créneau libre ne créent aucun
+     * trou, puisque aucune semaine ne voit les deux.
+     */
     private Constraint noStudentIdleGaps(ConstraintFactory f) {
         return f.forEach(Lesson.class)
                 .filter(l -> l.getTimeSlot() != null && l.getGroupIndex() != 2)
@@ -152,12 +164,21 @@ public class TimetableConstraintProvider implements ConstraintProvider {
                         Lesson::getStudentClassName,
                         l -> l.getTimeSlot().getDay() + "|" + l.getTimeSlot().getPeriod(),
                         ConstraintCollectors.toList())
-                .filter((cls, dayPeriod, lessons) -> hasGapInSortedLessons(lessons))
+                .filter((cls, demiJournee, seances) -> trouDansLaDemiJournee(seances))
                 .penalize(HardMediumSoftScore.ONE_HARD)
                 .asConstraint(NO_STUDENT_IDLE_GAPS);
     }
 
-    private boolean hasGapInSortedLessons(java.util.List<Lesson> lessons) {
+    /**
+     * Un trou dans l'une des deux semaines suffit à condamner la demi-journée :
+     * elle n'est régulière que si elle l'est les deux.
+     */
+    private static boolean trouDansLaDemiJournee(java.util.List<Lesson> seances) {
+        return hasGapInSortedLessons(seancesDeLaSemaine(seances, WeekParity.ODD))
+                || hasGapInSortedLessons(seancesDeLaSemaine(seances, WeekParity.EVEN));
+    }
+
+    private static boolean hasGapInSortedLessons(java.util.List<Lesson> lessons) {
         if (lessons.size() < 2) return false;
         java.util.List<Lesson> sorted = lessons.stream()
                 .filter(l -> l.getTimeSlot() != null && l.getTimeSlot().getOrderIndex() != null)
@@ -326,8 +347,9 @@ public class TimetableConstraintProvider implements ConstraintProvider {
      *
      * <p><b>La parité de semaine est évaluée à part</b>, semaine impaire puis
      * semaine paire : une quinzaine ne prolonge pas une suite les semaines où
-     * elle n'a pas lieu. C'est le traitement que {@code noStudentIdleGaps}
-     * devrait recevoir aussi — il ne l'a pas encore, et c'est une dette connue.
+     * elle n'a pas lieu. {@code noStudentIdleGaps} et
+     * {@code minStudentHoursPerHalfDay} lisent désormais la parité de la même
+     * façon, par {@link #seancesDeLaSemaine}.
      */
     private Constraint maxConsecutiveSameSessions(ConstraintFactory f) {
         return f.forEach(Lesson.class)
@@ -481,10 +503,10 @@ public class TimetableConstraintProvider implements ConstraintProvider {
                         Joiners.equal((cls, demiJournee, seances) -> MIN_STUDENT_HOURS_PER_HALF_DAY,
                                 ActiveConstraintParam::getCode))
                 .filter((cls, demiJournee, seances, p) ->
-                        demiJourneeSousLePlancher(seances, plancherDemiJournee(p)))
+                        manqueDeLaDemiJournee(seances, plancherDemiJournee(p)) > 0)
                 .penalize(HardMediumSoftScore.ONE_HARD,
                         (cls, demiJournee, seances, p) ->
-                                plancherDemiJournee(p) - volumeEnCreneaux(seances))
+                                manqueDeLaDemiJournee(seances, plancherDemiJournee(p)))
                 .asConstraint(MIN_STUDENT_HOURS_PER_HALF_DAY);
     }
 
@@ -496,6 +518,30 @@ public class TimetableConstraintProvider implements ConstraintProvider {
 
     private static int volumeEnCreneaux(java.util.List<Lesson> seances) {
         return seances.stream().mapToInt(Lesson::getDurationSlots).sum();
+    }
+
+    /**
+     * Ce qui manque à la demi-journée pour atteindre le plancher, en créneaux —
+     * zéro quand elle le respecte.
+     *
+     * <p><b>Les deux semaines sont mesurées séparément, et on retient la pire.</b>
+     * Une demi-journée dont l'unique séance est de quinzaine paraissait occupée
+     * les deux semaines. Or la semaine où la séance n'a pas lieu, la classe ne se
+     * déplace pas — il n'y a rien à lui reprocher —, et la semaine où elle a
+     * lieu, la classe vient au collège pour une heure : c'est exactement la
+     * nuisance que le § I.2 interdit.
+     */
+    private static int manqueDeLaDemiJournee(java.util.List<Lesson> seances, int plancher) {
+        return Math.max(manqueDeLaSemaine(seances, WeekParity.ODD, plancher),
+                manqueDeLaSemaine(seances, WeekParity.EVEN, plancher));
+    }
+
+    private static int manqueDeLaSemaine(java.util.List<Lesson> seances,
+                                         WeekParity semaine, int plancher) {
+        java.util.List<Lesson> deLaSemaine = seancesDeLaSemaine(seances, semaine);
+        return demiJourneeSousLePlancher(deLaSemaine, plancher)
+                ? plancher - volumeEnCreneaux(deLaSemaine)
+                : 0;
     }
 
     /**
@@ -948,10 +994,7 @@ public class TimetableConstraintProvider implements ConstraintProvider {
      * disparaître la seconde violation derrière la première.
      */
     private static int suiteDeLaSemaine(java.util.List<Lesson> seances, WeekParity semaine) {
-        java.util.List<Lesson> deLaSemaine = seances.stream()
-                .filter(l -> l.getWeekParity() == null
-                        || l.getWeekParity() == WeekParity.ALL
-                        || l.getWeekParity() == semaine)
+        java.util.List<Lesson> deLaSemaine = seancesDeLaSemaine(seances, semaine).stream()
                 .sorted(java.util.Comparator.comparingInt(l -> l.getTimeSlot().getOrderIndex()))
                 .toList();
         if (deLaSemaine.isEmpty()) {
@@ -968,5 +1011,23 @@ public class TimetableConstraintProvider implements ConstraintProvider {
             record = Math.max(record, courante);
         }
         return record;
+    }
+
+    /**
+     * Les séances qui ont effectivement lieu la semaine donnée.
+     *
+     * <p>Une séance sans parité, ou marquée {@code ALL}, a lieu toutes les
+     * semaines ; une quinzaine ne compte que dans la sienne. C'est le seul point
+     * où trois contraintes — consécutivité, heures creuses, plancher de
+     * demi-journée — lisent la parité, et il vaut mieux qu'elles la lisent au
+     * même endroit : elles ont chacune eu leur version du même angle mort.
+     */
+    private static java.util.List<Lesson> seancesDeLaSemaine(
+            java.util.List<Lesson> seances, WeekParity semaine) {
+        return seances.stream()
+                .filter(l -> l.getWeekParity() == null
+                        || l.getWeekParity() == WeekParity.ALL
+                        || l.getWeekParity() == semaine)
+                .toList();
     }
 }
