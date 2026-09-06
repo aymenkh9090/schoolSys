@@ -7,33 +7,20 @@ databaseChangeLog:
   - include:
       file: db/changelog.tenant/003-widen-tenant-logo.yaml
 
-  # ── planning schema ───────────────────────────────────────────────────────
+  # ── planning schema ────────────────────────────────────────────────────────
+  #
+  # Un seul include, et non la liste recopiée. Les deux listes avaient divergé
+  # dans les deux sens : celle-ci ignorait les migrations 014, 015 et 016 — les
+  # règles de la circulaire, le rapport de validation archivé, le ménage du
+  # catalogue — et celle du module planning ignorait la 009. Les tests
+  # exerçaient l'une, l'application exécutait l'autre, et rien ne les reliait.
+  # C'est le défaut P1 du plan de conformité, appliqué aux migrations.
+  #
+  # Les chemins enregistrés dans databasechangelog.filename ne changent pas :
+  # Liquibase y inscrit le fichier du changeset, pas celui qui l'inclut. Rien
+  # n'est donc rejoué.
   - include:
-      file: db/changelog.planing/001-create-constraint-definition.yaml
-  - include:
-      file: db/changelog.planing/002-create-constraint-profile.yaml
-  - include:
-      file: db/changelog.planing/003-create-constraint-setting.yaml
-  - include:
-      file: db/changelog.planing/004-seed-base-constraints.yaml
-  - include:
-      file: db/changelog.planing/006-create-timetable-job.yaml
-  - include:
-      file: db/changelog.planing/005-create-generated-timetable.yaml
-  - include:
-      file: db/changelog.planing/007-create-timetable-session.yaml
-  - include:
-      file: db/changelog.planing/008-fix-room-type-check.yaml
-  - include:
-      file: db/changelog.planing/009-extend-room-type-check.yaml
-  - include:
-      file: db/changelog.planing/010-frenchify-constraint-labels.yaml
-  - include:
-      file: db/changelog.planing/011-create-custom-constraint.yaml
-  - include:
-      file: db/changelog.planing/012-single-active-constraint-profile.yaml
-  - include:
-      file: db/changelog.planing/013-align-custom-constraint-fk.yaml
+      file: db/changelog.planing/db.changelog-master.yaml
 
   # ── absence schema ────────────────────────────────────────────────────────
   # Après le schéma planning : la reprise de fermeture_at lit planning_timetable_session.

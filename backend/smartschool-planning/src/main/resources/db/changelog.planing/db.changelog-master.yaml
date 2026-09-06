@@ -31,5 +31,7 @@ databaseChangeLog:
   - include:
       file: db/changelog.planing/008-fix-room-type-check.yaml
   - include:
+      file: db/changelog.planing/009-extend-room-type-check.yaml
+  - include:
       file: db/changelog.planing/015-timetable-job-validation-report.yaml
 

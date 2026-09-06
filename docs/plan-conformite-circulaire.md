@@ -379,6 +379,50 @@ garde pas trace d'une génération qui n'a jamais commencé.
 se déclenchait dès qu'une séance ne portait pas son volume officiel. Le programme
 attendu sait souvent répondre à sa place : le contrôle conclut là où il se taisait.
 
+### Ce qu'un simple démarrage a révélé
+
+En lançant l'application pour vérifier l'écran de génération, Liquibase a
+annoncé « base à jour, aucun changeset à exécuter » — sur une base qui portait
+**dix-huit** règles au catalogue. La suite de tests, elle, en comptait dix-neuf.
+
+**Il y avait deux listes de migrations.** Celle du module planning, exercée par
+`LiquibaseChangelogTest` et `CatalogueProviderCoverageTest`, et une seconde,
+recopiée à la main dans `smartschool-api/src/main/resources/db.changelog/`, la
+seule que Spring charge au démarrage. Elles avaient dérivé **dans les deux
+sens** : la liste applicative ignorait les migrations **014, 015 et 016** — les
+règles de la circulaire de l'étape D, le rapport de validation archivé de
+l'étape E, le ménage du catalogue de l'étape I — et la liste du module planning
+ignorait la 009.
+
+Autrement dit : **aucune des migrations écrites pour ce plan n'avait jamais
+touché une vraie base.** Toute la suite passait au vert sur un catalogue que
+l'application n'avait pas.
+
+C'est le défaut P1 dans sa forme la plus pure — une liste vérifiée, une autre
+appliquée, rien entre les deux — et il aura fallu démarrer l'application pour le
+voir. Aucun test ne pouvait l'attraper, puisque les tests interrogeaient
+justement la mauvaise liste.
+
+La correction tient en un `include` : le master applicatif délègue au master
+planning au lieu d'en recopier le contenu. Les chemins enregistrés dans
+`databasechangelog.filename` ne changent pas — Liquibase y inscrit le fichier du
+changeset, pas celui qui l'inclut — donc rien n'est rejoué.
+`ChangelogMasterTest` verrouille l'arrangement dans les deux sens : l'include
+doit être là, et aucune migration planning ne doit être recopiée à côté.
+
+**Une seconde correction, tirée du même démarrage.** La migration 015 échouait
+sur `column "validation_report" already exists` : en développement,
+`ddl-auto: update` crée la colonne depuis l'entité JPA avant que Liquibase n'y
+arrive. Elle porte désormais une précondition `MARK_RAN` — le changeset est
+enregistré sans être rejoué, et une base neuve crée la colonne normalement.
+
+**Vérifié sur la base de développement** : les trois migrations se sont
+appliquées, le catalogue est passé de 18 à 19 règles, les quatre codes retirés
+ont disparu et les deux règles réécrites portent leur nouveau libellé. Le
+rattrapage de l'étape H s'est exécuté dans la foulée — *« Programme
+COLLEGE_7EME_OFFICIEL : version 1 → 2, lignes remplacées ; 3 semé(s), 3 mis à
+jour »* —, ce qui valide au passage le mécanisme de version du seeder.
+
 ### Où reprendre
 
 **Les onze étapes du plan sont faites, la dette qu'elles avaient identifiée est
@@ -419,7 +463,7 @@ qu'implicite dans `isBreakSlot`), § II.1 (aucune source ne peuple les jours de
 formation — c'est une donnée qui manque, pas une règle), § II.3 (écrit comme un
 plafond journalier et non comme la dérogation qu'il est).
 
-**État des tests :** `smartschool-planning` 393, `smartschool-api` 12,
+**État des tests :** `smartschool-planning` 393, `smartschool-api` 15,
 `organisation-business` 300, `absence-business` 10, `tenant-business` 19 —
 **0 échec**. Le front compile.
 
@@ -676,6 +720,7 @@ plafond et non comme une dérogation).
 | migration Liquibase | alignement catalogue ↔ provider ; `014-seed-circulaire-constraints.yaml` sème les 5 codes de l'étape D et rattrape les profils existants ; `016-vider-catalogue-non-cable.yaml` retire les 4 codes de l'étape I et redit ce que font les 2 écrites |
 | `api/NationalPatternSeeder.java` | programmes § T.1 et § T.3, rattrapage par version |
 | `docs/sql/rattrapage-volumes-t1.sql` | remise à niveau des patterns déjà copiés chez un établissement |
+| `api/resources/db.changelog/db.changelog-master.yaml` | le changelog que Spring charge — délègue au master planning depuis qu'ils avaient divergé |
 | données `patterns` / `pattern_details` | durées `(N)` |
 
 ---

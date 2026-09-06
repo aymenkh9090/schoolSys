@@ -11,9 +11,22 @@ databaseChangeLog:
   # résumé est borné par construction, mais un établissement de trente classes
   # dont la génération part de travers produit un rapport que 1000 caractères
   # tronqueraient au milieu d'une phrase.
+  #
+  # La précondition n'est pas une précaution de style. En développement,
+  # `ddl-auto: update` crée la colonne depuis l'entité JPA dès le premier
+  # démarrage, souvent avant que cette migration ne soit branchée : Liquibase
+  # arrivait ensuite sur un ALTER TABLE qui échouait, et le démarrage avec lui.
+  # MARK_RAN enregistre le changeset sans le rejouer — la colonne est là, la
+  # ligne de changelog aussi, et une base neuve la crée normalement.
   - changeSet:
       id: 015-timetable-job-validation-report
       author: planning
+      preConditions:
+        - onFail: MARK_RAN
+        - not:
+            - columnExists:
+                tableName: planning_timetable_job
+                columnName: validation_report
       changes:
         - addColumn:
             tableName: planning_timetable_job
