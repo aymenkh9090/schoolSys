@@ -13,11 +13,24 @@ cd <racine-du-dépôt>/ai-assistant
 python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 cp .env.example .env        # puis passer AUTH_ENABLED=false pour tester sans Keycloak
-uvicorn app.main:app --reload --port 8000
+uvicorn app.main:app --reload --host 0.0.0.0 --port 8001
 ```
 
-- Doc interactive : http://localhost:8000/docs
+- Doc interactive : http://localhost:8001/docs
 - Prérequis : `docker compose up -d prometheus` et `ollama pull qwen2.5:7b`
+
+**`--host 0.0.0.0` n'est pas décoratif.** Sans lui, uvicorn n'écoute que sur
+`127.0.0.1` : le service répond parfaitement depuis le poste de développement,
+et reste injoignable pour l'application mobile, qui l'appelle par l'IP du
+portable sur le réseau local. Le symptôme est trompeur — `/health` répond `UP`
+dans le navigateur pendant que le téléphone rapporte
+`Failed to connect to 192.168.0.235:8001`.
+
+Le port 8001 est celui que le mobile interroge (`mobile/src/config.ts`). Le
+conteneur `ai-assistant-ss` occupe le 8000 : il est joignable depuis le réseau,
+mais il ne voit pas Ollama (`"ollama": false`), Ollama n'écoutant lui-même que
+sur `127.0.0.1`. C'est donc bien l'instance locale, sur 8001, qui sert le
+mobile.
 
 ### Choix du modèle
 
