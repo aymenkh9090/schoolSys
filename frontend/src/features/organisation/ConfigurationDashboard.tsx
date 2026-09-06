@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { useQueries, useQuery } from '@tanstack/react-query'
 import { CheckCircle, Circle, Clock, AlertTriangle, ArrowRight, Settings2 } from 'lucide-react'
 
-import { PageHeader } from '@/components/ui/PageHeader'
+import { PageHero } from '@/components/ui/PageHero'
 import { StatCard } from '@/components/ui/StatCard'
 import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
@@ -87,35 +87,37 @@ export default function ConfigurationDashboard() {
         label: 'Horaires',
         to: '/ecole/configuration/horaires',
         percent: horairesPercent,
-        detail: config?.isReadyForGeneration ? 'Prêt pour la génération' : `${config?.totalSlotsPerWeek ?? 0} créneau(x)/sem.`,
+        detail: config?.isReadyForGeneration
+          ? 'Prêt pour la génération'
+          : `${config?.totalSlotsPerWeek ?? 0} créneau${(config?.totalSlotsPerWeek ?? 0) > 1 ? 'x' : ''} par semaine`,
       },
       {
         key: 'programme-national',
         label: 'Programme national',
         to: '/ecole/programme-national',
         percent: nationalPercent,
-        detail: `${nationalPatterns.length} programme(s)`,
+        detail: `${nationalPatterns.length} programme${nationalPatterns.length > 1 ? 's' : ''} disponible${nationalPatterns.length > 1 ? 's' : ''}`,
       },
       {
         key: 'programme-ecole',
         label: 'Programme école',
         to: '/ecole/programme-ecole',
         percent: schoolPatternPercent,
-        detail: `${withPattern}/${allSubjectLevels.length} matière-niveau avec pattern`,
+        detail: `${withPattern} / ${allSubjectLevels.length} matière-niveau avec répartition`,
       },
       {
         key: 'matieres',
         label: 'Matières',
         to: '/ecole/matieres',
         percent: matieresPercent,
-        detail: `${matieresEnseignees.length} matière(s) enseignée(s)`,
+        detail: `${matieresEnseignees.length} matière${matieresEnseignees.length > 1 ? 's' : ''} enseignée${matieresEnseignees.length > 1 ? 's' : ''}`,
       },
       {
         key: 'salles',
         label: 'Salles',
         to: '/ecole/salles',
         percent: sallesPercent,
-        detail: `${rooms.length} salle(s)`,
+        detail: `${rooms.length} salle${rooms.length > 1 ? 's' : ''}`,
       },
       {
         key: 'contraintes',
@@ -129,7 +131,9 @@ export default function ConfigurationDashboard() {
         label: 'Affectations',
         to: '/ecole/affectations',
         percent: affectationsPercent,
-        detail: currentYear ? `${assignments.length} affectation(s), ${missingAssignments.length} manquante(s)` : 'Aucune année courante',
+        detail: currentYear
+          ? `${assignments.length} affectation${assignments.length > 1 ? 's' : ''}, ${missingAssignments.length} manquante${missingAssignments.length > 1 ? 's' : ''}`
+          : 'Aucune année courante',
       },
     ],
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -148,13 +152,22 @@ export default function ConfigurationDashboard() {
   const priorities = useMemo(() => {
     const items: { label: string; to: string }[] = []
     if (missingAssignments.length > 0) {
-      items.push({ label: `${missingAssignments.length} affectation(s) manquante(s)`, to: '/ecole/affectations' })
+      items.push({
+        label: `${missingAssignments.length} affectation${missingAssignments.length > 1 ? 's' : ''} manquante${missingAssignments.length > 1 ? 's' : ''}`,
+        to: '/ecole/affectations',
+      })
     }
     if (inconsistants.length > 0) {
-      items.push({ label: `${inconsistants.length} pattern(s) école avec écart horaire`, to: '/ecole/programme-ecole' })
+      items.push({
+        label: `${inconsistants.length} répartition${inconsistants.length > 1 ? 's' : ''} avec un écart horaire`,
+        to: '/ecole/programme-ecole',
+      })
     }
     if (allSubjectLevels.length > 0 && withPattern < allSubjectLevels.length) {
-      items.push({ label: `${allSubjectLevels.length - withPattern} matière-niveau sans pattern école`, to: '/ecole/programme-ecole' })
+      items.push({
+        label: `${allSubjectLevels.length - withPattern} matière-niveau sans répartition`,
+        to: '/ecole/programme-ecole',
+      })
     }
     if (rooms.length === 0) items.push({ label: 'Aucune salle configurée', to: '/ecole/salles' })
     if (matieresEnseignees.length === 0) items.push({ label: 'Aucune matière enseignée configurée', to: '/ecole/matieres' })
@@ -166,9 +179,10 @@ export default function ConfigurationDashboard() {
 
   return (
     <div className="space-y-6">
-      <PageHeader
+      <PageHero
         title="Configuration"
         subtitle="Tout ce qui est nécessaire avant de générer un emploi du temps"
+        icon={Settings2}
       />
 
       {/* Résumé */}

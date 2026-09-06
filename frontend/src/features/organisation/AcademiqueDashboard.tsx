@@ -4,7 +4,7 @@ import { useQuery } from '@tanstack/react-query'
 import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts'
 import { Users, GraduationCap, School, BookOpen, BookMarked, ClipboardList, ArrowRight, Layers } from 'lucide-react'
 
-import { PageHeader } from '@/components/ui/PageHeader'
+import { PageHero } from '@/components/ui/PageHero'
 import { StatCard } from '@/components/ui/StatCard'
 import { organisationApi } from '@/api/organisation.api'
 import { cn } from '@/lib/utils'
@@ -81,9 +81,10 @@ export default function AcademiqueDashboard() {
 
   return (
     <div className="space-y-6">
-      <PageHeader
+      <PageHero
         title="Académique"
         subtitle="Vue d'ensemble des données académiques de l'établissement"
+        icon={BookMarked}
       />
 
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">

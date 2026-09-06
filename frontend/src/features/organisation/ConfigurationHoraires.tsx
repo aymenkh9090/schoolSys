@@ -1,11 +1,15 @@
 import { useState, useEffect, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { Save, Clock, CheckCircle, XCircle, Loader2, Sparkles, Sun, Sunset } from 'lucide-react'
+import {
+  Save, Clock, CheckCircle, XCircle, Loader2, Sparkles, Sun, Sunset,
+  CalendarDays, LayoutGrid, Timer,
+} from 'lucide-react'
 
-import { PageHeader } from '@/components/ui/PageHeader'
+import { PageHero } from '@/components/ui/PageHero'
 import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
+import { StatCard } from '@/components/ui/StatCard'
 import { TimeInput24 } from '@/components/ui/TimeInput24'
 import { organisationApi, type WorkingDayRequest, type SchoolConfigResponse } from '@/api/organisation.api'
 
@@ -132,11 +136,16 @@ export default function ConfigurationHoraires() {
 
   return (
     <div className="space-y-6">
-      <PageHeader
+      <PageHero
         title="Configuration des horaires"
-        subtitle="Définissez les jours et créneaux de la semaine scolaire"
+        subtitle="Les jours ouvrés et les créneaux dans lesquels l'emploi du temps sera calculé"
+        icon={Clock}
         actions={
-          <Button onClick={() => saveMutation.mutate()} loading={isGenerating}>
+          <Button
+            className="bg-white/15 text-white hover:bg-white/25 backdrop-blur"
+            onClick={() => saveMutation.mutate()}
+            loading={isGenerating}
+          >
             {isGenerating ? 'Génération…' : <><Save size={16} /> Enregistrer</>}
           </Button>
         }
@@ -157,26 +166,28 @@ export default function ConfigurationHoraires() {
         </div>
       )}
 
-      <div className="grid grid-cols-3 gap-3">
-        <div className="bg-white dark:bg-slate-900 rounded-xl border border-brand-border dark:border-slate-700 p-4">
-          <p className="text-xs text-brand-textMuted dark:text-slate-400">Jours actifs</p>
-          <p className="text-2xl font-bold text-brand-text dark:text-slate-100">{activeDays}</p>
-        </div>
-        <div className="bg-white dark:bg-slate-900 rounded-xl border border-brand-border dark:border-slate-700 p-4">
-          <p className="text-xs text-brand-textMuted dark:text-slate-400">Durée créneau</p>
-          <p className="text-2xl font-bold text-brand-text dark:text-slate-100">{slotDuration} min</p>
-        </div>
-        <div className="bg-white dark:bg-slate-900 rounded-xl border border-brand-border dark:border-slate-700 p-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-xs text-brand-textMuted dark:text-slate-400">Total créneaux/sem.</p>
-              <p className="text-2xl font-bold text-brand-text dark:text-slate-100">{totalSlots}</p>
-            </div>
-            <Badge variant={config?.isReadyForGeneration ? 'success' : 'warning'}>
-              {config?.isReadyForGeneration ? <><CheckCircle size={11} className="inline me-1" />Prêt</> : <><XCircle size={11} className="inline me-1" />Incomplet</>}
-            </Badge>
-          </div>
-        </div>
+      {/* Les trois chiffres passent sur le composant partagé, comme partout
+          ailleurs dans la section ; l'état « prêt » gagne sa propre ligne au
+          lieu d'être serré dans un coin de tuile. */}
+      <div className="grid gap-3 sm:grid-cols-3">
+        <StatCard title="Jours ouvrés" value={activeDays} icon={CalendarDays} color="blue" />
+        <StatCard title="Durée d'un créneau" value={`${slotDuration} min`} icon={Timer} color="purple" />
+        <StatCard title="Créneaux par semaine" value={totalSlots} icon={LayoutGrid} color="green" />
+      </div>
+
+      <div className={`flex items-start gap-2 rounded-xl p-3 text-sm ${
+        config?.isReadyForGeneration
+          ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-400'
+          : 'bg-amber-50 text-amber-700 dark:bg-amber-500/10 dark:text-amber-400'
+      }`}>
+        {config?.isReadyForGeneration
+          ? <CheckCircle size={16} className="mt-0.5 shrink-0" />
+          : <XCircle size={16} className="mt-0.5 shrink-0" />}
+        <span>
+          {config?.isReadyForGeneration
+            ? "Ces horaires sont complets : la génération de l'emploi du temps peut s'appuyer dessus."
+            : "Configuration incomplète — la génération de l'emploi du temps restera indisponible tant qu'un jour ouvré n'aura pas ses créneaux."}
+        </span>
       </div>
 
       {/* Durée créneau */}
@@ -190,7 +201,12 @@ export default function ConfigurationHoraires() {
             <button
               key={d}
               onClick={() => setSlotDuration(d)}
-              className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${slotDuration === d ? 'bg-brand-blue text-white' : 'bg-brand-bgSecondary text-brand-textMuted hover:text-brand-text dark:bg-slate-800 dark:text-slate-400 dark:hover:text-slate-200'}`}
+              aria-pressed={slotDuration === d}
+              className={`rounded-lg border px-4 py-2 text-sm font-medium transition-colors ${
+                slotDuration === d
+                  ? 'border-brand-teal bg-brand-teal text-white shadow-sm'
+                  : 'border-brand-border bg-white text-brand-text hover:border-brand-teal/40 hover:bg-teal-50/60 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800'
+              }`}
             >
               {d} min
             </button>

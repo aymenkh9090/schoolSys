@@ -4,9 +4,12 @@ import { useForm, Controller } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { toast } from 'sonner'
-import { Plus, Pencil, Trash2, Power, PowerOff, Star, CalendarDays } from 'lucide-react'
+import {
+  Plus, Pencil, Trash2, Power, PowerOff, Star, CalendarDays,
+  GraduationCap, Link2, CheckCircle2, ArrowRight,
+} from 'lucide-react'
 
-import { PageHeader } from '@/components/ui/PageHeader'
+import { PageHero } from '@/components/ui/PageHero'
 import { Button } from '@/components/ui/Button'
 import { Modal } from '@/components/ui/Modal'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
@@ -14,7 +17,6 @@ import { Input } from '@/components/ui/Input'
 import { DateInputFR } from '@/components/ui/DateInputFR'
 import { Badge } from '@/components/ui/Badge'
 import { StatCard } from '@/components/ui/StatCard'
-import { DataTable, type Column } from '@/components/ui/DataTable'
 import { organisationApi, type SchoolYear } from '@/api/organisation.api'
 import { formatDate } from '@/lib/utils'
 
@@ -89,59 +91,149 @@ export default function GestionAnneesScolaires() {
   const actives = years.filter((y) => y.estActive).length
   const courante = years.find((y) => y.estCourante)
 
-  const columns: Column<SchoolYear>[] = [
-    {
-      key: 'nom', header: 'Nom',
-      render: (y) => (
-        <div className="flex items-center gap-2">
-          <span className="font-semibold text-brand-text">{y.nom}</span>
-          {y.estCourante && <Badge variant="info"><Star size={10} className="inline me-0.5" />Courante</Badge>}
-        </div>
-      ),
-    },
-    { key: 'dateDebut', header: 'Début', render: (y) => <span className="text-sm text-brand-textMuted">{formatDate(y.dateDebut)}</span> },
-    { key: 'dateFin', header: 'Fin', render: (y) => <span className="text-sm text-brand-textMuted">{formatDate(y.dateFin)}</span> },
-    { key: 'nombreClasses', header: 'Classes', render: (y) => y.nombreClasses ?? 0 },
-    { key: 'nombreAffectations', header: 'Affectations', render: (y) => y.nombreAffectations ?? 0 },
-    { key: 'estActive', header: 'Statut', render: (y) => <Badge variant={y.estActive ? 'success' : 'danger'}>{y.estActive ? 'Active' : 'Inactive'}</Badge> },
-    {
-      key: 'actions', header: '', className: 'w-px',
-      render: (y) => (
-        <div className="flex items-center gap-1 justify-end">
-          <button title={y.estActive ? 'Désactiver' : 'Activer'} onClick={() => toggleMutation.mutate({ id: y.idAnnee, active: !y.estActive })} className="p-1.5 rounded-md hover:bg-brand-bgSecondary text-brand-textMuted hover:text-brand-text">
-            {y.estActive ? <PowerOff size={15} /> : <Power size={15} />}
-          </button>
-          <button title="Modifier" onClick={() => { setEditing(y); setOpen(true) }} className="p-1.5 rounded-md hover:bg-brand-bgSecondary text-brand-textMuted hover:text-brand-text">
-            <Pencil size={15} />
-          </button>
-          <button title="Supprimer" onClick={() => setDeleteTarget(y)} className="p-1.5 rounded-md hover:bg-red-50 text-brand-textMuted hover:text-danger">
-            <Trash2 size={15} />
-          </button>
-        </div>
-      ),
-    },
-  ]
-
   return (
     <div className="space-y-6">
-      <PageHeader
+      <PageHero
         title="Années scolaires"
-        subtitle={`${years.length} année${years.length > 1 ? 's' : ''}`}
-        actions={<Button onClick={() => { setEditing(null); setOpen(true) }}><Plus size={16} /> Nouvelle année</Button>}
+        subtitle="Le calendrier de l'établissement — classes, affectations et emplois du temps s'y rattachent"
+        icon={CalendarDays}
+        actions={
+          <Button
+            className="bg-white/15 text-white hover:bg-white/25 backdrop-blur"
+            onClick={() => { setEditing(null); setOpen(true) }}
+          >
+            <Plus size={16} /> Nouvelle année
+          </Button>
+        }
       />
 
-      <div className="grid grid-cols-3 gap-3">
-        <StatCard title="Total" value={years.length} icon={CalendarDays} color="blue" />
-        <StatCard title="Actives" value={actives} icon={CalendarDays} color="green" />
-        <StatCard title="Courante" value={courante?.nom ?? '—'} icon={Star} color="purple" />
+      <div className="grid gap-3 sm:grid-cols-3">
+        <StatCard title="Total années" value={years.length} icon={CalendarDays} color="blue" />
+        <StatCard title="Actives" value={actives} icon={CheckCircle2} color="green" />
+        <StatCard title="Année courante" value={courante?.nom ?? '—'} icon={Star} color="purple" />
       </div>
 
-      <DataTable columns={columns} data={years} keyField="idAnnee" loading={isLoading} emptyMessage="Aucune année scolaire configurée" />
+      {/* Aucune année courante : rien ne le signalait, et c'est pourtant ce qui
+          détermine l'année proposée par défaut dans tout le reste de l'application. */}
+      {!isLoading && years.length > 0 && !courante && (
+        <p className="flex items-start gap-1.5 rounded-lg bg-amber-50 p-3 text-sm text-amber-700 dark:bg-amber-500/10 dark:text-amber-400">
+          <Star size={14} className="mt-0.5 shrink-0" />
+          Aucune année n'est marquée « courante ». Les écrans qui en proposent une par défaut
+          resteront vides tant qu'une année ne sera pas désignée.
+        </p>
+      )}
 
-      <Modal open={open} onClose={() => setOpen(false)} title={editing ? 'Modifier l\'année' : 'Nouvelle année scolaire'} size="md">
-        <form onSubmit={handleSubmit((d) => saveMutation.mutate(d))} className="space-y-4">
+      {isLoading && (
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+          {[0, 1, 2].map((i) => (
+            <div key={i} className="h-44 animate-pulse rounded-xl border border-brand-border bg-white dark:border-slate-700 dark:bg-slate-900" />
+          ))}
+        </div>
+      )}
+
+      {!isLoading && years.length === 0 && (
+        <div className="rounded-xl border border-dashed border-brand-border bg-white px-6 py-14 text-center dark:border-slate-700 dark:bg-slate-900">
+          <span className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-xl bg-teal-50 text-brand-teal dark:bg-teal-500/10 dark:text-teal-400">
+            <CalendarDays size={22} />
+          </span>
+          <p className="text-sm font-medium text-brand-text dark:text-slate-200">Aucune année scolaire configurée</p>
+          <p className="mx-auto mt-1 max-w-md text-sm text-brand-textMuted dark:text-slate-400">
+            C'est le point de départ : une classe, une affectation et un emploi du temps se
+            rattachent tous à une année.
+          </p>
+          <Button className="mt-4" variant="outline" onClick={() => { setEditing(null); setOpen(true) }}>
+            <Plus size={16} /> Nouvelle année
+          </Button>
+        </div>
+      )}
+
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+        {years.map((y) => (
+          <div
+            key={y.idAnnee}
+            className={`relative flex flex-col overflow-hidden rounded-xl border bg-white transition-shadow hover:shadow-md dark:bg-slate-900 ${
+              y.estCourante
+                ? 'border-brand-teal ring-1 ring-brand-teal/30'
+                : 'border-brand-border dark:border-slate-700'
+            } ${y.estActive ? '' : 'opacity-70'}`}
+          >
+            <span className={`absolute inset-x-0 top-0 h-1 ${
+              y.estCourante ? 'bg-brand-teal' : y.estActive ? 'bg-brand-blue' : 'bg-slate-300 dark:bg-slate-600'
+            }`} />
+
+            <div className="flex flex-1 flex-col gap-3 p-4 pt-5">
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <h3 className="truncate text-lg font-bold text-brand-text dark:text-slate-100">{y.nom}</h3>
+                  {/* Les deux dates lues comme une période, pas comme deux colonnes. */}
+                  <p className="mt-0.5 flex items-center gap-1.5 text-xs tabular-nums text-brand-textMuted dark:text-slate-400">
+                    {formatDate(y.dateDebut)}
+                    <ArrowRight size={11} className="shrink-0" />
+                    {formatDate(y.dateFin)}
+                  </p>
+                </div>
+                <div className="flex shrink-0 flex-col items-end gap-1">
+                  {y.estCourante && (
+                    <Badge variant="info"><Star size={10} className="me-0.5 inline" />Courante</Badge>
+                  )}
+                  {!y.estActive && <Badge variant="danger">Inactive</Badge>}
+                </div>
+              </div>
+
+              <div className="mt-auto grid grid-cols-2 gap-2">
+                <div className="rounded-lg bg-brand-bgSecondary/60 p-2.5 dark:bg-slate-800/50">
+                  <p className="flex items-center gap-1.5 text-xs text-brand-textMuted dark:text-slate-400">
+                    <GraduationCap size={13} /> Classes
+                  </p>
+                  <p className="mt-0.5 text-lg font-bold tabular-nums text-brand-text dark:text-slate-100">
+                    {y.nombreClasses ?? 0}
+                  </p>
+                </div>
+                <div className="rounded-lg bg-brand-bgSecondary/60 p-2.5 dark:bg-slate-800/50">
+                  <p className="flex items-center gap-1.5 text-xs text-brand-textMuted dark:text-slate-400">
+                    <Link2 size={13} /> Affectations
+                  </p>
+                  <p className="mt-0.5 text-lg font-bold tabular-nums text-brand-text dark:text-slate-100">
+                    {y.nombreAffectations ?? 0}
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-1 border-t border-brand-border bg-brand-bgSecondary/40 px-4 py-2.5 dark:border-slate-700 dark:bg-slate-800/40">
+              <button
+                title={y.estActive ? 'Désactiver cette année' : 'Activer cette année'}
+                onClick={() => toggleMutation.mutate({ id: y.idAnnee, active: !y.estActive })}
+                className="rounded-md p-1.5 text-brand-textMuted hover:bg-white hover:text-brand-text dark:text-slate-400 dark:hover:bg-slate-700 dark:hover:text-slate-200"
+              >
+                {y.estActive ? <PowerOff size={15} /> : <Power size={15} />}
+              </button>
+              <button
+                title="Modifier" onClick={() => { setEditing(y); setOpen(true) }}
+                className="rounded-md p-1.5 text-brand-textMuted hover:bg-white hover:text-brand-text dark:text-slate-400 dark:hover:bg-slate-700 dark:hover:text-slate-200"
+              >
+                <Pencil size={15} />
+              </button>
+              <button
+                title="Supprimer" onClick={() => setDeleteTarget(y)}
+                className="rounded-md p-1.5 text-brand-textMuted hover:bg-red-50 hover:text-danger dark:text-slate-400 dark:hover:bg-red-500/10"
+              >
+                <Trash2 size={15} />
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <Modal
+        open={open}
+        onClose={() => setOpen(false)}
+        title={editing ? "Modifier l'année scolaire" : 'Nouvelle année scolaire'}
+        size="xl"
+      >
+        <form onSubmit={handleSubmit((d) => saveMutation.mutate(d))} className="space-y-5">
           <Input label="Nom *" placeholder="2024-2025" {...register('nom')} error={errors.nom?.message} />
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid gap-4 sm:grid-cols-2">
             <Controller
               name="dateDebut"
               control={control}
@@ -157,19 +249,47 @@ export default function GestionAnneesScolaires() {
               )}
             />
           </div>
-          <div className="flex gap-6">
-            <label className="flex items-center gap-2 text-sm text-brand-text">
-              <input type="checkbox" {...register('estActive')} className="rounded" />
-              Active
+          {/* « Active » et « courante » se ressemblent et ne font pas la même
+              chose : deux cases nues laissaient deviner laquelle choisir. */}
+          <div className="grid gap-2 sm:grid-cols-2">
+            <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-brand-border bg-white p-3 transition-colors hover:bg-brand-bgSecondary/60 has-[:checked]:border-brand-teal has-[:checked]:bg-teal-50/70 dark:border-slate-700 dark:bg-slate-900 dark:hover:bg-slate-800 dark:has-[:checked]:bg-teal-500/10">
+              <input
+                type="checkbox" {...register('estActive')}
+                className="mt-0.5 h-4 w-4 shrink-0 rounded border-brand-border text-brand-teal focus:ring-brand-teal dark:border-slate-600"
+              />
+              <span className="min-w-0">
+                <span className="flex items-center gap-1.5 text-sm font-medium text-brand-text dark:text-slate-200">
+                  <CheckCircle2 size={14} className="text-brand-textMuted dark:text-slate-400" />
+                  Année active
+                </span>
+                <span className="mt-0.5 block text-xs text-brand-textMuted dark:text-slate-400">
+                  Elle reste proposée à la création d'une classe ou d'une affectation.
+                </span>
+              </span>
             </label>
-            <label className="flex items-center gap-2 text-sm text-brand-text">
-              <input type="checkbox" {...register('estCourante')} className="rounded" />
-              Année courante
+
+            <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-brand-border bg-white p-3 transition-colors hover:bg-brand-bgSecondary/60 has-[:checked]:border-brand-teal has-[:checked]:bg-teal-50/70 dark:border-slate-700 dark:bg-slate-900 dark:hover:bg-slate-800 dark:has-[:checked]:bg-teal-500/10">
+              <input
+                type="checkbox" {...register('estCourante')}
+                className="mt-0.5 h-4 w-4 shrink-0 rounded border-brand-border text-brand-teal focus:ring-brand-teal dark:border-slate-600"
+              />
+              <span className="min-w-0">
+                <span className="flex items-center gap-1.5 text-sm font-medium text-brand-text dark:text-slate-200">
+                  <Star size={14} className="text-brand-textMuted dark:text-slate-400" />
+                  Année courante
+                </span>
+                <span className="mt-0.5 block text-xs text-brand-textMuted dark:text-slate-400">
+                  Celle que l'application propose par défaut. Une seule à la fois.
+                </span>
+              </span>
             </label>
           </div>
-          <div className="flex justify-end gap-2 pt-2">
+
+          <div className="flex justify-end gap-2 border-t border-brand-border pt-4 dark:border-slate-700">
             <Button variant="outline" type="button" onClick={() => setOpen(false)}>Annuler</Button>
-            <Button type="submit" loading={saveMutation.isPending}>{editing ? 'Mettre à jour' : 'Créer'}</Button>
+            <Button type="submit" loading={saveMutation.isPending}>
+              {editing ? 'Mettre à jour' : "Créer l'année"}
+            </Button>
           </div>
         </form>
       </Modal>

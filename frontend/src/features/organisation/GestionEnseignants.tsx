@@ -1,25 +1,26 @@
-import { useState, useRef, useCallback } from 'react'
+import { useState, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { toast } from 'sonner'
 import {
-  Plus, Pencil, Trash2, PowerOff, Power, Upload, Download,
-  Search, Eye, BarChart2, X, CheckCircle, AlertCircle, UserPlus, UserCheck, KeyRound
+  Plus, Pencil, Trash2, PowerOff, Power, Upload, Users,
+  Search, Eye, BarChart2, X, CheckCircle, UserPlus, UserCheck, KeyRound,
+  Mail, Phone, Clock, Link2, ShieldOff,
 } from 'lucide-react'
 
-import { PageHeader } from '@/components/ui/PageHeader'
+import { PageHero } from '@/components/ui/PageHero'
 import { Button } from '@/components/ui/Button'
 import { Modal } from '@/components/ui/Modal'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
+import { ImportModal } from '@/components/ui/ImportModal'
 import { Input } from '@/components/ui/Input'
 import { Select } from '@/components/ui/Select'
 import { Badge } from '@/components/ui/Badge'
 import { StatCard } from '@/components/ui/StatCard'
-import { DataTable, type Column } from '@/components/ui/DataTable'
 import { cn } from '@/lib/utils'
-import { organisationApi, type Teacher, type TeacherRequest, type TeacherImportResult, type SchoolUser } from '@/api/organisation.api'
+import { organisationApi, type Teacher, type TeacherRequest, type SchoolUser } from '@/api/organisation.api'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -58,15 +59,6 @@ type FormData = z.infer<typeof teacherSchema>
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-function downloadBlob(blob: Blob, filename: string) {
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = filename
-  a.click()
-  URL.revokeObjectURL(url)
-}
-
 function StatusBadge({ actif }: { actif: boolean }) {
   return (
     <Badge variant={actif ? 'success' : 'danger'}>
@@ -75,168 +67,9 @@ function StatusBadge({ actif }: { actif: boolean }) {
   )
 }
 
-// ─── Import Modal ─────────────────────────────────────────────────────────────
-
-function ImportModal({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const qc = useQueryClient()
-  const [dragging, setDragging] = useState(false)
-  const [result, setResult] = useState<TeacherImportResult | null>(null)
-  const inputRef = useRef<HTMLInputElement>(null)
-
-  const importMutation = useMutation({
-    mutationFn: organisationApi.teachers.importFile,
-    onSuccess: (data) => {
-      setResult(data)
-      qc.invalidateQueries({ queryKey: ['teachers'] })
-    },
-    onError: (e: { response?: { data?: { message?: string } } }) => {
-      toast.error(e.response?.data?.message ?? 'Erreur lors de l\'import')
-    },
-  })
-
-  const handleFile = (file: File) => {
-    const ext = file.name.split('.').pop()?.toLowerCase()
-    if (!['csv', 'xlsx', 'xls'].includes(ext ?? '')) {
-      toast.error('Format non supporté. Utilisez .csv, .xlsx ou .xls')
-      return
-    }
-    importMutation.mutate(file)
-  }
-
-  const onDrop = useCallback((e: React.DragEvent) => {
-    e.preventDefault()
-    setDragging(false)
-    const file = e.dataTransfer.files[0]
-    if (file) handleFile(file)
-  }, [])
-
-  const handleClose = () => { setResult(null); onClose() }
-
-  const downloadCsv = async () => {
-    try {
-      const blob = await organisationApi.teachers.downloadTemplateCsv()
-      downloadBlob(blob, 'template_enseignants.csv')
-    } catch { toast.error('Erreur téléchargement CSV') }
-  }
-
-  const downloadExcel = async () => {
-    try {
-      const blob = await organisationApi.teachers.downloadTemplateExcel()
-      downloadBlob(blob, 'template_enseignants.xlsx')
-    } catch { toast.error('Erreur téléchargement Excel') }
-  }
-
-  return (
-    <Modal open={open} onClose={handleClose} title="Importer des enseignants" size="md">
-      {result ? (
-        <div className="space-y-4">
-          <div className="flex items-center gap-3">
-            <CheckCircle className="text-emerald-500 flex-shrink-0" size={32} />
-            <div>
-              <p className="font-semibold text-brand-text dark:text-slate-100">Import terminé</p>
-              <p className="text-sm text-brand-textMuted dark:text-slate-400">{result.totalLignes} lignes traitées</p>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-3 gap-3">
-            <div className="bg-emerald-50 dark:bg-emerald-500/10 rounded-lg p-3 text-center">
-              <p className="text-2xl font-bold text-emerald-600 dark:text-emerald-400">{result.importes}</p>
-              <p className="text-xs text-emerald-700 dark:text-emerald-400">Importés</p>
-            </div>
-            <div className="bg-amber-50 dark:bg-amber-500/10 rounded-lg p-3 text-center">
-              <p className="text-2xl font-bold text-amber-600 dark:text-amber-400">{result.ignores}</p>
-              <p className="text-xs text-amber-700 dark:text-amber-400">Ignorés</p>
-            </div>
-            <div className="bg-red-50 dark:bg-red-500/10 rounded-lg p-3 text-center">
-              <p className="text-2xl font-bold text-red-600 dark:text-red-400">{result.erreurs?.length ?? 0}</p>
-              <p className="text-xs text-red-700 dark:text-red-400">Erreurs</p>
-            </div>
-          </div>
-
-          {result.erreurs?.length > 0 && (
-            <div className="border border-red-200 dark:border-red-500/20 rounded-lg overflow-hidden">
-              <div className="bg-red-50 dark:bg-red-500/10 px-3 py-2 text-xs font-medium text-red-700 dark:text-red-400">
-                Lignes en erreur
-              </div>
-              <div className="max-h-40 overflow-y-auto divide-y divide-red-100 dark:divide-red-500/20">
-                {result.erreurs.map((err, i) => (
-                  <div key={i} className="px-3 py-2 text-xs flex gap-2">
-                    <span className="font-mono text-brand-textMuted dark:text-slate-400">Ligne {err.ligne}</span>
-                    <span className="text-red-600 dark:text-red-400">{err.message}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          <div className="flex justify-end gap-3 pt-2">
-            <Button onClick={() => setResult(null)} variant="secondary">Importer un autre fichier</Button>
-            <Button onClick={handleClose}>Fermer</Button>
-          </div>
-        </div>
-      ) : (
-        <div className="space-y-5">
-          {/* Download templates */}
-          <div>
-            <p className="text-sm font-medium text-brand-text dark:text-slate-200 mb-2">Étape 1 — Téléchargez le modèle</p>
-            <div className="flex gap-3">
-              <Button variant="secondary" size="sm" onClick={downloadCsv}>
-                <Download size={14} /> Modèle CSV
-              </Button>
-              <Button variant="secondary" size="sm" onClick={downloadExcel}>
-                <Download size={14} /> Modèle Excel
-              </Button>
-            </div>
-            <p className="text-xs text-brand-textMuted dark:text-slate-400 mt-2">
-              Colonnes : codeEnseignant, numIdentite, nom, prenom, email, telephone, maxHeuresSemaine, specialite
-            </p>
-          </div>
-
-          {/* Drop zone */}
-          <div>
-            <p className="text-sm font-medium text-brand-text dark:text-slate-200 mb-2">Étape 2 — Importez votre fichier</p>
-            <div
-              onDragOver={(e) => { e.preventDefault(); setDragging(true) }}
-              onDragLeave={() => setDragging(false)}
-              onDrop={onDrop}
-              onClick={() => inputRef.current?.click()}
-              className={cn(
-                'border-2 border-dashed rounded-xl p-8 text-center cursor-pointer transition-colors',
-                dragging
-                  ? 'border-brand-blue bg-blue-50 dark:bg-blue-500/10'
-                  : 'border-brand-border dark:border-slate-700 hover:border-brand-blue hover:bg-brand-bgSecondary dark:hover:bg-slate-800'
-              )}
-            >
-              {importMutation.isPending ? (
-                <div className="flex flex-col items-center gap-2">
-                  <div className="w-8 h-8 border-2 border-brand-blue border-t-transparent rounded-full animate-spin" />
-                  <p className="text-sm text-brand-textMuted dark:text-slate-400">Import en cours…</p>
-                </div>
-              ) : (
-                <>
-                  <Upload size={32} className="mx-auto text-brand-textMuted dark:text-slate-400 mb-3" />
-                  <p className="text-sm font-medium text-brand-text dark:text-slate-200">Glissez votre fichier ici</p>
-                  <p className="text-xs text-brand-textMuted dark:text-slate-400 mt-1">ou cliquez pour parcourir</p>
-                  <p className="text-xs text-brand-textMuted dark:text-slate-400 mt-2">Formats acceptés : .csv · .xlsx · .xls</p>
-                </>
-              )}
-            </div>
-            <input
-              ref={inputRef}
-              type="file"
-              accept=".csv,.xlsx,.xls"
-              className="hidden"
-              onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFile(f) }}
-            />
-          </div>
-
-          <div className="flex justify-end">
-            <Button variant="secondary" onClick={handleClose}>Annuler</Button>
-          </div>
-        </div>
-      )}
-    </Modal>
-  )
+/** Initiales pour la pastille d'un enseignant, à défaut de photo. */
+function initiales(prenom: string, nom: string): string {
+  return `${prenom?.[0] ?? ''}${nom?.[0] ?? ''}`.toUpperCase() || '?'
 }
 
 // ─── Detail Modal ─────────────────────────────────────────────────────────────
@@ -251,7 +84,7 @@ function DetailModal({ teacher, open, onClose }: { teacher: Teacher | null; open
   const t = detail ?? teacher
 
   return (
-    <Modal open={open} onClose={onClose} title="Fiche Enseignant" size="lg">
+    <Modal open={open} onClose={onClose} title="Fiche enseignant" size="xl">
       {isLoading || !t ? (
         <div className="flex justify-center py-8">
           <div className="w-8 h-8 border-2 border-brand-blue border-t-transparent rounded-full animate-spin" />
@@ -259,19 +92,26 @@ function DetailModal({ teacher, open, onClose }: { teacher: Teacher | null; open
       ) : (
         <div className="space-y-6">
           {/* Header */}
-          <div className="flex items-center gap-4">
-            <div className="w-14 h-14 rounded-full bg-brand-navy text-white flex items-center justify-center text-xl font-bold flex-shrink-0">
-              {t.prenom?.[0]}{t.nom?.[0]}
-            </div>
-            <div>
-              <h3 className="text-lg font-bold text-brand-text dark:text-slate-100">{t.nomComplet || `${t.prenom} ${t.nom}`}</h3>
-              <p className="text-sm text-brand-textMuted dark:text-slate-400">{t.codeEnseignant} · {t.specialite || '—'}</p>
-              <div className="mt-1"><StatusBadge actif={t.estEnPoste} /></div>
+          <div className="flex items-center gap-4 rounded-xl border border-brand-border bg-brand-bgSecondary/50 p-4 dark:border-slate-700 dark:bg-slate-800/40">
+            <span className={cn(
+              'flex h-14 w-14 shrink-0 items-center justify-center rounded-full text-xl font-bold',
+              t.estEnPoste
+                ? 'bg-teal-50 text-brand-teal dark:bg-teal-500/15 dark:text-teal-300'
+                : 'bg-brand-bgSecondary text-brand-textMuted dark:bg-slate-800 dark:text-slate-400'
+            )}>
+              {initiales(t.prenom, t.nom)}
+            </span>
+            <div className="min-w-0">
+              <h3 className="truncate text-lg font-bold text-brand-text dark:text-slate-100">{t.nomComplet || `${t.prenom} ${t.nom}`}</h3>
+              <p className="truncate font-mono text-sm text-brand-textMuted dark:text-slate-400">
+                {t.codeEnseignant}{t.specialite ? ` · ${t.specialite.replace(/_/g, ' ')}` : ''}
+              </p>
+              <div className="mt-1.5"><StatusBadge actif={t.estEnPoste} /></div>
             </div>
           </div>
 
           {/* Info grid */}
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
             {[
               ['N° Identité', t.numIdentite],
               ['Email', t.email || '—'],
@@ -280,30 +120,44 @@ function DetailModal({ teacher, open, onClose }: { teacher: Teacher | null; open
               ['Max H/jour', t.maxHeuresJour ? `${t.maxHeuresJour}h` : '—'],
               ['Min H/jour', t.minHeuresJour != null ? `${t.minHeuresJour}h` : '—'],
             ].map(([label, value]) => (
-              <div key={label}>
+              <div key={label} className="rounded-lg bg-brand-bgSecondary/60 p-3 dark:bg-slate-800/50">
                 <p className="text-xs text-brand-textMuted dark:text-slate-400">{label}</p>
-                <p className="text-sm font-medium text-brand-text dark:text-slate-200">{value}</p>
+                <p className="mt-0.5 truncate text-sm font-medium text-brand-text dark:text-slate-200">{value}</p>
               </div>
             ))}
           </div>
 
           {/* Charge horaire */}
-          {t.maxHeuresSemaine && t.totalHeures != null && (
-            <div>
-              <p className="text-sm font-medium text-brand-text dark:text-slate-200 mb-2">Charge horaire</p>
-              <div className="flex items-center gap-3">
-                <div className="flex-1 h-2 bg-brand-bgSecondary dark:bg-slate-800 rounded-full overflow-hidden">
-                  <div
-                    className="h-full rounded-full bg-brand-blue transition-all"
-                    style={{ width: `${Math.min(100, (t.totalHeures / t.maxHeuresSemaine) * 100)}%` }}
-                  />
+          {t.maxHeuresSemaine && t.totalHeures != null && (() => {
+            // Même correction que dans la vue globale : la couleur se décide
+            // sur le pourcentage réel, la barre seule est plafonnée.
+            const pct = Math.round((t.totalHeures / t.maxHeuresSemaine) * 100)
+            const surcharge = pct > 100
+            const sousCharge = pct < 60
+            return (
+              <div>
+                <div className="mb-2 flex items-center justify-between gap-2">
+                  <p className="text-sm font-medium text-brand-text dark:text-slate-200">Charge horaire</p>
+                  {surcharge ? <Badge variant="danger">Surchargé</Badge>
+                    : sousCharge ? <Badge variant="warning">Sous-chargé</Badge>
+                    : <Badge variant="success">Équilibrée</Badge>}
                 </div>
-                <span className="text-sm font-medium text-brand-text dark:text-slate-200 whitespace-nowrap">
-                  {t.totalHeures}h / {t.maxHeuresSemaine}h
-                </span>
+                <div className="flex items-center gap-3">
+                  <div className="h-2 flex-1 overflow-hidden rounded-full bg-brand-bgSecondary dark:bg-slate-800">
+                    <div
+                      className={cn('h-full rounded-full transition-all',
+                        surcharge ? 'bg-red-500' : sousCharge ? 'bg-amber-400' : 'bg-emerald-500')}
+                      style={{ width: `${Math.min(100, pct)}%` }}
+                    />
+                  </div>
+                  <span className="whitespace-nowrap text-sm font-medium tabular-nums text-brand-text dark:text-slate-200">
+                    {t.totalHeures}h / {t.maxHeuresSemaine}h
+                    <span className="ms-1.5 text-brand-textMuted dark:text-slate-400">({pct}%)</span>
+                  </span>
+                </div>
               </div>
-            </div>
-          )}
+            )
+          })()}
 
           {/* Affectations */}
           <div>
@@ -313,7 +167,7 @@ function DetailModal({ teacher, open, onClose }: { teacher: Teacher | null; open
             {!t.affectations || t.affectations.length === 0 ? (
               <p className="text-sm text-brand-textMuted dark:text-slate-400 italic">Aucune affectation</p>
             ) : (
-              <div className="border border-brand-border dark:border-slate-700 rounded-lg overflow-hidden">
+              <div className="overflow-x-auto rounded-lg border border-brand-border dark:border-slate-700">
                 <table className="w-full text-sm">
                   <thead className="bg-brand-bgSecondary dark:bg-slate-800">
                     <tr>
@@ -351,9 +205,40 @@ function WorkloadModal({ open, onClose }: { open: boolean; onClose: () => void }
     enabled: open,
   })
 
+  /** Charge réelle d'un enseignant, en pourcentage de son maximum hebdomadaire. */
+  const charge = (t: Teacher) =>
+    t.maxHeuresSemaine && t.totalHeures != null
+      ? Math.round((t.totalHeures / t.maxHeuresSemaine) * 100)
+      : null
+
+  const surcharges = workload.filter((t: Teacher) => (charge(t) ?? 0) > 100).length
+  const sousCharges = workload.filter((t: Teacher) => { const p = charge(t); return p != null && p < 60 }).length
+  const equilibres = workload.filter((t: Teacher) => { const p = charge(t); return p != null && p >= 60 && p <= 100 }).length
+
   return (
-    <Modal open={open} onClose={onClose} title="Charge Horaire — Vue Globale" size="xl">
-      <div className="overflow-x-auto">
+    <Modal open={open} onClose={onClose} title="Charge horaire — vue globale" size="full">
+      {/* Trois chiffres avant le tableau : on ouvre cette vue pour repérer les
+          déséquilibres, pas pour lire soixante lignes une à une. */}
+      {!isLoading && workload.length > 0 && (
+        <div className="mb-4 grid grid-cols-3 gap-3">
+          {([
+            ['Surchargés', surcharges, 'text-red-600 dark:text-red-400', 'bg-red-50 dark:bg-red-500/10'],
+            ['Sous-chargés', sousCharges, 'text-amber-600 dark:text-amber-400', 'bg-amber-50 dark:bg-amber-500/10'],
+            ['Équilibrés', equilibres, 'text-emerald-600 dark:text-emerald-400', 'bg-emerald-50 dark:bg-emerald-500/10'],
+          ] as const).map(([libelle, valeur, couleur, fond]) => (
+            <div key={libelle} className={cn('rounded-lg p-3 text-center', valeur > 0 ? fond : 'bg-brand-bgSecondary dark:bg-slate-800')}>
+              <p className={cn('text-2xl font-bold leading-none tabular-nums', valeur > 0 ? couleur : 'text-brand-textMuted dark:text-slate-400')}>
+                {valeur}
+              </p>
+              <p className={cn('mt-1.5 text-xs font-medium', valeur > 0 ? couleur : 'text-brand-textMuted dark:text-slate-400')}>
+                {libelle}
+              </p>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div className="overflow-x-auto rounded-xl border border-brand-border dark:border-slate-700">
         <table className="w-full text-sm">
           <thead>
             <tr className="bg-brand-bgSecondary dark:bg-slate-800">
@@ -377,9 +262,11 @@ function WorkloadModal({ open, onClose }: { open: boolean; onClose: () => void }
               <tr><td colSpan={7} className="px-4 py-8 text-center text-brand-textMuted dark:text-slate-400">Aucun enseignant</td></tr>
             ) : (
               workload.map((t: Teacher) => {
-                const pct = t.maxHeuresSemaine && t.totalHeures != null
-                  ? Math.min(100, Math.round((t.totalHeures / t.maxHeuresSemaine) * 100))
-                  : null
+                // Le pourcentage n'est PAS borné ici : il l'était, et
+                // `pct > 100` ne pouvait donc jamais être vrai — un enseignant
+                // à 130 % s'affichait « OK » à 100 %. Seule la largeur de la
+                // barre est plafonnée, plus bas.
+                const pct = charge(t)
                 const overloaded = pct != null && pct > 100
                 const underloaded = pct != null && pct < 60
                 return (
@@ -484,14 +371,14 @@ function TeacherFormModal({
     <Modal
       open={open}
       onClose={onClose}
-      title={editing ? `Modifier — ${editing.nomComplet || `${editing.prenom} ${editing.nom}`}` : 'Nouvel Enseignant'}
-      size="lg"
+      title={editing ? `Modifier — ${editing.nomComplet || `${editing.prenom} ${editing.nom}`}` : 'Nouvel enseignant'}
+      size="xl"
     >
       <form onSubmit={handleSubmit((d) => saveMutation.mutate(d))} className="space-y-5">
         {/* Identité */}
         <div>
           <p className="text-xs font-semibold text-brand-textMuted dark:text-slate-400 uppercase tracking-wider mb-3">Identité</p>
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid gap-4 sm:grid-cols-2">
             <Input label="Code enseignant" required placeholder="T001" error={errors.codeEnseignant?.message} {...register('codeEnseignant')} />
             <Input label="N° d'identité" required placeholder="12345678" error={errors.numIdentite?.message} {...register('numIdentite')} />
             <Input label="Nom" required placeholder="Ben Ali" error={errors.nom?.message} {...register('nom')} />
@@ -502,7 +389,7 @@ function TeacherFormModal({
         {/* Contact */}
         <div>
           <p className="text-xs font-semibold text-brand-textMuted dark:text-slate-400 uppercase tracking-wider mb-3">Contact</p>
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid gap-4 sm:grid-cols-2">
             <Input label="Email" type="email" placeholder="m.benali@ecole.tn" error={errors.email?.message} {...register('email')} />
             <Input label="Téléphone" placeholder="+216 20 000 000" error={errors.telephone?.message} {...register('telephone')} />
           </div>
@@ -511,7 +398,7 @@ function TeacherFormModal({
         {/* Pédagogie */}
         <div>
           <p className="text-xs font-semibold text-brand-textMuted dark:text-slate-400 uppercase tracking-wider mb-3">Pédagogie</p>
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid gap-4 sm:grid-cols-2">
             <Select
               label="Spécialité"
               placeholder="— Choisir —"
@@ -519,19 +406,28 @@ function TeacherFormModal({
               error={errors.specialite?.message}
               {...register('specialite')}
             />
-            <div className="flex items-end gap-2">
-              <div className="flex items-center gap-2 mt-6">
-                <input type="checkbox" id="estEnPoste" {...register('estEnPoste')} className="w-4 h-4 rounded accent-brand-navy" />
-                <label htmlFor="estEnPoste" className="text-sm font-medium text-brand-text dark:text-slate-200 cursor-pointer">En poste</label>
-              </div>
-            </div>
+            <label className="flex cursor-pointer items-start gap-3 self-end rounded-lg border border-brand-border bg-white p-3 transition-colors hover:bg-brand-bgSecondary/60 has-[:checked]:border-brand-teal has-[:checked]:bg-teal-50/70 dark:border-slate-700 dark:bg-slate-900 dark:hover:bg-slate-800 dark:has-[:checked]:bg-teal-500/10">
+              <input
+                type="checkbox" id="estEnPoste" {...register('estEnPoste')}
+                className="mt-0.5 h-4 w-4 shrink-0 rounded border-brand-border text-brand-teal focus:ring-brand-teal dark:border-slate-600"
+              />
+              <span className="min-w-0">
+                <span className="flex items-center gap-1.5 text-sm font-medium text-brand-text dark:text-slate-200">
+                  <CheckCircle size={14} className="text-brand-textMuted dark:text-slate-400" />
+                  En poste
+                </span>
+                <span className="mt-0.5 block text-xs text-brand-textMuted dark:text-slate-400">
+                  Décoché, l'enseignant est considéré muté et sort de la génération de l'emploi du temps.
+                </span>
+              </span>
+            </label>
           </div>
         </div>
 
         {/* Contraintes horaires */}
         <div>
           <p className="text-xs font-semibold text-brand-textMuted dark:text-slate-400 uppercase tracking-wider mb-3">Contraintes horaires</p>
-          <div className="grid grid-cols-3 gap-4">
+          <div className="grid gap-4 sm:grid-cols-3">
             <Input label="Max H/semaine" type="number" min={1} max={40} placeholder="20" error={errors.maxHeuresSemaine?.message} {...register('maxHeuresSemaine')} />
             <Input label="Max H/jour" type="number" min={1} max={10} placeholder="6" error={errors.maxHeuresJour?.message} {...register('maxHeuresJour')} />
             <Input label="Min H/jour" type="number" min={0} max={10} placeholder="2" error={errors.minHeuresJour?.message} {...register('minHeuresJour')} />
@@ -539,7 +435,7 @@ function TeacherFormModal({
         </div>
 
         <div className="flex justify-end gap-3 pt-2 border-t border-brand-border dark:border-slate-700">
-          <Button type="button" variant="secondary" onClick={onClose}>Annuler</Button>
+          <Button type="button" variant="outline" onClick={onClose}>Annuler</Button>
           <Button type="submit" loading={saveMutation.isPending}>
             {editing ? 'Mettre à jour' : 'Créer l\'enseignant'}
           </Button>
@@ -630,161 +526,81 @@ export function GestionEnseignants() {
   const openCreate = () => { setEditing(null); setShowForm(true) }
   const openEdit = (t: Teacher) => { setEditing(t); setShowForm(true) }
 
-  const columns: Column<Teacher>[] = [
-    {
-      key: 'codeEnseignant',
-      header: 'Code',
-      render: (t) => <span className="font-mono text-brand-textMuted dark:text-slate-400 text-xs">{t.codeEnseignant}</span>,
-    },
-    {
-      key: 'nomComplet',
-      header: 'Nom complet',
-      render: (t) => (
-        <div>
-          <p className="font-medium text-brand-text dark:text-slate-200">{t.nomComplet || `${t.prenom} ${t.nom}`}</p>
-          <p className="text-xs text-brand-textMuted dark:text-slate-400">{t.email || ''}</p>
-        </div>
-      ),
-    },
-    {
-      key: 'specialite',
-      header: 'Spécialité',
-      render: (t) => t.specialite
-        ? <Badge variant="info">{t.specialite.replace(/_/g, ' ')}</Badge>
-        : <span className="text-brand-textMuted dark:text-slate-400">—</span>,
-    },
-    {
-      key: 'telephone',
-      header: 'Téléphone',
-      render: (t) => <span className="text-brand-textMuted dark:text-slate-400">{t.telephone || '—'}</span>,
-    },
-    {
-      key: 'maxHeuresSemaine',
-      header: 'Max H/sem',
-      render: (t) => t.maxHeuresSemaine ? `${t.maxHeuresSemaine}h` : '—',
-    },
-    {
-      key: 'estEnPoste',
-      header: 'Statut',
-      render: (t) => <StatusBadge actif={t.estEnPoste} />,
-    },
-    {
-      key: 'actions',
-      header: '',
-      className: 'w-px',
-      render: (t) => (
-        <div className="flex items-center gap-1 justify-end">
-          {hasAccount(t) ? (
-            <span title="Compte d'accès actif" className="p-1.5 text-emerald-600 dark:text-emerald-400">
-              <UserCheck size={15} />
-            </span>
-          ) : (
-            <button
-              title={t.email ? 'Créer un compte d\'accès' : 'Ajoutez un email à la fiche pour créer un compte'}
-              disabled={!t.email}
-              onClick={() => setAccountTarget(t)}
-              className="p-1.5 rounded-md hover:bg-brand-bgSecondary dark:hover:bg-slate-800 text-brand-textMuted dark:text-slate-400 hover:text-brand-navy dark:hover:text-slate-200 transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent"
-            >
-              <UserPlus size={15} />
-            </button>
-          )}
-          <button
-            title="Voir détail"
-            onClick={() => setDetailTeacher(t)}
-            className="p-1.5 rounded-md hover:bg-brand-bgSecondary dark:hover:bg-slate-800 text-brand-textMuted dark:text-slate-400 hover:text-brand-navy dark:hover:text-slate-200 transition-colors"
-          >
-            <Eye size={15} />
-          </button>
-          <button
-            title="Modifier"
-            onClick={() => openEdit(t)}
-            className="p-1.5 rounded-md hover:bg-brand-bgSecondary dark:hover:bg-slate-800 text-brand-textMuted dark:text-slate-400 hover:text-brand-navy dark:hover:text-slate-200 transition-colors"
-          >
-            <Pencil size={15} />
-          </button>
-          {t.estEnPoste ? (
-            <button
-              title="Désactiver (muté)"
-              onClick={() => setStatusTarget({ teacher: t, action: 'deactivate' })}
-              className="p-1.5 rounded-md hover:bg-amber-50 dark:hover:bg-amber-500/10 text-brand-textMuted dark:text-slate-400 hover:text-amber-600 dark:hover:text-amber-400 transition-colors"
-            >
-              <PowerOff size={15} />
-            </button>
-          ) : (
-            <button
-              title="Réactiver"
-              onClick={() => setStatusTarget({ teacher: t, action: 'reactivate' })}
-              className="p-1.5 rounded-md hover:bg-emerald-50 dark:hover:bg-emerald-500/10 text-brand-textMuted dark:text-slate-400 hover:text-emerald-600 dark:hover:text-emerald-400 transition-colors"
-            >
-              <Power size={15} />
-            </button>
-          )}
-          <button
-            title="Supprimer"
-            onClick={() => setDeleteTarget(t)}
-            className="p-1.5 rounded-md hover:bg-red-50 dark:hover:bg-red-500/10 text-brand-textMuted dark:text-slate-400 hover:text-danger transition-colors"
-          >
-            <Trash2 size={15} />
-          </button>
-        </div>
-      ),
-    },
-  ]
+  // Une fiche sans compte d'accès est un enseignant qui ne peut pas ouvrir
+  // l'application : c'est l'anomalie la plus fréquente après un import, et elle
+  // n'était comptée nulle part.
+  const sansCompte = teachers.filter((t: Teacher) => t.estEnPoste && !hasAccount(t)).length
 
   return (
-    <div>
-      <PageHeader
+    <div className="space-y-6">
+      <PageHero
         title="Enseignants"
-        subtitle="Corps enseignant de l'établissement"
+        subtitle="Le corps enseignant de l'établissement, ses spécialités et ses accès"
+        icon={Users}
         actions={
-          <div className="flex gap-2">
-            <Button variant="secondary" size="sm" onClick={() => setShowWorkload(true)}>
-              <BarChart2 size={15} /> Charge horaire
+          <>
+            <Button
+              className="bg-white/15 text-white hover:bg-white/25 backdrop-blur"
+              onClick={() => setShowWorkload(true)}
+            >
+              <BarChart2 size={16} /> Charge horaire
             </Button>
-            <Button variant="secondary" size="sm" onClick={() => setShowImport(true)}>
-              <Upload size={15} /> Importer
+            <Button
+              className="bg-white/15 text-white hover:bg-white/25 backdrop-blur"
+              onClick={() => setShowImport(true)}
+            >
+              <Upload size={16} /> Importer
             </Button>
-            <Button size="sm" onClick={openCreate}>
-              <Plus size={15} /> Nouvel enseignant
+            <Button
+              className="bg-white/15 text-white hover:bg-white/25 backdrop-blur"
+              onClick={openCreate}
+            >
+              <Plus size={16} /> Nouvel enseignant
             </Button>
-          </div>
+          </>
         }
       />
 
-      {/* Stats */}
-      <div className="grid grid-cols-3 gap-4 mb-6">
-        <StatCard title="Total enseignants" value={total} icon={AlertCircle} color="blue" />
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <StatCard title="Total enseignants" value={total} icon={Users} color="blue" />
         <StatCard title="En poste" value={enPoste} icon={CheckCircle} color="green" />
         <StatCard title="Mutés" value={mutes} icon={PowerOff} color="amber" />
+        <StatCard title="Sans compte d'accès" value={sansCompte} icon={ShieldOff} color="red" />
       </div>
 
-      {/* Filters */}
-      <div className="bg-white dark:bg-slate-900 rounded-xl border border-brand-border dark:border-slate-700 p-4 mb-4 flex flex-wrap items-center gap-3">
-        <div className="relative flex-1 min-w-[200px] max-w-xs">
-          <Search size={15} className="absolute start-3 top-1/2 -translate-y-1/2 text-brand-textMuted dark:text-slate-400" />
+      <div className="flex flex-wrap items-center gap-3 rounded-xl border border-brand-border bg-white p-4 dark:border-slate-700 dark:bg-slate-900">
+        <div className="relative min-w-[200px] max-w-xs flex-1">
+          <Search size={16} className="pointer-events-none absolute start-3 top-1/2 -translate-y-1/2 text-brand-textMuted dark:text-slate-500" />
           <input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Nom, code, spécialité…"
-            className="w-full ps-9 pe-3 py-2 text-sm border border-brand-border dark:border-slate-700 rounded-lg bg-white dark:bg-slate-900 text-brand-text dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-brand-blue/20 focus:border-brand-blue"
+            className="w-full rounded-lg border border-brand-border bg-white py-2 pe-9 ps-9 text-sm text-brand-text focus:border-transparent focus:outline-none focus:ring-2 focus:ring-brand-blue dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200"
           />
           {search && (
-            <button onClick={() => setSearch('')} className="absolute end-3 top-1/2 -translate-y-1/2 text-brand-textMuted dark:text-slate-400 hover:text-brand-text dark:hover:text-slate-200">
+            <button
+              onClick={() => setSearch('')}
+              title="Effacer la recherche"
+              className="absolute end-2 top-1/2 -translate-y-1/2 rounded-md p-1 text-brand-textMuted hover:bg-brand-bgSecondary hover:text-brand-text dark:hover:bg-slate-800"
+            >
               <X size={14} />
             </button>
           )}
         </div>
 
-        <div className="flex gap-1 border border-brand-border dark:border-slate-700 rounded-lg overflow-hidden">
+        {/* Segmenté teal plutôt que navy : c'est la couleur d'accent que les
+            autres écrans de la section emploient pour l'option retenue. */}
+        <div className="flex gap-1 overflow-hidden rounded-lg border border-brand-border dark:border-slate-700">
           {([['all', 'Tous'], ['actif', 'En poste'], ['mute', 'Mutés']] as const).map(([val, label]) => (
             <button
               key={val}
               onClick={() => setFilterStatus(val)}
+              aria-pressed={filterStatus === val}
               className={cn(
-                'px-3 py-1.5 text-sm transition-colors',
+                'px-3 py-1.5 text-sm font-medium transition-colors',
                 filterStatus === val
-                  ? 'bg-brand-navy text-white'
-                  : 'text-brand-textMuted dark:text-slate-400 hover:bg-brand-bgSecondary dark:hover:bg-slate-800'
+                  ? 'bg-brand-teal text-white'
+                  : 'text-brand-textMuted hover:bg-brand-bgSecondary dark:text-slate-400 dark:hover:bg-slate-800'
               )}
             >
               {label}
@@ -792,20 +608,165 @@ export function GestionEnseignants() {
           ))}
         </div>
 
-        <span className="text-sm text-brand-textMuted dark:text-slate-400 ms-auto">
+        <span className="ms-auto text-sm text-brand-textMuted dark:text-slate-400">
           {filtered.length} résultat{filtered.length !== 1 ? 's' : ''}
         </span>
       </div>
 
-      {/* Table */}
-      <div className="bg-white dark:bg-slate-900 rounded-xl border border-brand-border dark:border-slate-700">
-        <DataTable
-          columns={columns}
-          data={filtered}
-          keyField="idEnseignant"
-          loading={isLoading}
-          emptyMessage="Aucun enseignant trouvé"
-        />
+      {isLoading && (
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+          {[0, 1, 2, 3, 4, 5].map((i) => (
+            <div key={i} className="h-44 animate-pulse rounded-xl border border-brand-border bg-white dark:border-slate-700 dark:bg-slate-900" />
+          ))}
+        </div>
+      )}
+
+      {!isLoading && filtered.length === 0 && (
+        <div className="rounded-xl border border-dashed border-brand-border bg-white px-6 py-14 text-center dark:border-slate-700 dark:bg-slate-900">
+          <span className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-xl bg-teal-50 text-brand-teal dark:bg-teal-500/10 dark:text-teal-400">
+            <Users size={22} />
+          </span>
+          <p className="text-sm font-medium text-brand-text dark:text-slate-200">
+            {search || filterStatus !== 'all' ? 'Aucun enseignant ne correspond aux filtres' : 'Aucun enseignant enregistré'}
+          </p>
+          <p className="mx-auto mt-1 max-w-md text-sm text-brand-textMuted dark:text-slate-400">
+            {search || filterStatus !== 'all'
+              ? 'Élargissez la recherche ou revenez à « Tous ».'
+              : 'Importez votre liste, ou créez une première fiche.'}
+          </p>
+          <div className="mt-4 flex justify-center gap-2">
+            <Button variant="outline" onClick={() => setShowImport(true)}><Upload size={16} /> Importer</Button>
+            <Button variant="outline" onClick={openCreate}><Plus size={16} /> Nouvel enseignant</Button>
+          </div>
+        </div>
+      )}
+
+      {/* Une carte par enseignant : le tableau étalait sept colonnes et
+          reléguait l'accès à l'application derrière une icône muette, alors
+          que c'est la première chose qu'on vérifie après un import. */}
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+        {filtered.map((t: Teacher) => {
+          const compte = hasAccount(t)
+          return (
+            <div
+              key={t.idEnseignant}
+              className={`flex flex-col overflow-hidden rounded-xl border border-brand-border bg-white transition-shadow hover:shadow-md dark:border-slate-700 dark:bg-slate-900 ${
+                t.estEnPoste ? '' : 'opacity-70'
+              }`}
+            >
+              <div className="flex flex-1 flex-col gap-3 p-4">
+                <div className="flex items-start gap-3">
+                  <span className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-sm font-bold ${
+                    t.estEnPoste
+                      ? 'bg-teal-50 text-brand-teal dark:bg-teal-500/15 dark:text-teal-300'
+                      : 'bg-brand-bgSecondary text-brand-textMuted dark:bg-slate-800 dark:text-slate-400'
+                  }`}>
+                    {initiales(t.prenom, t.nom)}
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <h3 className="truncate font-semibold text-brand-text dark:text-slate-100">
+                          {t.nomComplet || `${t.prenom} ${t.nom}`}
+                        </h3>
+                        <p className="mt-0.5 font-mono text-xs text-brand-textMuted dark:text-slate-400">
+                          {t.codeEnseignant}
+                        </p>
+                      </div>
+                      {!t.estEnPoste && <StatusBadge actif={false} />}
+                    </div>
+                  </div>
+                </div>
+
+                {t.specialite && <Badge variant="info">{t.specialite.replace(/_/g, ' ')}</Badge>}
+
+                <div className="space-y-1">
+                  {t.email && (
+                    <p className="flex items-center gap-1.5 truncate text-xs text-brand-textMuted dark:text-slate-400">
+                      <Mail size={12} className="shrink-0" /> {t.email}
+                    </p>
+                  )}
+                  {t.telephone && (
+                    <p className="flex items-center gap-1.5 text-xs text-brand-textMuted dark:text-slate-400">
+                      <Phone size={12} className="shrink-0" /> {t.telephone}
+                    </p>
+                  )}
+                </div>
+
+                <div className="mt-auto flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-brand-textMuted dark:text-slate-400">
+                  <span className="inline-flex items-center gap-1.5">
+                    <Clock size={13} />
+                    {t.maxHeuresSemaine
+                      ? <><strong className="font-semibold tabular-nums text-brand-text dark:text-slate-200">{t.maxHeuresSemaine}h</strong> max/sem.</>
+                      : <span className="text-amber-600 dark:text-amber-400">Charge max non définie</span>}
+                  </span>
+                  {t.nombreAffectations !== undefined && (
+                    <span className="inline-flex items-center gap-1.5">
+                      <Link2 size={13} />
+                      <strong className="font-semibold tabular-nums text-brand-text dark:text-slate-200">{t.nombreAffectations}</strong>
+                      affectation{t.nombreAffectations > 1 ? 's' : ''}
+                    </span>
+                  )}
+                </div>
+
+                {/* L'accès à l'application, dit en toutes lettres. */}
+                {compte ? (
+                  <p className="flex items-center gap-1.5 text-xs font-medium text-emerald-600 dark:text-emerald-400">
+                    <UserCheck size={13} className="shrink-0" /> Compte d'accès actif
+                  </p>
+                ) : t.email ? (
+                  <button
+                    onClick={() => setAccountTarget(t)}
+                    className="flex items-center gap-1.5 self-start rounded-md text-xs font-medium text-brand-blue hover:underline"
+                  >
+                    <UserPlus size={13} className="shrink-0" /> Créer un compte d'accès
+                  </button>
+                ) : (
+                  <p className="flex items-start gap-1.5 text-xs text-amber-600 dark:text-amber-400">
+                    <ShieldOff size={13} className="mt-px shrink-0" />
+                    Pas de compte : ajoutez un email à la fiche pour en créer un.
+                  </p>
+                )}
+              </div>
+
+              <div className="flex items-center justify-end gap-1 border-t border-brand-border bg-brand-bgSecondary/40 px-4 py-2.5 dark:border-slate-700 dark:bg-slate-800/40">
+                <button
+                  title="Voir le détail" onClick={() => setDetailTeacher(t)}
+                  className="rounded-md p-1.5 text-brand-textMuted hover:bg-white hover:text-brand-navy dark:text-slate-400 dark:hover:bg-slate-700 dark:hover:text-slate-200"
+                >
+                  <Eye size={15} />
+                </button>
+                <button
+                  title="Modifier" onClick={() => openEdit(t)}
+                  className="rounded-md p-1.5 text-brand-textMuted hover:bg-white hover:text-brand-navy dark:text-slate-400 dark:hover:bg-slate-700 dark:hover:text-slate-200"
+                >
+                  <Pencil size={15} />
+                </button>
+                {t.estEnPoste ? (
+                  <button
+                    title="Désactiver (muté)" onClick={() => setStatusTarget({ teacher: t, action: 'deactivate' })}
+                    className="rounded-md p-1.5 text-brand-textMuted hover:bg-amber-50 hover:text-amber-600 dark:text-slate-400 dark:hover:bg-amber-500/10 dark:hover:text-amber-400"
+                  >
+                    <PowerOff size={15} />
+                  </button>
+                ) : (
+                  <button
+                    title="Réactiver" onClick={() => setStatusTarget({ teacher: t, action: 'reactivate' })}
+                    className="rounded-md p-1.5 text-brand-textMuted hover:bg-emerald-50 hover:text-emerald-600 dark:text-slate-400 dark:hover:bg-emerald-500/10 dark:hover:text-emerald-400"
+                  >
+                    <Power size={15} />
+                  </button>
+                )}
+                <button
+                  title="Supprimer" onClick={() => setDeleteTarget(t)}
+                  className="rounded-md p-1.5 text-brand-textMuted hover:bg-red-50 hover:text-danger dark:text-slate-400 dark:hover:bg-red-500/10"
+                >
+                  <Trash2 size={15} />
+                </button>
+              </div>
+            </div>
+          )
+        })}
       </div>
 
       {/* Modals */}
@@ -817,7 +778,23 @@ export function GestionEnseignants() {
         onClose={() => setDetailTeacher(null)}
       />
 
-      <ImportModal open={showImport} onClose={() => setShowImport(false)} />
+      <ImportModal
+        open={showImport}
+        onClose={() => setShowImport(false)}
+        titre="Importer des enseignants"
+        entite={{ singulier: 'enseignant', pluriel: 'enseignants' }}
+        onImport={organisationApi.teachers.importFile}
+        onImported={() => qc.invalidateQueries({ queryKey: ['teachers'] })}
+        templates={{
+          csv: organisationApi.teachers.downloadTemplateCsv,
+          excel: organisationApi.teachers.downloadTemplateExcel,
+          basename: 'template_enseignants',
+        }}
+        colonnes={[
+          'codeEnseignant', 'numIdentite', 'nom', 'prenom',
+          'email', 'telephone', 'maxHeuresSemaine', 'specialite',
+        ]}
+      />
 
       <WorkloadModal open={showWorkload} onClose={() => setShowWorkload(false)} />
 
