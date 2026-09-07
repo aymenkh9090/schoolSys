@@ -45,8 +45,6 @@ import tn.wtm.school.org.service.impl.SchoolConfigurationService;
 import tn.wtm.school.planning.constraints.entity.ConstraintDefinition;
 import tn.wtm.school.planning.constraints.entity.ConstraintProfile;
 import tn.wtm.school.planning.constraints.entity.ConstraintSetting;
-import tn.wtm.school.planning.constraints.enums.ConstraintCategory;
-import tn.wtm.school.planning.constraints.enums.ConstraintType;
 import tn.wtm.school.planning.constraints.enums.ImportanceLevel;
 import tn.wtm.school.planning.constraints.repository.ConstraintDefinitionRepository;
 import tn.wtm.school.planning.constraints.repository.ConstraintProfileRepository;
@@ -131,76 +129,12 @@ public class DemoDataRunner implements ApplicationRunner {
     @Override
     @Transactional
     public void run(ApplicationArguments args) {
-        seedConstraintDefinitions();
+        // Pas de seedConstraintDefinitions() ici : le catalogue appartient à
+        // Liquibase (004, 014, 016), qui a fini de tourner bien avant qu'un
+        // ApplicationRunner ne démarre. Ce runner ne fait que le consommer.
         seedTenantCatalog();
         seedIbnKhaldoun();
         seedCarthage();
-    }
-
-    // ══════════════════════════════════════════════════════════════════════════
-    // Global constraint catalog (mirrors Liquibase 004-seed-base-constraints)
-    // ══════════════════════════════════════════════════════════════════════════
-
-    private void seedConstraintDefinitions() {
-        if (constraintDefinitionRepository.count() > 0) return;
-
-        def("ONE_TEACHER_PER_SUBJECT_CLASS",          "One teacher per subject per class",
-                ConstraintCategory.TEACHER,    ConstraintType.HARD,   ImportanceLevel.CRITICAL,
-                "{\"enabled\":{\"type\":\"boolean\",\"default\":true}}");
-        def("MAX_STUDENT_HOURS_PER_DAY",              "Maximum student hours per day",
-                ConstraintCategory.STUDENT,    ConstraintType.HARD,   ImportanceLevel.CRITICAL,
-                "{\"maxHours\":{\"type\":\"number\",\"default\":6}}");
-        def("MAX_TEACHER_HOURS_PER_DAY",              "Maximum teacher hours per day",
-                ConstraintCategory.TEACHER,    ConstraintType.HARD,   ImportanceLevel.CRITICAL,
-                "{\"maxHours\":{\"type\":\"number\",\"default\":6}}");
-        def("MAX_TEACHER_HOURS_FRIDAY_SATURDAY",      "Maximum teacher hours on Friday and Saturday",
-                ConstraintCategory.TEACHER,    ConstraintType.HARD,   ImportanceLevel.CRITICAL,
-                "{\"maxHours\":{\"type\":\"number\",\"default\":5}}");
-        def("RESPECT_OFFICIAL_SUBJECT_HOURS",         "Respect official subject hours",
-                ConstraintCategory.PEDAGOGICAL, ConstraintType.HARD,  ImportanceLevel.CRITICAL,
-                "{\"enabled\":{\"type\":\"boolean\",\"default\":true}}");
-        def("PHYSICAL_EDUCATION_THREE_SESSIONS",      "Physical education three sessions",
-                ConstraintCategory.SUBJECT,    ConstraintType.HARD,   ImportanceLevel.CRITICAL,
-                "{\"weeklySessions\":{\"type\":\"number\",\"default\":3}}");
-        def("MAX_TWO_CONSECUTIVE_SESSIONS_SAME_SUBJECT", "Max two consecutive sessions same subject",
-                ConstraintCategory.SUBJECT,    ConstraintType.HARD,   ImportanceLevel.HIGH,
-                "{\"maxConsecutiveSessions\":{\"type\":\"number\",\"default\":2}}");
-        def("BALANCED_MORNING_AFTERNOON",             "Balanced morning and afternoon sessions",
-                ConstraintCategory.TEACHER,    ConstraintType.MEDIUM, ImportanceLevel.HIGH,
-                "{\"enabled\":{\"type\":\"boolean\",\"default\":true}}");
-        def("TEACHER_MIN_TWO_LEVELS",                 "Teacher teaches minimum two levels",
-                ConstraintCategory.TEACHER,    ConstraintType.SOFT,   ImportanceLevel.MEDIUM,
-                "{\"minLevels\":{\"type\":\"number\",\"default\":2}}");
-        def("BALANCED_TEACHER_WORKLOAD",              "Service réparti sur la semaine",
-                ConstraintCategory.TEACHER,    ConstraintType.SOFT,   ImportanceLevel.MEDIUM,
-                "{\"workingDays\":{\"type\":\"number\",\"default\":6}}");
-        def("TEACHER_WEEKLY_REST_DAY",                "Teacher weekly rest day",
-                ConstraintCategory.TEACHER,    ConstraintType.SOFT,   ImportanceLevel.MEDIUM,
-                "{\"enabled\":{\"type\":\"boolean\",\"default\":true}}");
-        def("AVOID_SUBJECT_CONCENTRATION_SAME_DAY",   "Avoid subject concentration same day",
-                ConstraintCategory.SUBJECT,    ConstraintType.SOFT,   ImportanceLevel.MEDIUM,
-                "{\"enabled\":{\"type\":\"boolean\",\"default\":true}}");
-        def("MAIN_SUBJECT_BALANCED_DISTRIBUTION",     "Matière répartie matin et après-midi",
-                ConstraintCategory.PEDAGOGICAL, ConstraintType.SOFT,  ImportanceLevel.MEDIUM,
-                "{\"weeklyHours\":{\"type\":\"number\",\"default\":2}}");
-        def("THEORY_PRACTICE_SEPARATION",             "Theory practice separation",
-                ConstraintCategory.SUBJECT,    ConstraintType.MEDIUM, ImportanceLevel.HIGH,
-                "{\"enabled\":{\"type\":\"boolean\",\"default\":true}}");
-    }
-
-    private void def(String code, String name,
-                     ConstraintCategory category, ConstraintType type,
-                     ImportanceLevel importance, String paramSchema) {
-        if (constraintDefinitionRepository.existsByCode(code)) return;
-        constraintDefinitionRepository.save(ConstraintDefinition.builder()
-                .code(code)
-                .name(name)
-                .category(category)
-                .type(type)
-                .defaultImportance(importance)
-                .defaultEnabled(true)
-                .parameterSchema(paramSchema)
-                .build());
     }
 
     // ══════════════════════════════════════════════════════════════════════════
@@ -917,7 +851,6 @@ public class DemoDataRunner implements ApplicationRunner {
         addConstraintSetting(profile, "MAX_TEACHER_HOURS_PER_DAY",         ImportanceLevel.CRITICAL, 10, "{\"maxHours\":6}");
         addConstraintSetting(profile, "MAX_STUDENT_HOURS_PER_DAY",         ImportanceLevel.CRITICAL, 10, "{\"maxHours\":6}");
         addConstraintSetting(profile, "MAX_TEACHER_HOURS_FRIDAY_SATURDAY",  ImportanceLevel.CRITICAL, 10, "{\"maxHours\":5}");
-        addConstraintSetting(profile, "SPECIAL_ROOM_REQUIRED",              ImportanceLevel.CRITICAL, 10, "{\"enabled\":true}");
         addConstraintSetting(profile, "BALANCED_MORNING_AFTERNOON",         ImportanceLevel.MEDIUM,    5, "{\"enabled\":true}");
         addConstraintSetting(profile, "TEACHER_WEEKLY_REST_DAY",            ImportanceLevel.LOW,        1, "{\"enabled\":true}");
     }
@@ -927,15 +860,23 @@ public class DemoDataRunner implements ApplicationRunner {
                                        ImportanceLevel importance,
                                        int weight,
                                        String parametersJson) {
-        constraintDefinitionRepository.findByCode(code).ifPresent(def ->
-                constraintSettingRepository.save(ConstraintSetting.builder()
-                        .profile(profile)
-                        .definition(def)
-                        .enabled(true)
-                        .importance(importance)
-                        .weight(weight)
-                        .parametersJson(parametersJson)
-                        .build()));
+        // orElseThrow, et non ifPresent : un code absent du catalogue passait ici
+        // sans un mot. C'est ainsi que SPECIAL_ROOM_REQUIRED, retiré du catalogue
+        // par la migration 016, a continué d'être demandé sans que le profil de
+        // demo s'en trouve changé — ni personne averti.
+        ConstraintDefinition definition = constraintDefinitionRepository.findByCode(code)
+                .orElseThrow(() -> new IllegalStateException(
+                        "Le jeu de demo demande la contrainte " + code + ", absente du catalogue. "
+                        + "Soit la migration qui la crée n'a pas tourné (spring.liquibase.enabled ?), "
+                        + "soit une migration l'a retirée et ce runner ne l'a pas suivie."));
+        constraintSettingRepository.save(ConstraintSetting.builder()
+                .profile(profile)
+                .definition(definition)
+                .enabled(true)
+                .importance(importance)
+                .weight(weight)
+                .parametersJson(parametersJson)
+                .build());
     }
 
     // ══════════════════════════════════════════════════════════════════════════
