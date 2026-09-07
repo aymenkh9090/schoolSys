@@ -68,8 +68,21 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class DemoDataRunner implements ApplicationRunner {
 
-    private static final String TENANT_IBN      = "tenant-ibn-khaldoun";
-    private static final String TENANT_CARTHAGE = "tenant-carthage";
+    private static final String CODE_IBN      = "IBN_KHALDOUN";
+    private static final String CODE_CARTHAGE = "CARTHAGE";
+
+    // Le discriminant d'un établissement est l'identifiant de son Tenant, rendu en
+    // texte — c'est ce que TenantServiceImpl.create() écrit, et c'est ce que le JWT
+    // porte dans le claim tenant_id.
+    //
+    // Ces deux valeurs étaient auparavant des constantes ("tenant-ibn-khaldoun",
+    // "tenant-carthage"). Le jeu de demo vivait donc sous un discriminant qu'aucun
+    // établissement créé par l'application n'emploie : les jointures sur `tenants`
+    // ne retombaient jamais dessus (SchoolMetricsPublisher les signale comme
+    // orphelins), et aligner les données à la main ne servait à rien — le runner
+    // les recréait sous l'ancien discriminant au démarrage suivant.
+    private String tenantIbn;
+    private String tenantCarthage;
 
     // ── organisation-module repositories ─────────────────────────────────────
     private final TenantRepository                  tenantRepository;
@@ -142,12 +155,17 @@ public class DemoDataRunner implements ApplicationRunner {
     // ══════════════════════════════════════════════════════════════════════════
 
     private void seedTenantCatalog() {
-        ensureTenant("IBN_KHALDOUN", "College Ibn Khaldoun", TenantPlan.PREMIUM);
-        ensureTenant("CARTHAGE",     "College Carthage",    TenantPlan.STANDARD);
+        tenantIbn      = discriminant(ensureTenant(CODE_IBN,      "College Ibn Khaldoun", TenantPlan.PREMIUM));
+        tenantCarthage = discriminant(ensureTenant(CODE_CARTHAGE, "College Carthage",     TenantPlan.STANDARD));
+    }
+
+    /** Même règle que TenantServiceImpl.create() : l'id du Tenant, en texte. */
+    private String discriminant(Tenant tenant) {
+        return String.valueOf(tenant.getTenantId());
     }
 
     private void seedIbnKhaldoun() {
-        beginTenant(TENANT_IBN);
+        beginTenant(tenantIbn);
         try {
             SchoolYear year = ensureYear("2024-2025");
 
@@ -240,7 +258,7 @@ public class DemoDataRunner implements ApplicationRunner {
             ensurePatterns(subjectLevels);
             ensureConstraintProfile(year);
 
-            if (workingDayRepository.findByTenantIdOrderByDayOfWeekAsc(TENANT_IBN).isEmpty()) {
+            if (workingDayRepository.findByTenantIdOrderByDayOfWeekAsc(tenantIbn).isEmpty()) {
                 schoolConfigurationService.configure(ibnKhaldounConfig());
             }
         } finally {
@@ -249,7 +267,7 @@ public class DemoDataRunner implements ApplicationRunner {
     }
 
     private void seedCarthage() {
-        beginTenant(TENANT_CARTHAGE);
+        beginTenant(tenantCarthage);
         try {
             SchoolYear year   = ensureYear("2024-2025");
             Map<String, Level>   levels   = Map.of(
@@ -291,7 +309,7 @@ public class DemoDataRunner implements ApplicationRunner {
             Map<String, Teacher>      teacherMap    = ensureAssignments(year, classes, subjectLevels, teachers);
             ensureAdditionalSSTsAndTAs(year, classes, subjectLevels, teacherMap);
             ensurePatterns(subjectLevels);
-            if (workingDayRepository.findByTenantIdOrderByDayOfWeekAsc(TENANT_CARTHAGE).isEmpty()) {
+            if (workingDayRepository.findByTenantIdOrderByDayOfWeekAsc(tenantCarthage).isEmpty()) {
                 schoolConfigurationService.configure(carthageConfig());
             }
             // Sans profil de contraintes, le college n'a aucun jeu de regles actif
@@ -921,7 +939,7 @@ public class DemoDataRunner implements ApplicationRunner {
     // ══════════════════════════════════════════════════════════════════════════
 
     private List<String> subjectCodesForTenant() {
-        return TENANT_CARTHAGE.equals(TenantContext.getRequiredTenantId())
+        return tenantCarthage.equals(TenantContext.getRequiredTenantId())
                 ? List.of("MATH", "FR", "AR", "EN", "SCI")
                 : List.of("AR", "FR", "EN", "MATH", "SCI", "PHY", "TECH", "ISL", "CIV", "SPORT");
     }
