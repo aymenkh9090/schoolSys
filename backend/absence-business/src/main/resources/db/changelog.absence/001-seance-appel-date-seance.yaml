@@ -6,13 +6,31 @@ databaseChangeLog:
   - changeSet:
       id: 001-absence-seance-appel-date-seance
       author: smartschool
+      # La précondition ne testait que l'absence de la table. Elle laissait donc
+      # passer le cas inverse — table présente, déjà porteuse de date_seance —
+      # sur lequel `addColumn` échoue et bloque tout le démarrage. C'est l'état
+      # de toute base où `ddl-auto: update` a tourné avant que cette migration
+      # ne soit branchée : Hibernate y a construit la colonne, l'index unique à
+      # trois colonnes et idx_seance_appel_date depuis le mapping de
+      # SeanceAppel, c'est-à-dire exactement ce que ce changeset produit.
+      #
+      # validCheckSum: ANY parce que le changeset a déjà tourné sur les bases
+      # existantes ; sans lui, ajouter cette précondition les ferait refuser de
+      # démarrer sur un écart de somme de contrôle.
+      validCheckSum: ANY
       preConditions:
         - onFail: MARK_RAN
         - onFailMessage: >-
-            Table seance_appel absente : elle sera créée par Hibernate avec le
-            mapping à jour (date_seance + index unique), changeset sans objet.
-        - tableExists:
-            tableName: seance_appel
+            seance_appel absente, ou déjà porteuse de date_seance : Hibernate
+            l'a construite avec le mapping à jour (date_seance + index unique),
+            changeset sans objet.
+        - and:
+            - tableExists:
+                tableName: seance_appel
+            - not:
+                - columnExists:
+                    tableName: seance_appel
+                    columnName: date_seance
       changes:
         - addColumn:
             tableName: seance_appel
