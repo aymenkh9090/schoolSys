@@ -1,0 +1,29 @@
+databaseChangeLog:
+  - changeSet:
+      id: 004-pointage-ajout-periode
+      author: smartschool
+      changes:
+        - addColumn:
+            tableName: presence_personnel
+            columns:
+              - column:
+                  name: periode
+                  type: VARCHAR(20)
+                  defaultValue: MATIN
+                  constraints:
+                    nullable: false
+        - dropUniqueConstraint:
+            tableName: presence_personnel
+            constraintName: uq_presence_personnel_tenant_membre_date
+        - addUniqueConstraint:
+            tableName: presence_personnel
+            columnNames: tenant_id, membre_personnel_id, date_pointage, periode
+            constraintName: uq_presence_personnel_tenant_membre_date_periode
+        - createIndex:
+            tableName: presence_personnel
+            indexName: idx_presence_personnel_periode
+            columns:
+              - column:
+                  name: tenant_id
+              - column:
+                  name: periode

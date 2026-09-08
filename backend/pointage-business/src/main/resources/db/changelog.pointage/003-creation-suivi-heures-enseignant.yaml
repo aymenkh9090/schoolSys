@@ -1,0 +1,121 @@
+databaseChangeLog:
+  - changeSet:
+      id: 003-pointage-seq-suivi-heures-enseignant
+      author: smartschool
+      changes:
+        - createSequence:
+            sequenceName: seq_suivi_heures_enseignant_id
+            startValue: 1
+            incrementBy: 1
+
+  - changeSet:
+      id: 003-pointage-table-suivi-heures-enseignant
+      author: smartschool
+      changes:
+        - createTable:
+            tableName: suivi_heures_enseignant
+            columns:
+              - column:
+                  name: id
+                  type: BIGINT
+                  constraints:
+                    primaryKey: true
+                    primaryKeyName: pk_suivi_heures_enseignant
+                    nullable: false
+              - column:
+                  name: tenant_id
+                  type: VARCHAR(100)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: enseignant_id
+                  type: BIGINT
+                  constraints:
+                    nullable: false
+              - column:
+                  name: numero_semaine
+                  type: INTEGER
+                  constraints:
+                    nullable: false
+              - column:
+                  name: annee_academique
+                  type: VARCHAR(20)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: heures_prevues
+                  type: DOUBLE
+                  constraints:
+                    nullable: false
+              - column:
+                  name: heures_realisees
+                  type: DOUBLE
+                  constraints:
+                    nullable: false
+              - column:
+                  name: heures_manquees
+                  type: DOUBLE
+                  constraints:
+                    nullable: false
+              - column:
+                  name: taux_presence
+                  type: DOUBLE
+                  constraints:
+                    nullable: false
+              - column:
+                  name: notes
+                  type: TEXT
+              - column:
+                  name: created_at
+                  type: TIMESTAMP
+                  defaultValueComputed: CURRENT_TIMESTAMP
+                  constraints:
+                    nullable: false
+              - column:
+                  name: updated_at
+                  type: TIMESTAMP
+                  defaultValueComputed: CURRENT_TIMESTAMP
+                  constraints:
+                    nullable: false
+              - column:
+                  name: created_by
+                  type: VARCHAR(120)
+                  defaultValue: system
+                  constraints:
+                    nullable: false
+              - column:
+                  name: updated_by
+                  type: VARCHAR(120)
+                  defaultValue: system
+                  constraints:
+                    nullable: false
+              - column:
+                  name: version
+                  type: INTEGER
+                  defaultValueNumeric: 0
+        - addUniqueConstraint:
+            tableName: suivi_heures_enseignant
+            columnNames: tenant_id, enseignant_id, numero_semaine, annee_academique
+            constraintName: uq_suivi_heures_tenant_enseignant_semaine_annee
+        - createIndex:
+            tableName: suivi_heures_enseignant
+            indexName: idx_suivi_heures_tenant
+            columns:
+              - column:
+                  name: tenant_id
+        - createIndex:
+            tableName: suivi_heures_enseignant
+            indexName: idx_suivi_heures_enseignant
+            columns:
+              - column:
+                  name: tenant_id
+              - column:
+                  name: enseignant_id
+        - createIndex:
+            tableName: suivi_heures_enseignant
+            indexName: idx_suivi_heures_annee
+            columns:
+              - column:
+                  name: tenant_id
+              - column:
+                  name: annee_academique

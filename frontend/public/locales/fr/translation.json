@@ -47,7 +47,12 @@
     "categoryPlanning": "Emploi du temps",
     "categoryFollowup": "Suivi",
     "categoryAnalytics": "Analytics & Rapports",
-    "categoryAccount": "Compte"
+    "categoryAccount": "Compte",
+    "attendance": "Pointage",
+    "attendanceDaily": "Saisie du jour",
+    "staffJustifications": "Justificatifs personnel",
+    "attendanceHistory": "Historique",
+    "attendanceTeacherHours": "Heures enseignants"
   },
   "common": {
     "save": "Enregistrer",

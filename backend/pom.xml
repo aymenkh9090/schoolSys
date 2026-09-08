@@ -91,6 +91,7 @@
     <module>smartschool-api</module>
     <module>smartschool-planning</module>
     <module>absence-business</module>
+        <module>pointage-business</module>
     <!-- En dernier : il agrège la couverture des modules qui le précèdent. -->
     <module>coverage-report</module>
   </modules>

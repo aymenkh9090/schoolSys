@@ -1,3 +1,4 @@
+
 # ── Étage 1 : compilation ────────────────────────────────────────────────────
 # L'image maven officielle porte déjà le JDK 21 : rien à installer.
 FROM maven:3.9-eclipse-temurin-21 AS build
@@ -14,6 +15,7 @@ COPY tenant-business/pom.xml        tenant-business/
 COPY organisation-business/pom.xml  organisation-business/
 COPY smartschool-planning/pom.xml   smartschool-planning/
 COPY absence-business/pom.xml       absence-business/
+COPY pointage-business/pom.xml      pointage-business/
 COPY smartschool-api/pom.xml        smartschool-api/
 COPY coverage-report/pom.xml        coverage-report/
 # `|| true` : le pré-téléchargement est une optimisation, pas une étape

@@ -28,3 +28,15 @@ databaseChangeLog:
       file: db/changelog.absence/001-seance-appel-date-seance.yaml
   - include:
       file: db/changelog.absence/002-seance-appel-fermeture-at.yaml
+
+  # ── pointage schema ───────────────────────────────────────────────────────
+  #
+  # Délégation au master du module, comme pour planning — et non la liste des
+  # quatre migrations recopiée ici, qui rejouerait le défaut P1.
+  #
+  # Cet include manquait depuis toujours : les tables pointage_* n'existaient
+  # que parce que `ddl-auto: update` les fabriquait au démarrage. En `prod`,
+  # où application-prod.yml impose `validate`, le module n'aurait jamais
+  # démarré. Le défaut est corrigé ici, pas réimporté.
+  - include:
+      file: db/changelog.pointage/db.changelog-master.yaml

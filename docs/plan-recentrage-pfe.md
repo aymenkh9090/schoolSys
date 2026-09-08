@@ -275,7 +275,7 @@ Le projet réduit raconte **une seule histoire**, de bout en bout :
 | Module supprimé | Fichiers Java | Argument |
 |---|---|---|
 | `budget-business` | 41 | CRUD financier. Aucun lien avec l'emploi du temps ni avec la consigne. C'est un autre projet. |
-| `pointage-business` | 34 | Pointage du **personnel**. Redondant avec l'absence **élève**, qui est celle que la consigne encadre. |
+| ~~`pointage-business`~~ | 34 | Pointage du **personnel**. Retiré au recentrage, puis **réinséré le 8 septembre 2026** — voir `plan-recuperation-pointage.md`. L'argument de redondance avec l'absence **élève** ne vaut donc plus : la formulation de soutenance doit être reprise en conséquence. |
 | `audit-business` | 17 | Journal technique. Ne se démontre pas, ne se soutient pas. |
 | `notification-business` | 11 | Notifications persistées. La progression du solveur passe déjà par WebSocket (`SolverProgressWebSocketAdapter`), qui **ne dépend pas** de ce module. |
 

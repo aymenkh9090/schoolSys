@@ -47,7 +47,12 @@
     "categoryPlanning": "Timetable",
     "categoryFollowup": "Monitoring",
     "categoryAnalytics": "Analytics & Reports",
-    "categoryAccount": "Account"
+    "categoryAccount": "Account",
+    "attendance": "Attendance",
+    "attendanceDaily": "Daily entry",
+    "staffJustifications": "Staff justifications",
+    "attendanceHistory": "History",
+    "attendanceTeacherHours": "Teacher hours"
   },
   "common": {
     "save": "Save",

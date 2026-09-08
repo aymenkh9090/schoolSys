@@ -1,0 +1,119 @@
+databaseChangeLog:
+  - changeSet:
+      id: 002-pointage-seq-justificatif-pointage
+      author: smartschool
+      changes:
+        - createSequence:
+            sequenceName: seq_justificatif_pointage_id
+            startValue: 1
+            incrementBy: 1
+
+  - changeSet:
+      id: 002-pointage-table-justificatif-pointage
+      author: smartschool
+      changes:
+        - createTable:
+            tableName: justificatif_pointage
+            columns:
+              - column:
+                  name: id
+                  type: BIGINT
+                  constraints:
+                    primaryKey: true
+                    primaryKeyName: pk_justificatif_pointage
+                    nullable: false
+              - column:
+                  name: tenant_id
+                  type: VARCHAR(100)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: membre_personnel_id
+                  type: BIGINT
+                  constraints:
+                    nullable: false
+              - column:
+                  name: presence_personnel_id
+                  type: BIGINT
+                  constraints:
+                    nullable: false
+              - column:
+                  name: type_document
+                  type: VARCHAR(100)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: description
+                  type: TEXT
+              - column:
+                  name: chemin_document
+                  type: VARCHAR(500)
+              - column:
+                  name: statut
+                  type: VARCHAR(50)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: commentaire_admin
+                  type: TEXT
+              - column:
+                  name: soumis_a
+                  type: TIMESTAMP
+                  constraints:
+                    nullable: false
+              - column:
+                  name: traite_par
+                  type: VARCHAR(255)
+              - column:
+                  name: traite_a
+                  type: TIMESTAMP
+              - column:
+                  name: created_at
+                  type: TIMESTAMP
+                  defaultValueComputed: CURRENT_TIMESTAMP
+                  constraints:
+                    nullable: false
+              - column:
+                  name: updated_at
+                  type: TIMESTAMP
+                  defaultValueComputed: CURRENT_TIMESTAMP
+                  constraints:
+                    nullable: false
+              - column:
+                  name: created_by
+                  type: VARCHAR(120)
+                  defaultValue: system
+                  constraints:
+                    nullable: false
+              - column:
+                  name: updated_by
+                  type: VARCHAR(120)
+                  defaultValue: system
+                  constraints:
+                    nullable: false
+              - column:
+                  name: version
+                  type: INTEGER
+                  defaultValueNumeric: 0
+        - createIndex:
+            tableName: justificatif_pointage
+            indexName: idx_justificatif_pointage_tenant
+            columns:
+              - column:
+                  name: tenant_id
+        - createIndex:
+            tableName: justificatif_pointage
+            indexName: idx_justificatif_pointage_presence
+            columns:
+              - column:
+                  name: tenant_id
+              - column:
+                  name: presence_personnel_id
+        - createIndex:
+            tableName: justificatif_pointage
+            indexName: idx_justificatif_pointage_statut
+            columns:
+              - column:
+                  name: tenant_id
+              - column:
+                  name: statut
