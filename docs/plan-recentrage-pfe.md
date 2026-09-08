@@ -1054,6 +1054,29 @@ empêche la dette d'augmenter.
 > désigné, sans qu'on le lui demande, le seul module du projet qui n'avait
 > jamais été testé.
 
+#### État final — run #16, ✅ gate compris
+
+https://github.com/aymenkh9090/schoolSys/actions/runs/34230026633
+
+| Mesure | Valeur |
+|---|---|
+| Fiabilité / Sécurité / Maintenabilité | **A / A / A** |
+| Bugs / Vulnérabilités / Points chauds | **0 / 0 / 0** |
+| Couverture (périmètre Sonar) | **43,1 %** — 3 268 / 7 538 lignes |
+| Code smells | 170 (dette : 1 427 min) |
+| Duplication | 1,3 % |
+| **Quality Gate** | ✅ — `new_coverage` **87,5 %** ≥ 80 % |
+
+Le vert de la première analyse ne jugeait rien ; celui-ci juge 24 tests écrits
+sur du code neuf, et c'est la différence entre un tableau de bord décoratif et
+un tableau de bord qui mord. **C'est cette distinction qu'il faut présenter au
+jury, pas la couleur.**
+
+Les 170 code smells restent, à 1 427 minutes de dette estimée. Ils sont
+assumés : la maintenabilité est déjà notée A, et le temps d'ici la soutenance
+vaut mieux ailleurs — la couverture d'`absence-business` et de
+`smartschool-api` reste le vrai chantier de fond.
+
 ### 7.4 Docker — ✅ FAIT
 
 | Fichier | Contenu |
