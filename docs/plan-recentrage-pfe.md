@@ -105,7 +105,7 @@ répond à une question libre — chaque maillon citant sa page et son article.
 | §3.1 | Suppression des 4 modules backend | `mvn verify` vert, **562 tests** |
 | §3.3 | Nettoyage du front, 10 fichiers retouchés | `npm run build` vert, `oxlint` 0 erreur |
 | §7.1 | Dépôt git + push GitHub, secrets sortis du code | dépôt privé |
-| §7.2 | JaCoCo + module `coverage-report` | **29,7 %** agrégés |
+| §7.2 | JaCoCo + module `coverage-report` | **36,5 %** agrégés (41,9 % vus par Sonar, hors DTO) |
 | §7.4 | Dockerfiles backend et front | 3 images construites en local et en CI |
 | §7.5 | Pipeline GitHub Actions, 4 jobs | run #2 tout vert |
 
@@ -224,7 +224,7 @@ L'API a démarré avec, profil `demo` :
 
 ### Points ouverts
 
-- `absence-business` est à **7,9 %** de couverture. C'est le module qui part en
+- `absence-business` est à **14,8 %** de couverture. C'est le module qui part en
   mobile — si une heure se libère dimanche, c'est là qu'elle rapporte le plus.
 - Le Quality Gate SonarCloud sera **rouge** au premier passage. Attendu,
   argumenté au §7.3 : le retourner en argument, pas le cacher.
@@ -830,32 +830,34 @@ n'existe aucune vue d'ensemble — chaque module ignore les lignes que les tests
 d'un autre ont pourtant exécutées (le code de `common-module` traversé par les
 tests de `planning`, typiquement).
 
-**Résultat mesuré — `mvn verify`, 562 tests :**
+**Résultat mesuré — `mvn verify`, 737 tests, 0 échec** (mesure refaite après
+le branchement de SonarCloud ; la précédente datait de 562 tests et donnait
+29,7 %) :
 
 | Métrique | Couverture | Détail |
 |---|---|---|
-| Lignes | **29,7 %** | 2 485 / 8 375 |
-| Branches | **27,3 %** | 919 / 3 372 |
-| Instructions | **30,1 %** | 11 783 / 39 170 |
-| Méthodes | **36,7 %** | 596 / 1 623 |
-| Classes | **40,0 %** | 88 / 220 |
+| Lignes | **36,5 %** | 3 332 / 9 117 |
+| Branches | **33,8 %** | 1 299 / 3 842 |
+| Instructions | **38,0 %** | 16 293 / 42 909 |
+| Méthodes | **44,1 %** | 802 / 1 819 |
+| Classes | **42,5 %** | 97 / 228 |
 
 Par module (lignes) :
 
 | Module | Couverture | Lecture |
 |---|---|---|
 | `tenant-business` | **67,4 %** | le socle SaaS est bien testé |
-| `smartschool-planning` | **49,2 %** | **le cœur scientifique** — DSL et solveur, 236 tests |
+| `smartschool-planning` | **59,2 %** | **le cœur scientifique** — DSL et solveur |
 | `organisation-business` | 29,0 % | beaucoup de CRUD, peu de logique |
-| `absence-business` | 7,9 % | **le point faible assumé** |
-| `security`, `common`, `api` | — | aucun test propre |
+| `absence-business` | 14,8 % | **le point faible assumé** |
+| `smartschool-api` | 11,3 % | couche d'exposition, testée de bout en bout ailleurs |
 
-> **À dire au jury, pas à cacher.** 29,7 % global n'est pas un bon chiffre dans
+> **À dire au jury, pas à cacher.** 36,5 % global n'est pas un bon chiffre dans
 > l'absolu, mais la répartition est la bonne : **c'est le module qui porte la
-> contribution (`planning`, 49 %) qui est le mieux couvert**, pas les écrans
+> contribution (`planning`, 59 %) qui est le mieux couvert**, pas les écrans
 > CRUD. Un projet à 80 % de couverture obtenu sur des getters vaudrait moins.
-> Si le temps le permet dimanche, la cible utile est `absence-business` — 7,9 %
-> sur un module qui part en mobile, c'est le vrai trou.
+> Si le temps le permet dimanche, la cible utile est `absence-business` —
+> 14,8 % sur un module qui part en mobile, c'est le vrai trou.
 
 ### 7.3 SonarCloud — projet importé, secret créé
 
@@ -885,6 +887,48 @@ générées par MapStruct et les DTO). La version du plugin est figée
 > est à revérifier — c'est la seule propriété du pom qui dépend d'un nom
 > extérieur au projet Maven.
 
+> **Le second piège : l'analyse automatique.** À l'import, SonarCloud active
+> l'*Automatic Analysis* par défaut, et **refuse alors toute analyse venue de la
+> CI** — l'étape `mvn sonar:sonar` échoue. Deux signatures permettaient de le
+> diagnostiquer sans lire les logs : le projet portait déjà des analyses
+> **antérieures au premier push**, avec un profil qualité `plsql` (l'autoscan
+> ratisse tout le dépôt, `docs/sql/` compris), et **aucune métrique
+> `coverage`** — l'autoscan ne compile pas, donc ne lit aucun rapport JaCoCo.
+> Désactivé sur `sonarcloud.io/project/analysis_method?id=aymenkh9090_schoolSys`.
+
+#### Résultat réel — run #13, ✅ tout vert, Sonar compris
+
+https://github.com/aymenkh9090/schoolSys/actions/runs/34220348467
+
+| Mesure SonarCloud | Valeur |
+|---|---|
+| Couverture | **41,9 %** (3 167 / 7 534 lignes à couvrir) |
+| Lignes analysées | 19 494 — `java=18 573`, `xml=921` |
+| Bugs / Vulnérabilités / Points chauds | 20 / 1 / 0 |
+| Code smells | 168 (dette technique : 1 417 min) |
+| Duplication | 1,3 % |
+
+**Trois écarts à savoir expliquer devant le jury** — ce sont exactement les
+questions qu'un enseignant pose devant un tableau de bord :
+
+1. **Sonar dit 41,9 %, JaCoCo dit 36,5 %.** Réconcilié en relançant
+   `mvn verify` : l'agrégat brut vaut **3 332 / 9 117 lignes**, Sonar compte
+   **3 167 / 7 534**. Les `sonar.exclusions` retirent les DTO et les sources
+   générées par MapStruct — **1 583 lignes de moins au dénominateur**, dont
+   165 étaient couvertes. L'écart n'est donc pas une contradiction mais deux
+   périmètres : il faut annoncer lequel des deux on cite. (Et le 29,7 % du
+   §7.2 était mesuré à 562 tests ; il y en a 737 aujourd'hui.)
+2. **Sonar ne voit que le back.** `mvn sonar:sonar` est lancé depuis `backend/`
+   et ne connaît que les modules Maven : le front TypeScript et l'assistant
+   Python **ne sont pas dans le périmètre**. Leur qualité est vérifiée
+   autrement dans le pipeline (`oxlint` + `tsc`, `pytest`).
+3. **Le Quality Gate est vert, et ce n'est pas une bonne nouvelle en soi.** Il
+   ne juge que le *nouveau code* depuis la ligne de base, posée à la première
+   analyse : `new_lines` est vide, il n'y a donc rien à juger. La prédiction
+   d'un gate rouge n'était pas fausse, elle était **prématurée** — c'est à la
+   première PR, quand `new_coverage` sera évalué face au seuil de 80 %, que la
+   question se posera vraiment. À présenter ainsi, pas comme un satisfecit.
+
 > **L'étape Sonar du pipeline est conditionnée à l'existence du secret**
 > (`if: env.SONAR_TOKEN != ''`). Tant qu'il n'est pas créé, elle est
 > simplement sautée et **le pipeline reste vert** — c'est voulu : la capture
@@ -906,7 +950,7 @@ Chaque contexte a son `.dockerignore` (`target/`, `node_modules/`, `.git/`).
 
 | Job | Contenu | Durée attendue |
 |---|---|---|
-| `backend` | Java 21 + cache Maven → `mvn -B verify` (562 tests + JaCoCo) → **résumé de couverture affiché dans l'onglet Actions** → rapports publiés en artefact → Sonar *si le secret existe* | ~3–5 min |
+| `backend` | Java 21 + cache Maven → `mvn -B verify` (737 tests + JaCoCo) → **résumé de couverture affiché dans l'onglet Actions** → rapports publiés en artefact → Sonar *si le secret existe* | ~3–5 min |
 | `frontend` | Node 20 + cache npm → `npm ci` → `npm run lint` → `npm run build` | ~1 min |
 | `ai-assistant` | Python 3.12 + cache pip → `pytest` (**106 tests**, aucun appel à Ollama ni au backend : les clients sont doublés) | ~30 s |
 | `docker` | Après les trois autres : construction des 3 images avec cache GitHub Actions, **sans publication** | ~4 min |
