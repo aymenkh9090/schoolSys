@@ -273,14 +273,15 @@ recentrage : cinq tableaux de bord avaient dû être retouchés à la main) :
 ## 6. Critère de fin
 
 - [ ] `mvn -o clean install` vert — **9 modules** (8 + pointage)
-- [ ] `mvn -o test` vert — au moins les 562 tests actuels, 0 échec
+- [x] `mvn -o verify` vert sur les 9 modules — **934 tests**, 0 échec
 - [ ] Les 4 changesets `changelog.pointage` **apparaissent dans les logs
       Liquibase** au démarrage sur base neuve (§5.2)
-- [ ] `ChangelogMasterTest` étendu au master pointage — §3.2
+- [x] `ChangelogMasterTest` étendu au master pointage — §3.2
 - [ ] `npm run build` vert · `oxlint` sans erreur nouvelle
 - [ ] Les 4 écrans s'ouvrent et affichent des données du jeu de démo
-- [ ] Sonar : quality gate vert sur le nouveau code, couverture du module non nulle
-- [ ] `plan-recentrage-pfe.md` §1.2 **corrigé** — la ligne « pointage = supprimé »
+- [x] Couverture du module : **100 %** (lignes, branches, méthodes, classes), 76 tests
+- [ ] Sonar : quality gate vert sur le nouveau code — à confirmer au prochain *push*
+- [x] `plan-recentrage-pfe.md` §1.2 **corrigé** — la ligne « pointage = supprimé »
       devient fausse, et l'argument de soutenance avec elle
 - [ ] Seulement ensuite : attaquer le CD
 
@@ -292,3 +293,4 @@ recentrage : cinq tableaux de bord avaient dû être retouchés à la main) :
 |---|---|---|
 | 2026-09-08 | Inventaire et faisabilité établis. Aucune action engagée. | — |
 | 2026-09-08 | **Réinsertion faite.** Module copié depuis `~/schoolSys`, coordonnées Maven réécrites en `tn.schoolsys.pointage:schoolsys-pointage-business`, 9 modules au réacteur. Include Liquibase ajouté au master applicatif — le défaut §3.2 est corrigé, pas réimporté — et `ChangelogMasterTest` étendu (6 cas). Front : 4 écrans, 4 routes, nav admin (4 entrées) et surveillant (3), 5 clés × 3 langues. `mvn install` et `mvn test` verts, `npm run build` et `oxlint` verts. **Vérification Liquibase faite** le 9 septembre sur base applicative neuve : les 7 changesets pointage s'exécutent, l'application démarre. Réinitialisation ciblée du seul volume `sc-p_app_pg_data` — le `down -v` du §5.2 aurait aussi détruit le realm Keycloak, ce que ce plan ne signalait pas. Dump préalable : `~/pfe/dump-smartschool-20260909-0005.sql`. **Restent :** ouverture des 4 écrans sur le jeu de démo, passage Sonar, écrans en ancien style visuel (§3.4). | — |
+| 2026-09-09 | **Tests écrits : 76, module à 100 %** (lignes, branches, méthodes, classes). Quatre services et les trois mappers, aucun n'était couvert. Trois règles n'étaient garanties par rien : un membre n'est pointé qu'une fois par créneau, un retard sans durée n'est pas un retard, et l'auteur de la saisie vient du compte connecté. Le test le plus utile porte sur le mapper : `toEntity` ignore `saisiPar` et `saisiA`, sans quoi un client pourrait attribuer sa saisie à un collègue et l'antidater. Un test échouera volontairement le jour de l'intégration planning — `synchroniserDepuisPlanning` doit lever, pas se taire. `mvn -o verify` vert, 934 tests, agrégat à 45,4 %. | — |
