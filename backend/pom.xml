@@ -43,6 +43,44 @@
     </sonar.coverage.jacoco.xmlReportPaths>
     <!-- Code généré (MapStruct) et DTO : mesurés, mais pas reprochés. -->
     <sonar.exclusions>**/target/generated-sources/**,**/dto/**</sonar.exclusions>
+
+    <!-- ── Deux règles écartées, et seulement là où c'est démontré ────────
+         Chaque exclusion est nominative : la règle reste active partout
+         ailleurs, de sorte qu'une occurrence réelle serait toujours signalée.
+         Écarter une règle sur tout le projet aurait été plus court et aurait
+         éteint le capteur.
+
+         e1 à e6 — java:S8696, « comparer les types à valeur avec equals() ».
+         Les 13 occurrences comparent toutes des `java.time.DayOfWeek`. Or
+         DayOfWeek est une *énumération* : `javap -v java.time.DayOfWeek` ne
+         montre aucune annotation `jdk.internal.ValueBased`, là où
+         `java.time.LocalDate` la porte. Les constantes d'énumération sont des
+         singletons garantis par le JLS : `==` y est la comparaison correcte,
+         et `equals()` n'apporterait qu'un risque de NPE. La règle filtre
+         visiblement sur le paquet `java.time.*` et non sur l'annotation ;
+         suivre son conseil dégraderait le code.
+
+         e7 — java:S4502, « vérifier que désactiver CSRF est sans risque ».
+         Vérifié : l'API est STATELESS et n'émet aucun cookie, l'authentification
+         passe par un en-tête `Authorization` qu'un site tiers ne peut pas
+         forger. La justification complète est dans SecurityConfig, à la ligne
+         concernée — c'est là qu'un lecteur ira. Cette exclusion tombe si la
+         session cesse d'être STATELESS. -->
+    <sonar.issue.ignore.multicriteria>e1,e2,e3,e4,e5,e6,e7</sonar.issue.ignore.multicriteria>
+    <sonar.issue.ignore.multicriteria.e1.ruleKey>java:S8696</sonar.issue.ignore.multicriteria.e1.ruleKey>
+    <sonar.issue.ignore.multicriteria.e1.resourceKey>**/ServiceAppelImpl.java</sonar.issue.ignore.multicriteria.e1.resourceKey>
+    <sonar.issue.ignore.multicriteria.e2.ruleKey>java:S8696</sonar.issue.ignore.multicriteria.e2.ruleKey>
+    <sonar.issue.ignore.multicriteria.e2.resourceKey>**/ServiceAppelImplTest.java</sonar.issue.ignore.multicriteria.e2.resourceKey>
+    <sonar.issue.ignore.multicriteria.e3.ruleKey>java:S8696</sonar.issue.ignore.multicriteria.e3.ruleKey>
+    <sonar.issue.ignore.multicriteria.e3.resourceKey>**/TimeSlotRepositoryIT.java</sonar.issue.ignore.multicriteria.e3.resourceKey>
+    <sonar.issue.ignore.multicriteria.e4.ruleKey>java:S8696</sonar.issue.ignore.multicriteria.e4.ruleKey>
+    <sonar.issue.ignore.multicriteria.e4.resourceKey>**/OrganisationPostgresIntegrationTest.java</sonar.issue.ignore.multicriteria.e4.resourceKey>
+    <sonar.issue.ignore.multicriteria.e5.ruleKey>java:S8696</sonar.issue.ignore.multicriteria.e5.ruleKey>
+    <sonar.issue.ignore.multicriteria.e5.resourceKey>**/TimeSlotGenerationServiceImplTest.java</sonar.issue.ignore.multicriteria.e5.resourceKey>
+    <sonar.issue.ignore.multicriteria.e6.ruleKey>java:S8696</sonar.issue.ignore.multicriteria.e6.ruleKey>
+    <sonar.issue.ignore.multicriteria.e6.resourceKey>**/TimetableConstraintProvider.java</sonar.issue.ignore.multicriteria.e6.resourceKey>
+    <sonar.issue.ignore.multicriteria.e7.ruleKey>java:S4502</sonar.issue.ignore.multicriteria.e7.ruleKey>
+    <sonar.issue.ignore.multicriteria.e7.resourceKey>**/SecurityConfig.java</sonar.issue.ignore.multicriteria.e7.resourceKey>
   </properties>
 
   <modules>

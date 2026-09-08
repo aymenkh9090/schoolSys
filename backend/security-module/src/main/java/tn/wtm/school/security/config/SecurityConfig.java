@@ -41,6 +41,17 @@ public class SecurityConfig {
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
 
         http
+            // CSRF désactivé, et c'est ici défendable : la protection CSRF
+            // existe contre les identifiants *ambiants*, ceux que le navigateur
+            // rattache tout seul à une requête partie d'un autre site — cookie
+            // de session, authentification HTTP. Cette API n'en a aucun : la
+            // session est STATELESS (aucun cookie n'est émis) et chaque requête
+            // doit porter son JWT dans un en-tête `Authorization` qu'un site
+            // tiers ne peut pas fabriquer, la politique CORS ci-dessous
+            // n'autorisant de surcroît que les origines déclarées.
+            // Le jour où un jeton passerait par un cookie, cette ligne
+            // redeviendrait une faille : elle est liée à STATELESS, pas au
+            // confort.
             .csrf(AbstractHttpConfigurer::disable)
             .cors(cors -> cors.configurationSource(corsConfigurationSource()))
             .sessionManagement(session ->
