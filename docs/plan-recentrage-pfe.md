@@ -203,8 +203,9 @@ le mauvais coupable.
 
 ### À reprendre, dans cet ordre
 
-1. **§7.3 — SonarCloud**, 3 clics : importer le dépôt, méthode *GitHub Actions*,
-   secret `SONAR_TOKEN`. L'étape est déjà écrite dans le pipeline.
+1. ~~**§7.3 — SonarCloud**~~ — fait : dépôt renommé `schoolSys` et passé en
+   public, projet importé, `SONAR_TOKEN` créé, clé corrigée dans le pom.
+   Reste à **pousser `main`** pour déclencher la première analyse.
 2. **README** : il annonce 3 conteneurs, `docker compose` en lance **6**.
 3. **Répétition de la démonstration**, téléphone en main, sur le réseau de la
    salle si possible : c'est là que l'adresse du serveur change, et c'est
@@ -764,8 +765,21 @@ une conclusion honorable.
 
 ### 7.1 Dépôt git — ✅ FAIT
 
-**Dépôt : https://github.com/aymenkh9090/smartschool — privé, branche `main`,
-650 fichiers, 1 commit.**
+**Dépôt : https://github.com/aymenkh9090/schoolSys — public, branche `main`,
+650 fichiers.**
+
+> Le dépôt a été **renommé** (`smartschool` → `schoolSys`) et **passé en
+> public** au moment de brancher SonarCloud : le plan gratuit n'analyse que les
+> dépôts publics. La bascule n'a été faite qu'après un scan de **tout
+> l'historique** (tokens `ghp_`/`glpat-`, clés AWS, clés privées, mots de passe
+> littéraux dans les `*.yml`) — **aucune occurrence réelle**. Ne subsistent que
+> les quatre identifiants de développement local assumés plus bas
+> (`keycloak_secret` ×2, `admin` Keycloak, `admin` Grafana) et le
+> `DB_PASSWORD=smartschool` du `.env.example`.
+>
+> Le renommage a deux conséquences à ne pas manquer : l'URL du remote git
+> (GitHub redirige, mais `git remote set-url` évite le piège) et surtout la
+> **clé de projet SonarCloud**, dérivée du nom GitHub du dépôt — voir §7.3.
 
 Ce qui a été fait avant le premier push :
 
@@ -843,7 +857,7 @@ Par module (lignes) :
 > Si le temps le permet dimanche, la cible utile est `absence-business` — 7,9 %
 > sur un module qui part en mobile, c'est le vrai trou.
 
-### 7.3 SonarCloud — configuration écrite, secret à créer
+### 7.3 SonarCloud — projet importé, secret créé
 
 Les propriétés sont dans le pom parent (`sonar.organization`,
 `sonar.projectKey`, `sonar.host.url`, `sonar.coverage.jacoco.xmlReportPaths`
@@ -851,19 +865,25 @@ pointant vers le rapport **agrégé**, et `sonar.exclusions` pour les sources
 générées par MapStruct et les DTO). La version du plugin est figée
 (`5.0.0.4389`) pour que `mvn sonar:sonar` soit reproductible.
 
-**Il reste 3 gestes manuels, à faire dans le navigateur :**
+**Les 3 gestes manuels ont été faits dans le navigateur :**
 
-1. sonarcloud.io → **Log in with GitHub** → importer `aymenkh9090/smartschool`.
-2. Choisir **Analysis Method : GitHub Actions** — *surtout pas* l'analyse
-   automatique, qui ignore les rapports de couverture.
-3. Copier le token dans le dépôt GitHub :
+1. sonarcloud.io → **Log in with GitHub** → importer `aymenkh9090/schoolSys`.
+2. **Analysis Method : GitHub Actions** — *surtout pas* l'analyse automatique,
+   qui ignore les rapports de couverture et afficherait 0 %.
+3. Token copié dans le dépôt GitHub :
    `Settings → Secrets and variables → Actions → New repository secret`,
    nommé **`SONAR_TOKEN`**.
 
-Puis vérifier que `sonar.organization` et `sonar.projectKey` du pom parent
-correspondent à ce que SonarCloud a réellement créé (les valeurs actuelles,
-`aymenkh9090` et `aymenkh9090_smartschool`, sont la convention par défaut à
-l'import GitHub, mais SonarCloud peut en proposer d'autres).
+> **Le piège du renommage, à ne pas sous-estimer.** La clé de projet créée par
+> SonarCloud est **`aymenkh9090_schoolSys`** — elle dérive du nom GitHub du
+> dépôt, pas du nom Maven (`schoolsys-platform`). Le pom annonçait encore
+> `aymenkh9090_smartschool`, hérité de l'ancien nom : `mvn sonar:sonar` aurait
+> échoué sur un projet inexistant, et l'échec serait tombé **après** les cinq
+> minutes de tests, tout en fin de pipeline. Vérifié contre l'API SonarCloud
+> (`/api/components/search?organization=aymenkh9090`) puis corrigé dans le pom
+> parent. La règle générale : après tout renommage du dépôt, `sonar.projectKey`
+> est à revérifier — c'est la seule propriété du pom qui dépend d'un nom
+> extérieur au projet Maven.
 
 > **L'étape Sonar du pipeline est conditionnée à l'existence du secret**
 > (`if: env.SONAR_TOKEN != ''`). Tant qu'il n'est pas créé, elle est
@@ -908,7 +928,7 @@ Actions) et une du tableau de bord SonarCloud une fois le secret créé.
 
 #### Résultat réel — run #2, ✅ tout vert
 
-https://github.com/aymenkh9090/smartschool/actions/runs/33824065706
+https://github.com/aymenkh9090/schoolSys/actions/runs/33824065706
 
 | Job | Résultat | Durée |
 |---|---|---|

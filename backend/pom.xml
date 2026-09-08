@@ -30,13 +30,13 @@
     <jacoco.version>0.8.12</jacoco.version>
     <sonar-maven-plugin.version>5.0.0.4389</sonar-maven-plugin.version>
 
-    <!-- SonarCloud. La clé de projet et l'organisation sont celles créées à
-         l'import du dépôt GitHub sur sonarcloud.io : les corriger ici si
-         SonarCloud en a proposé d'autres.
+    <!-- SonarCloud. La clé de projet est celle créée à l'import du dépôt sur
+         sonarcloud.io, donc dérivée du nom GitHub du dépôt (schoolSys) et non
+         du nom Maven : renommer le dépôt oblige à la corriger ici.
          xmlReportPaths pointe vers TOUS les rapports de modules : sans cette
          ligne, Sonar affiche 0 % de couverture — c'est l'oubli classique. -->
     <sonar.organization>aymenkh9090</sonar.organization>
-    <sonar.projectKey>aymenkh9090_smartschool</sonar.projectKey>
+    <sonar.projectKey>aymenkh9090_schoolSys</sonar.projectKey>
     <sonar.host.url>https://sonarcloud.io</sonar.host.url>
     <sonar.coverage.jacoco.xmlReportPaths>
       ${maven.multiModuleProjectDirectory}/coverage-report/target/site/jacoco-aggregate/jacoco.xml
