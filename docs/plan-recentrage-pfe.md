@@ -934,6 +934,126 @@ questions qu'un enseignant pose devant un tableau de bord :
 > simplement sautée et **le pipeline reste vert** — c'est voulu : la capture
 > d'écran d'un pipeline vert ne doit pas dépendre d'une configuration externe.
 
+#### Les 21 signalements, lus un par un — run #15
+
+Le tableau de bord affichait **fiabilité D** et **sécurité D**. Ce sont les deux
+notes qu'un jury voit en premier, et elles se lisent mal : la note de fiabilité
+n'est pas une moyenne, c'est **la sévérité du pire bug** — un seul bug
+*critical* suffit à faire tomber un projet en D. Il fallait donc les traiter
+tous, pas les plus nombreux.
+
+Les 21 signalements ont été relus un par un. **Sept étaient des défauts réels**,
+et le tri lui-même est la partie intéressante du travail :
+
+| Règle | Emplacement | Le défaut |
+|---|---|---|
+| `S2142` | `TimetableSolverService:340` | L'`InterruptedException` que lève `getFinalBestSolution()` à l'arrêt du pool était attrapée par le `catch (Throwable)` sans que le drapeau d'interruption soit reposé. Le thread appartient au pool commun : l'ordre d'arrêt disparaissait pour tout ce qui s'y exécuterait ensuite. |
+| `S8700` | `ServiceAppelImpl:280` | Un retard était mesuré en soustrayant deux `LocalDateTime` — une différence d'horloge murale, pas une durée écoulée. Les bornes sont rattachées à la zone avant mesure. |
+| `S5850` | `KeycloakAdminServiceImpl:215` | Alternance et ancres non groupées dans `^\.\|\.$`. Le comportement était juste, la lecture ne l'était pas. |
+| `S5841` ×4 | `TimeSlotGenerationServiceImplTest` | Quatre `allMatch` / `allSatisfy` sans contrôle de non-vacuité : **des tests qui passaient sur une liste vide**, donc ne vérifiaient rien le jour où la génération de créneaux n'aurait rien produit. Le défaut le plus instructif du lot — un test vert qui ne teste pas. |
+
+**Les quatorze autres ne sont pas des défauts**, et c'est le point à défendre
+devant le jury : *suivre un outil sans le lire dégrade le code*.
+
+- **13 × `S8696`** — « comparer les types à valeur avec `equals()` ». Les treize
+  occurrences comparent des `java.time.DayOfWeek`. La vérification tient en une
+  commande : `javap -v java.time.LocalDate` montre l'annotation
+  `jdk.internal.ValueBased`, **`javap -v java.time.DayOfWeek` ne la montre
+  pas** — c'est une énumération, dont les constantes sont des singletons
+  garantis par le JLS. `==` y est la comparaison correcte ; `equals()`
+  n'ajouterait qu'un risque de `NullPointerException` sur
+  `creneau.jour() != jour.getDayOfWeek()`. La règle filtre visiblement sur le
+  paquet `java.time.*` et non sur l'annotation.
+- **1 × `S4502`** — « vérifier que désactiver CSRF est sans risque ». La règle
+  demande une vérification, pas une correction. Vérification faite : la
+  protection CSRF vise les identifiants **ambiants**, ceux que le navigateur
+  joint tout seul à une requête partie d'un autre site (cookie de session,
+  authentification HTTP). Cette API n'en a aucun — session `STATELESS`, aucun
+  cookie émis, JWT exigé dans un en-tête `Authorization` qu'un site tiers ne
+  peut pas forger, CORS restreint aux origines déclarées.
+
+**Où la démonstration est écrite, et pourquoi là.** Les exclusions sont posées
+dans le pom parent (`sonar.issue.ignore.multicriteria`, e1 à e7), **fichier par
+fichier**, jamais sur le projet entier : une occurrence réelle de l'une ou
+l'autre règle ailleurs dans le code serait toujours signalée. Éteindre la règle
+partout aurait été plus court — et aurait éteint le capteur.
+
+SonarCloud propose de marquer une issue « faux positif » en trois clics dans le
+navigateur. Ç'aurait été plus rapide et **irrecevable ici** : le geste ne laisse
+aucune trace dans le dépôt, personne ne peut le relire, et il disparaît avec le
+compte. La justification versionnée à côté de l'exclusion se relit, se conteste
+et survit au projet. Le raisonnement CSRF est en outre écrit dans
+`SecurityConfig`, à la ligne concernée, **avec sa condition de validité** : il
+tombe le jour où un jeton passerait par un cookie.
+
+> **À dire au jury si la question vient — et elle vient.** « Vous avez désactivé
+> les règles pour faire vert ? » La réponse est non, et elle est vérifiable :
+> sept défauts sur vingt-et-un ont été corrigés, les quatorze autres portent
+> une démonstration écrite, nominative et reproductible en une commande
+> (`javap`). Un tableau de bord n'est pas une autorité ; c'est un capteur, et un
+> capteur se lit.
+
+#### Résultat — run #15, et le Quality Gate qui passe enfin au rouge
+
+| Mesure | Avant (run #13) | Après (run #15) |
+|---|---|---|
+| **Fiabilité** | **D** — 20 bugs | **A** — 0 bug |
+| **Sécurité** | **D** — 1 vulnérabilité | **A** — 0 vulnérabilité |
+| Maintenabilité | A — 168 smells | A — 170 smells |
+| Duplication | 1,3 % | 1,3 % |
+| Quality Gate | ✅ (vide) | ❌ **`new_coverage` 0 % < 80 %** |
+
+**Le gate est passé rouge, et c'est la meilleure nouvelle du lot.** Le § 7.3
+annonçait que le vert initial ne valait rien — « il ne juge que le *nouveau
+code* depuis la ligne de base ; `new_lines` est vide, il n'y a donc rien à
+juger » — et que la question se poserait au premier code neuf. C'est arrivé
+exactement là, et le gate a fait son travail du premier coup :
+
+```
+[OK]    new_reliability_rating      1   (A)
+[OK]    new_security_rating         1   (A)
+[OK]    new_maintainability_rating  1   (A)
+[ERREUR] new_coverage             0.0 % < 80 %
+[OK]    new_duplicated_lines_density 0.0 %
+[OK]    new_security_hotspots_reviewed 100 %
+```
+
+Six lignes exécutables avaient été ajoutées par les corrections ci-dessus —
+trois dans `ServiceAppelImpl`, deux dans `TimetableSolverService`, une dans
+`KeycloakAdminServiceImpl` — **et aucune n'était testée**. Le reproche est
+juste : on venait de corriger trois défauts sans écrire la moindre garantie
+qu'ils resteraient corrigés.
+
+**Vingt-quatre tests écrits en réponse**, et le détour vaut d'être raconté
+parce qu'aucun de ces trois endroits n'était couvert par accident :
+
+| Où | Ce qui manquait | Ce qui a été écrit |
+|---|---|---|
+| `ServiceAppelImpl` | `modifierStatutEleve` **n'avait aucun test** — la méthode qui écrit le retard, l'exclusion et la trace d'audit | 9 tests : minutes de retard, plancher à zéro quand l'arrivée précède l'ouverture, durée écoulée et non différence de cadrans, refus d'un retard sans heure, refus d'une exclusion sans raison, horodatage de l'exclusion, séance verrouillée, contenu de l'historique |
+| `TimetableSolverService` | le chemin d'interruption, jamais emprunté par un test | 1 test : un `getFinalBestSolution()` interrompu fait passer le job en FAILED **et** repose le drapeau. Le drapeau est lu avec `Thread.interrupted()` depuis la tâche asynchrone elle-même — cela l'observe et le nettoie du même geste, pour ne pas rendre au pool commun un thread encore marqué |
+| `KeycloakAdminServiceImpl` | **le module `security-module` n'avait aucun test, du tout** | 14 tests sur la fabrication du username Keycloak : accents, séparateurs, points de bord, longueur minimale de 3 caractères complétée par le nom puis par des zéros |
+
+Ce dernier point est le vrai gain. `security-module` était à **0 % de
+couverture — par omission, pas par choix** : son `pom.xml` ne déclarait même
+pas `spring-boot-starter-test`. Le Quality Gate n'a pas trouvé un défaut de
+code, il a trouvé **un module entier sans filet**, et c'est précisément ce
+qu'un seuil sur le code neuf est censé faire : il ne juge pas le passé, il
+empêche la dette d'augmenter.
+
+| | Avant | Après |
+|---|---|---|
+| Tests backend | 737 | **761** |
+| Couverture lignes (agrégat) | 36,5 % | **37,6 %** |
+| Couverture branches | 33,8 % | **34,7 %** |
+| `absence-business` | 14,8 % | **21,3 %** |
+| `security-module` | **0 %** | 5,3 % |
+| `smartschool-planning` | 59,2 % | 60,6 % |
+
+> **La phrase à retenir pour la soutenance.** Un tableau de bord vert au premier
+> jour ne dit rien ; c'est le premier rouge qui apprend quelque chose. Ici il a
+> désigné, sans qu'on le lui demande, le seul module du projet qui n'avait
+> jamais été testé.
+
 ### 7.4 Docker — ✅ FAIT
 
 | Fichier | Contenu |
