@@ -280,7 +280,7 @@ class TimeSlotGenerationServiceImplTest {
 
             List<TimeSlot> slots = service.generateForDay(day, 60);
 
-            assertThat(slots).allMatch(s -> s.getDayOfWeek() == DayOfWeek.WEDNESDAY);
+            assertThat(slots).isNotEmpty().allMatch(s -> s.getDayOfWeek() == DayOfWeek.WEDNESDAY);
         }
 
         @Test
@@ -292,7 +292,7 @@ class TimeSlotGenerationServiceImplTest {
 
             List<TimeSlot> slots = service.generateForDay(day, 60);
 
-            assertThat(slots).allSatisfy(s ->
+            assertThat(slots).isNotEmpty().allSatisfy(s ->
                     assertThat(Duration.between(s.getStartTime(), s.getEndTime()).toMinutes())
                             .isEqualTo(60));
         }
@@ -345,7 +345,7 @@ class TimeSlotGenerationServiceImplTest {
 
             List<TimeSlot> slots = service.generateForDay(day, 60);
 
-            assertThat(slots).allMatch(s -> s.getDayPeriod() == DayPeriod.MORNING);
+            assertThat(slots).isNotEmpty().allMatch(s -> s.getDayPeriod() == DayPeriod.MORNING);
         }
 
         @Test
@@ -358,7 +358,7 @@ class TimeSlotGenerationServiceImplTest {
 
             List<TimeSlot> slots = service.generateForDay(day, 60);
 
-            assertThat(slots).allMatch(s -> s.getDayPeriod() == DayPeriod.AFTERNOON);
+            assertThat(slots).isNotEmpty().allMatch(s -> s.getDayPeriod() == DayPeriod.AFTERNOON);
         }
     }
 

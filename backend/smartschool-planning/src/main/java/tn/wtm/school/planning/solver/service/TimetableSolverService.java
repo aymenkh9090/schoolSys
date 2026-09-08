@@ -343,6 +343,17 @@ public class TimetableSolverService extends TenantService {
                 // CompletableFuture l'avalait, le job restait RUNNING pour
                 // toujours, sans ligne de log ni fin — impossible a diagnostiquer
                 // depuis l'interface.
+                //
+                // getFinalBestSolution() est bloquant : il leve une
+                // InterruptedException quand le pool d'execution est arrete
+                // (fermeture du contexte Spring, typiquement). L'attraper sans
+                // reposer le drapeau efface l'ordre d'arret pour tout ce qui
+                // s'executera ensuite sur ce thread, qui appartient au pool
+                // commun — le thread ne saurait plus qu'on lui a demande de
+                // s'arreter. On le repose avant de traiter l'echec.
+                if (ex instanceof InterruptedException) {
+                    Thread.currentThread().interrupt();
+                }
                 onFailed(jobId, capturedTenant, ex);
             } finally {
                 TenantContext.clear();

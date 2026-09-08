@@ -212,7 +212,11 @@ public class KeycloakAdminServiceImpl implements KeycloakAdminService {
         if (value == null || value.isBlank()) return "";
         String withoutAccents = Normalizer.normalize(value, Normalizer.Form.NFD)
                 .replaceAll("\\p{M}", "");
-        return withoutAccents.toLowerCase().replaceAll("[^a-z0-9]+", ".").replaceAll("^\\.|\\.$", "");
+        // Les deux alternatives sont ancrées, chacune de son côté : un point en
+        // tête OU un point en queue. Les groupes non capturants le disent
+        // explicitement — sans eux, la portée du `|` face aux ancres se lit de
+        // deux façons, et seule la lecture du JLS tranche.
+        return withoutAccents.toLowerCase().replaceAll("[^a-z0-9]+", ".").replaceAll("(?:^\\.)|(?:\\.$)", "");
     }
 
     private String extractFirstName(String fullName) {

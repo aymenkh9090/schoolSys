@@ -35,6 +35,7 @@ import tn.wtm.school.common.service.TenantService;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
+import java.time.ZoneId;
 import java.time.temporal.ChronoUnit;
 import java.util.Comparator;
 import java.util.List;
@@ -276,8 +277,16 @@ public class ServiceAppelImpl extends TenantService implements ServiceAppel {
 
         if (requete.getStatut() == StatutPresence.RETARD) {
             ligne.setArriveeAt(requete.getArriveeAt());
+            // Un retard est une durée écoulée, pas une soustraction de deux
+            // lectures d'horloge murale : entre les deux bornes peut tomber un
+            // changement d'heure, et la différence des `LocalDateTime` vaudrait
+            // alors une heure de trop ou de moins. On les rattache à la zone
+            // avant de mesurer. (Sans effet en Tunisie, qui n'a plus d'heure
+            // d'été depuis 2009 ; le calcul cesse d'en dépendre.)
+            ZoneId zone = ZoneId.systemDefault();
             long minutes = ChronoUnit.MINUTES.between(
-                    ligne.getSeanceAppel().getOuvertureAt(), requete.getArriveeAt());
+                    ligne.getSeanceAppel().getOuvertureAt().atZone(zone),
+                    requete.getArriveeAt().atZone(zone));
             ligne.setMinutesRetard((int) Math.max(0, minutes));
         }
 
