@@ -10,8 +10,11 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
 import tn.wtm.school.absence.dto.reponse.AppelReponse;
+import tn.wtm.school.absence.dto.reponse.LigneAppelReponse;
 import tn.wtm.school.absence.dto.reponse.SignalementEleveReponse;
+import tn.wtm.school.absence.dto.requete.ModificationStatutRequete;
 import tn.wtm.school.absence.dto.requete.OuvertureAppelRequete;
+import tn.wtm.school.absence.entity.HistoriqueAppel;
 import tn.wtm.school.absence.entity.LigneAppel;
 import tn.wtm.school.absence.entity.SeanceAppel;
 import tn.wtm.school.absence.enums.StatutPresence;
@@ -27,9 +30,11 @@ import tn.wtm.school.absence.repository.LigneAppelRepository;
 import tn.wtm.school.absence.repository.SeanceAppelRepository;
 import tn.wtm.school.common.context.TenantContext;
 import tn.wtm.school.common.exceptions.BadRequestException;
+import tn.wtm.school.common.exceptions.BusinessException;
 
 import java.time.DayOfWeek;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.util.List;
 import java.util.Map;
@@ -250,6 +255,178 @@ class ServiceAppelImplTest {
     void refuseUneFenetreInversee() {
         assertThatThrownBy(() ->
                 service.listerSignalementsClasse(1L, LocalDate.now(), LocalDate.now().minusDays(3)))
+                .isInstanceOf(BadRequestException.class);
+    }
+
+    // ── modifierStatutEleve ───────────────────────────────────────────────────
+    //
+    // Le retard n'est pas un drapeau : c'est un nombre de minutes qui finira sur
+    // le bulletin de l'élève et dans le suivi de l'établissement. Il se mesure
+    // entre l'ouverture de l'appel et l'arrivée effective, et il se mesure comme
+    // une durée écoulée — les deux bornes sont rattachées à leur zone avant
+    // soustraction, sans quoi un changement d'heure entre elles ferait varier le
+    // résultat d'une heure entière.
+
+    /** Ouverture de l'appel à 10:00, séance déverrouillée. */
+    private LigneAppel ligneOuverte() {
+        SeanceAppel seance = SeanceAppel.builder()
+                .id(1L)
+                .estVerrouille(false)
+                .ouvertureAt(mercrediPasse.atTime(10, 0))
+                .build();
+        return LigneAppel.builder()
+                .id(9L)
+                .eleveId(12L)
+                .statut(StatutPresence.ABSENT)
+                .seanceAppel(seance)
+                .build();
+    }
+
+    private void ligneEnBase(LigneAppel ligne) {
+        when(ligneAppelRepository.findByTenantIdAndId(TENANT, ligne.getId())).thenReturn(Optional.of(ligne));
+        when(ligneAppelMapper.toResponse(any())).thenReturn(new LigneAppelReponse());
+    }
+
+    @Test
+    void compteLesMinutesDeRetardEntreLOuvertureDeLAppelEtLArrivee() {
+        LigneAppel ligne = ligneOuverte();
+        ligneEnBase(ligne);
+
+        service.modifierStatutEleve(9L, ModificationStatutRequete.builder()
+                .statut(StatutPresence.RETARD)
+                .arriveeAt(mercrediPasse.atTime(10, 12))
+                .build());
+
+        assertThat(ligne.getStatut()).isEqualTo(StatutPresence.RETARD);
+        assertThat(ligne.getMinutesRetard()).isEqualTo(12);
+        assertThat(ligne.getArriveeAt()).isEqualTo(mercrediPasse.atTime(10, 12));
+    }
+
+    /**
+     * Un élève arrivé avant l'ouverture de l'appel n'est pas en avance de
+     * -5 minutes : le retard est plancher à zéro. Sans le `Math.max`, un
+     * enseignant qui ouvre l'appel en retard fabriquerait des retards négatifs
+     * pour toute sa classe.
+     */
+    @Test
+    void neFabriquePasDeRetardNegatifQuandLArriveePrecedeLOuverture() {
+        LigneAppel ligne = ligneOuverte();
+        ligneEnBase(ligne);
+
+        service.modifierStatutEleve(9L, ModificationStatutRequete.builder()
+                .statut(StatutPresence.RETARD)
+                .arriveeAt(mercrediPasse.atTime(9, 55))
+                .build());
+
+        assertThat(ligne.getMinutesRetard()).isZero();
+    }
+
+    /**
+     * Le franchissement d'un changement d'heure est la raison d'être du rattachement
+     * à la zone : sur l'horloge murale, 01:30 → 03:10 fait 1 h 40, alors qu'il ne
+     * s'est écoulé que 40 minutes. Le test s'exécute dans la zone de la JVM ; il
+     * vérifie donc l'invariant qui vaut partout — la durée mesurée est la durée
+     * réellement écoulée entre les deux instants, jamais la différence des
+     * cadrans.
+     */
+    @Test
+    void mesureUneDureeEcouleeEtNonUneDifferenceDeCadrans() {
+        LigneAppel ligne = ligneOuverte();
+        ligneEnBase(ligne);
+        LocalDateTime ouverture = ligne.getSeanceAppel().getOuvertureAt();
+        LocalDateTime arrivee = ouverture.plusMinutes(95);
+
+        service.modifierStatutEleve(9L, ModificationStatutRequete.builder()
+                .statut(StatutPresence.RETARD)
+                .arriveeAt(arrivee)
+                .build());
+
+        long ecoule = java.time.Duration.between(
+                ouverture.atZone(java.time.ZoneId.systemDefault()),
+                arrivee.atZone(java.time.ZoneId.systemDefault())).toMinutes();
+        assertThat(ligne.getMinutesRetard()).isEqualTo((int) ecoule);
+    }
+
+    @Test
+    void refuseUnRetardSansHeureDArrivee() {
+        ligneEnBase(ligneOuverte());
+
+        assertThatThrownBy(() -> service.modifierStatutEleve(9L, ModificationStatutRequete.builder()
+                .statut(StatutPresence.RETARD)
+                .build()))
+                .isInstanceOf(BadRequestException.class);
+    }
+
+    @Test
+    void refuseUneExclusionSansRaison() {
+        ligneEnBase(ligneOuverte());
+
+        assertThatThrownBy(() -> service.modifierStatutEleve(9L, ModificationStatutRequete.builder()
+                .statut(StatutPresence.EXCLU)
+                .raisonExclusion("   ")
+                .build()))
+                .isInstanceOf(BadRequestException.class);
+    }
+
+    @Test
+    void horodateLExclusionEtRetientQuiLaPrononcee() {
+        LigneAppel ligne = ligneOuverte();
+        ligneEnBase(ligne);
+
+        service.modifierStatutEleve(9L, ModificationStatutRequete.builder()
+                .statut(StatutPresence.EXCLU)
+                .raisonExclusion("Comportement")
+                .modifiePar(77L)
+                .build());
+
+        assertThat(ligne.getRaisonExclusion()).isEqualTo("Comportement");
+        assertThat(ligne.getExcluPar()).isEqualTo(77L);
+        assertThat(ligne.getExclusionAt()).isNotNull();
+    }
+
+    /** Une séance verrouillée est close : plus aucun statut n'y bouge. */
+    @Test
+    void refuseDeModifierUneSeanceVerrouillee() {
+        LigneAppel ligne = ligneOuverte();
+        ligne.getSeanceAppel().setEstVerrouille(true);
+        when(ligneAppelRepository.findByTenantIdAndId(TENANT, 9L)).thenReturn(Optional.of(ligne));
+
+        assertThatThrownBy(() -> service.modifierStatutEleve(9L, ModificationStatutRequete.builder()
+                .statut(StatutPresence.PRESENT)
+                .build()))
+                .isInstanceOf(BusinessException.class);
+
+        verify(ligneAppelRepository, never()).save(any());
+    }
+
+    /**
+     * La traçabilité est le point sensible de l'appel : une modification de statut
+     * doit laisser d'où l'on vient et où l'on va, sans quoi une contestation de
+     * famille est indéfendable.
+     */
+    @Test
+    void archiveLAncienEtLeNouveauStatutDansLHistorique() {
+        LigneAppel ligne = ligneOuverte();
+        ligneEnBase(ligne);
+
+        service.modifierStatutEleve(9L, ModificationStatutRequete.builder()
+                .statut(StatutPresence.PRESENT)
+                .modifiePar(77L)
+                .adresseIp("10.0.0.4")
+                .build());
+
+        ArgumentCaptor<HistoriqueAppel> captor = ArgumentCaptor.forClass(HistoriqueAppel.class);
+        verify(historiqueAppelRepository).save(captor.capture());
+        HistoriqueAppel trace = captor.getValue();
+        assertThat(trace.getStatutPrecedent()).isEqualTo(StatutPresence.ABSENT);
+        assertThat(trace.getNouveauStatut()).isEqualTo(StatutPresence.PRESENT);
+        assertThat(trace.getModifiePar()).isEqualTo(77L);
+        assertThat(trace.getAdresseIp()).isEqualTo("10.0.0.4");
+    }
+
+    @Test
+    void refuseUneModificationSansStatut() {
+        assertThatThrownBy(() -> service.modifierStatutEleve(9L, new ModificationStatutRequete()))
                 .isInstanceOf(BadRequestException.class);
     }
 }

@@ -58,5 +58,14 @@
             <artifactId>lombok</artifactId>
             <optional>true</optional>
         </dependency>
+
+        <!-- Tests. Le module n'en avait aucun : la couverture y était nulle, non
+             par choix mais par omission. JUnit, AssertJ et Mockito arrivent
+             ensemble avec ce starter. -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 </project>

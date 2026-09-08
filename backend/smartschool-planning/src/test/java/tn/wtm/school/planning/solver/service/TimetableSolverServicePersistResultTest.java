@@ -2,11 +2,13 @@ package tn.wtm.school.planning.solver.service;
 
 import ai.timefold.solver.core.api.score.buildin.hardmediumsoft.HardMediumSoftScore;
 import ai.timefold.solver.core.api.solver.SolutionManager;
+import ai.timefold.solver.core.api.solver.SolverJob;
 import ai.timefold.solver.core.api.solver.SolverManager;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
+import org.mockito.ArgumentMatchers;
 import org.mockito.Captor;
 import org.mockito.InOrder;
 import org.mockito.Mock;
@@ -49,6 +51,10 @@ import java.time.LocalTime;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.Consumer;
 import java.util.stream.Stream;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -869,5 +875,75 @@ class TimetableSolverServicePersistResultTest {
 
     private void putInCache(Long jobId, TimetableSolution sol) {
         getBestSolutionsCache().put(jobId, sol);
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════
+    // 8. Interruption du solveur
+    // ══════════════════════════════════════════════════════════════════════════
+
+    /**
+     * {@code getFinalBestSolution()} bloque jusqu'à la fin du solveur, et lève une
+     * {@code InterruptedException} quand le pool qui l'exécute est arrêté — à la
+     * fermeture du contexte Spring, typiquement.
+     *
+     * <p>Deux choses doivent alors se produire, et la seconde est celle qu'on
+     * oublie. La première : le job passe en FAILED, sinon il reste RUNNING pour
+     * toujours dans l'interface. La seconde : le drapeau d'interruption est
+     * reposé sur le thread. Ce thread est emprunté au pool commun et sera rendu
+     * puis réutilisé ; attraper l'exception sans reposer le drapeau efface
+     * l'ordre d'arrêt pour tout ce qui s'y exécutera ensuite, qui n'aura aucun
+     * moyen d'apprendre qu'on lui a demandé de s'arrêter.
+     *
+     * <p>Le drapeau est lu avec {@code Thread.interrupted()} et non
+     * {@code isInterrupted()} : la lecture a lieu sur le thread concerné — le
+     * simulacre s'exécute dans la tâche asynchrone — et {@code interrupted()}
+     * efface le drapeau au passage. C'est aussi ce qui évite de rendre au pool
+     * commun un thread encore marqué, qui ferait dérailler un test ultérieur.
+     */
+    @Test
+    @DisplayName("Un solveur interrompu échoue le job et repose le drapeau d'interruption")
+    void solveurInterrompu_echoueLeJobEtReposeLeDrapeau() throws Exception {
+        TenantContext.setTenantId(TENANT);
+
+        TimetableJob job = new TimetableJob();
+        when(jobRepository.save(any())).thenAnswer(inv -> {
+            TimetableJob j = inv.getArgument(0);
+            j.setIdTimetableJob(JOB_ID);
+            return j;
+        });
+        when(problemBuilder.build(TENANT, YEAR_ID, PROFILE_ID))
+                .thenReturn(solution(FEASIBLE_SCORE, List.of()));
+        when(preGenerationValidator.valider(any())).thenReturn(new ValidationReport(List.of()));
+
+        @SuppressWarnings("unchecked")
+        SolverJob<TimetableSolution, Long> solverJob = mock(SolverJob.class);
+        when(solverJob.getFinalBestSolution())
+                .thenThrow(new InterruptedException("pool arrêté"));
+        when(solverManager.solveAndListen(eq(JOB_ID), any(TimetableSolution.class),
+                ArgumentMatchers.<Consumer<TimetableSolution>>any()))
+                .thenReturn(solverJob);
+
+        // onFailed passe par findById : c'est notre point d'observation à
+        // l'intérieur de la tâche asynchrone.
+        AtomicBoolean drapeauPose = new AtomicBoolean(false);
+        CountDownLatch echecTraite = new CountDownLatch(1);
+        when(jobRepository.findById(JOB_ID)).thenAnswer(inv -> {
+            drapeauPose.set(Thread.interrupted());
+            echecTraite.countDown();
+            return Optional.of(job);
+        });
+
+        TimetableGenerationRequest req = new TimetableGenerationRequest();
+        req.setSchoolYearId(YEAR_ID);
+        req.setConstraintProfileId(PROFILE_ID);
+
+        service.startGeneration(req);
+
+        assertThat(echecTraite.await(5, TimeUnit.SECONDS))
+                .as("l'échec doit être traité, pas avalé")
+                .isTrue();
+        assertThat(drapeauPose).isTrue();
+        assertThat(job.getStatus()).isEqualTo(SolverStatus.FAILED);
+        assertThat(job.getErrorMessage()).contains("pool arrêté");
     }
 }
