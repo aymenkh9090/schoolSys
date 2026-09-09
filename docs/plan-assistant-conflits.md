@@ -22,7 +22,7 @@
 | 1 — `occurrences` : désigner les séances en cause | **faite** — `ScoreExplanationResponse.Occurrence` + `SessionRef`, colonne `lesson_id` (migration 017). `ScoreExplanationOccurrencesTest` 7/7 et `TimetableSolverServicePersistResultTest` 46/46 au vert |
 | 2 — Surlignage dans la grille | **faite** — `designation.ts` (cible + URL), `TimetableGrid.highlightedSessionIds`, bandeau de comptage sur la consultation |
 | 3 — Suggestions calculées, pas figées | **faite** — `AlternativeSlotFinder` + `Relocation` sur chaque occurrence. 18 tests de contraintes rejouées, 5 tests de bout en bout, module à 425/425 |
-| 4 — L'assistant rend des désignations | **faite** — `PlanningChatResponse.conflicts`, rempli par le handler Python. 10 tests. Puces non cliquables tant que l'étape 2 n'existe pas |
+| 4 — L'assistant rend des désignations | **faite** — `PlanningChatResponse.conflicts`, rempli par le handler Python. 10 tests. Puces non cliquables : il leur manque le `jobId`, cf. § étape 5 |
 | 5 — Proposer / confirmer un déplacement | **faite** — application en deux temps depuis le panneau, sur le `PATCH` existant. Reste hors périmètre : le même geste depuis le chat de l'assistant |
 
 ### Ce qui existe déjà
