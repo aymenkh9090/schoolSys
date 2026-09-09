@@ -125,7 +125,26 @@ springdoc:
 timefold:
   solver:
     termination:
-      spent-limit: 300s
+      # ── Pourquoi 300 s ne suffisaient pas ────────────────────────────────
+      #
+      # Mesuré sur le jeu de données du profil `demo` — collège Ibn Khaldoun,
+      # 16 classes, 576 séances à poser sur 98 créneaux et 40 salles : le score
+      # dur passe de -197 à -72 en cinq minutes, puis à -1 en dix. La coupure à
+      # 300 s tombait donc en plein milieu de la descente et rendait un emploi
+      # du temps criblé de conflits d'enseignant, de classe et de salle — non
+      # parce que les données étaient mauvaises, mais parce qu'on arrêtait de
+      # chercher trop tôt.
+      #
+      # `best-score-limit` d'abord : dès qu'un emploi du temps ne viole plus
+      # aucune contrainte dure, il est exploitable et la recherche s'arrête. Le
+      # plafond de temps n'est plus qu'un garde-fou pour le cas où la
+      # faisabilité n'est pas atteignable.
+      #
+      # Ce que cela coûte : on s'arrête au PREMIER emploi du temps faisable,
+      # sans polir les contraintes souples. Un établissement qui préfère la
+      # qualité au délai retire cette ligne et laisse tourner les 30 minutes.
+      best-score-limit: 0hard/*medium/*soft
+      spent-limit: 1800s
 
 logging:
   level:

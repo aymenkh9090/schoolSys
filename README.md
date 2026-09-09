@@ -163,7 +163,43 @@ sur `Unable to find a suitable main class`. On construit donc les modules
 d'abord, on ne lance que l'API ensuite. La première commande devient inutile
 tant qu'aucun module frère n'est modifié.
 
-Autres commandes utiles : voir `backend/README.md` (tests, profil `demo` avec données d'exemple, etc.).
+### 4 bis. Le jeu de données de démonstration
+
+```bash
+cd backend
+mvn -pl smartschool-api spring-boot:run -Dspring-boot.run.profiles=demo
+```
+
+Le profil `demo` alimente la base avec deux collèges complets, prêts pour une
+génération d'emploi du temps :
+
+| | Ibn Khaldoun | Carthage |
+|---|---|---|
+| Programme | § T.1 — collège ordinaire | § T.3 — collège pilote |
+| Classes | 16 (7×7ᵉ, 5×8ᵉ, 4×9ᵉ) | 10 (4×7ᵉ, 3×8ᵉ, 3×9ᵉ) |
+| Élèves | 481 | 304 |
+| Enseignants | 50 | 38 |
+| Salles | 40 | 28 |
+| Affectations | 320 | 210 |
+| Théâtre | non assuré | assuré |
+
+Les classes sont codées `7B1`, `7B2`, … et comptent entre 25 et 35 élèves. Les
+matières, leurs volumes et le découpage de leurs séances ne sont pas écrits dans
+le seeder : chaque collège **hérite** du programme national (circulaire n°66 du
+04/09/2024) semé par `NationalPatternSeeder`. Corriger la circulaire à un seul
+endroit met donc les deux établissements à jour.
+
+Le runner est idempotent — un second démarrage ne réécrit rien. Pour repartir
+d'une base propre :
+
+```bash
+mvn -pl smartschool-api spring-boot:run -Dspring-boot.run.profiles=demo \
+    -Dspring-boot.run.arguments=--reinitialiser-demo
+```
+
+La réinitialisation ne touche qu'aux données pédagogiques des deux collèges :
+les établissements eux-mêmes, leurs abonnements et les comptes Keycloak
+survivent.
 
 ## 5. Démarrer le frontend
 
