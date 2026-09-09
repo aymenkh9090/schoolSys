@@ -25,7 +25,7 @@
 |---|---|
 | 1 — Publier les trois images sur Docker Hub | **faite** — job `docker` sous garde de secret, étiquettes `latest` + `sha-<commit>`, `image:` sur les trois services du compose |
 | 2 — Le profil `demo` atteint les conteneurs, et devient pilotable | **faite** — `SPRING_PROFILES_ACTIVE` sur le service `backend`, `demo` par défaut, désarmable par une valeur vide |
-| 3 — Sauvegarder les deux bases, ensemble | à faire |
+| 3 — Sauvegarder les deux bases, ensemble | **faite** — `scripts/sauvegarde.sh` et `scripts/restauration.sh`, un répertoire horodaté par paire ; dump vérifié restaurable |
 | 4 — Figer le jeu de référence | à faire |
 | 5 — Le déploiement local, sur runner self-hosted | à faire |
 
@@ -193,7 +193,7 @@ pas ». `espaceAuthentification()` prévoyait déjà le cas : l'appel Keycloak e
 sous `try/catch`, l'échec se solde par un `warn`. Aucune modification Java n'a
 donc été nécessaire.
 
-### Étape 3 — Sauvegarder les deux bases, ensemble
+### Étape 3 — Sauvegarder les deux bases, ensemble — **faite**
 
 Deux scripts dans `scripts/`, `sauvegarde.sh` et `restauration.sh`, chacun
 opérant sur **les deux** bases en un seul geste :
@@ -216,6 +216,37 @@ dissocier.**
 
 Le dossier des sauvegardes est ignoré par Git — un dump horodaté n'a rien à
 faire dans l'historique.
+
+**Livrée.** `sauvegardes/<horodatage>/` contient `app.sql`, `keycloak.sql` et un
+`contexte.txt`. Vérifiée pour de bon, pas seulement écrite : la sauvegarde a été
+prise sur la pile en cours (900 Ko + 420 Ko), puis `app.sql` restauré dans une
+base jetable, qui rendait bien `College Ibn Khaldoun` 16 classes / 481 élèves et
+`College Carthage` 10 / 304 — les chiffres du README.
+
+**Cinq décisions, chacune contre un mode de panne précis :**
+
+- **Un répertoire par sauvegarde**, pas deux fichiers côte à côte. Le couple
+  devient structurel : on ne restaure pas une moitié par distraction.
+- **Un dump s'écrit en `.partiel` puis se renomme.** Une redirection directe
+  crée le fichier avant que `pg_dump` ne s'exécute ; un `Ctrl-C` laisserait un
+  fichier vide qui a l'air d'une sauvegarde. Un `trap` efface les restes et le
+  répertoire s'il n'a pas abouti.
+- **`contexte.txt` note le commit et la branche.** Liquibase et `ddl-auto: update`
+  font évoluer le schéma : un dump ne se restaure que sur le code qui l'a
+  produit, et retrouver lequel trois semaines plus tard relève de la fouille.
+- **La restauration arrête ce qui écrit, et ne redémarre que cela.** La liste
+  est calculée depuis `docker compose ps` : la pile peut tourner sans le profil
+  `app`, auquel cas `backend` n'est pas un conteneur. Keycloak part aussi — on
+  ne supprime pas une base dont un serveur tient les connexions.
+- **`DROP DATABASE … WITH (FORCE)`** coupe les connexions résiduelles au lieu
+  d'échouer sur « database is being accessed by other users ». Un psql oublié,
+  un IDE connecté, et la restauration s'arrêterait à mi-chemin — au pire moment,
+  puisque la base a déjà été supprimée.
+
+**Et le rappel qui referme l'étape 2 :** en fin de restauration, le script
+vérifie que `SPRING_PROFILES_ACTIVE` est désarmé dans le `.env`, et donne la
+commande sinon. Remettre en place des données auxquelles on tient, puis laisser
+le seeder les purger au redémarrage suivant, serait une farce.
 
 ### Étape 4 — Figer le jeu de référence
 
