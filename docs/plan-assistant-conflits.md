@@ -19,7 +19,7 @@
 
 | Étape | État |
 |---|---|
-| 1 — `occurrences` : désigner les séances en cause | **en cours, non commité** — `ScoreExplanationResponse.Occurrence` + `SessionRef`, colonne `lesson_id` (migration 017), 7 tests écrits dans `ScoreExplanationOccurrencesTest` |
+| 1 — `occurrences` : désigner les séances en cause | **faite** — `ScoreExplanationResponse.Occurrence` + `SessionRef`, colonne `lesson_id` (migration 017). `ScoreExplanationOccurrencesTest` 7/7 et `TimetableSolverServicePersistResultTest` 46/46 au vert |
 | 2 — Surlignage dans la grille | à faire |
 | 3 — Suggestions calculées, pas figées | à faire |
 | 4 — L'assistant rend des désignations | à faire |
@@ -86,7 +86,7 @@ identifiant commun, aucune couche en aval ne pouvait pointer une case.
 
 ## 3. Ordre d'exécution
 
-### Étape 1 — `occurrences` : désigner au lieu de décrire — **en cours**
+### Étape 1 — `occurrences` : désigner au lieu de décrire — **faite**
 
 Le seul endroit du plan où entrent des **faits nouveaux**. Tout le reste en
 dépend : rien en aval ne peut pointer une case tant que ce n'est pas livré.
@@ -101,9 +101,10 @@ dépend : rien en aval ne peut pointer une case tant que ce n'est pas livré.
   par jour ») n'incrimine aucune séance en particulier — son tuple porte une
   clé de groupe et un cumul. La phrase y reste le seul rendu honnête.
 
-**Reste à faire :** exécuter `ScoreExplanationOccurrencesTest` (7 tests) et
-`TimetableSolverServicePersistResultTest`, vérifier la migration sur la base de
-développement, commiter.
+**Livrée.** Les deux suites annoncées sont passées — `ScoreExplanationOccurrencesTest`
+7/7, `TimetableSolverServicePersistResultTest` 46/46 — et `LiquibaseChangelogTest`
+valide le changelog, migration 017 comprise. Rien n'est en attente sur cette étape :
+les couches en aval peuvent désormais pointer une case.
 
 ### Étape 2 — Le surlignage dans la grille
 
