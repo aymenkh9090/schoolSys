@@ -1,0 +1,40 @@
+databaseChangeLog:
+  # ── Étape 1 de l'assistant de résolution des conflits ─────────────────────
+  #
+  # La table gardait le RÉSULTAT du solveur sans garder de quoi le relier à ce
+  # que le solveur reproche. Timefold explique un score en désignant des objets
+  # `Lesson` ; la ligne persistée, elle, ne portait que des libellés. Le seul
+  # lien possible était un rapprochement approximatif sur
+  # (teaching_assignment_id, group_index, jour, heure) — approximatif parce que
+  # ce sont précisément les coordonnées qu'un déplacement de séance modifie.
+  #
+  # D'où cette colonne : l'identifiant que Timefold voit, écrit tel quel.
+  # L'explication de score peut alors nommer la séance, l'interface la
+  # surligner, et une suggestion de correction viser le
+  # PATCH /jobs/{id}/sessions/{sessionId} existant.
+  #
+  # Nullable, et sans reprise des lignes existantes. Le rapprochement se fait
+  # sur (job_id, lesson_id) : les jobs déjà en base n'ont plus leur solution en
+  # mémoire — `bestSolutions` ne survit pas à un redémarrage — donc il n'y a
+  # aucune explication à rattacher à leurs lignes. Une valeur inventée
+  # ici serait fausse, et fausse silencieusement.
+  #
+  # La précondition MARK_RAN reprend la leçon de la migration 015 : en
+  # développement, `ddl-auto: update` crée la colonne depuis l'entité JPA avant
+  # que Liquibase n'y arrive, et l'ALTER TABLE échouait alors au démarrage.
+  - changeSet:
+      id: 017-timetable-session-lesson-id
+      author: planning
+      preConditions:
+        - onFail: MARK_RAN
+        - not:
+            - columnExists:
+                tableName: planning_timetable_session
+                columnName: lesson_id
+      changes:
+        - addColumn:
+            tableName: planning_timetable_session
+            columns:
+              - column:
+                  name: lesson_id
+                  type: BIGINT

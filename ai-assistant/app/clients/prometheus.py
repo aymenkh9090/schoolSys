@@ -10,6 +10,8 @@ services/metrics.py.
 
 import logging
 import math
+import time
+
 import httpx
 
 
@@ -69,6 +71,63 @@ class PrometheusClient:
         except (KeyError, IndexError, ValueError) as exc:
             logger.warning("Réponse Prometheus inattendue [%s] : %s", promql, exc)
             return None
+
+    async def query_range(
+        self, promql: str, minutes: int, step_seconds: int
+    ) -> list[float]:
+        """
+        Exécute une requête sur une plage et renvoie la suite des valeurs.
+
+        Sert la courbe de tendance des tuiles de supervision : là où
+        `query_scalar` répond « où en est-on », celle-ci répond « d'où vient-on ».
+
+        <h4>Les trous sont retirés, jamais comblés</h4>
+
+        Prometheus rend `NaN` pour un point sans donnée — service arrêté,
+        quantile sans trafic dans la fenêtre. Ces points sont écartés plutôt que
+        remplacés par zéro : une courbe qui plonge à zéro pendant un redémarrage
+        raconte un effondrement du service qui n'a pas eu lieu. Le tracé saute
+        alors le trou, ce qui est le rendu honnête d'une mesure absente.
+
+        Renvoie une liste vide — jamais d'exception — si la métrique n'existe
+        pas ou si Prometheus est injoignable, pour la même raison que
+        `query_scalar` : une source d'observation indisponible est une
+        dégradation, pas une panne.
+        """
+        fin = time.time()
+        debut = fin - minutes * 60
+
+        try:
+            response = await self._client.get(
+                "/api/v1/query_range",
+                params={
+                    "query": promql,
+                    "start": debut,
+                    "end": fin,
+                    "step": f"{step_seconds}s",
+                },
+            )
+            response.raise_for_status()
+            results = response.json().get("data", {}).get("result", [])
+
+            if not results:
+                logger.debug("PromQL sans série : %s", promql)
+                return []
+
+            points: list[float] = []
+            # values = [[timestamp, "valeur"], ...] — les valeurs sont des chaînes.
+            for _horodatage, brut in results[0].get("values", []):
+                valeur = float(brut)
+                if not (math.isnan(valeur) or math.isinf(valeur)):
+                    points.append(valeur)
+            return points
+
+        except httpx.HTTPError as exc:
+            logger.warning("Prometheus injoignable [%s] : %s", promql, exc)
+            return []
+        except (KeyError, IndexError, ValueError, TypeError) as exc:
+            logger.warning("Réponse Prometheus inattendue [%s] : %s", promql, exc)
+            return []
 
     async def query_by_label(
         self, promql: str, label: str

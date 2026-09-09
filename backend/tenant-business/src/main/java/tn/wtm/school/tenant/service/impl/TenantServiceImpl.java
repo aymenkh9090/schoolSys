@@ -7,6 +7,8 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.util.StringUtils;
 import tn.wtm.school.common.exceptions.BadRequestException;
 import tn.wtm.school.common.exceptions.ConflictException;
@@ -16,6 +18,7 @@ import tn.wtm.school.security.constants.RoleConstants;
 import tn.wtm.school.security.email.EmailService;
 import tn.wtm.school.security.email.WelcomeEmailData;
 import tn.wtm.school.security.exception.KeycloakIntegrationException;
+import tn.wtm.school.security.exception.KeycloakUserAlreadyExistsException;
 import tn.wtm.school.security.keycloak.dto.KeycloakCreatedUserDTO;
 import tn.wtm.school.security.keycloak.service.KeycloakAdminService;
 import tn.wtm.school.tenant.dto.CreateTenantRequest;
@@ -52,13 +55,17 @@ public class TenantServiceImpl implements TenantService {
         createRequestValidator.validate(request);
 
         if (tenantRepository.existsByCodeIgnoreCase(request.getCode())) {
-            throw new ConflictException("Code Etablissement deja Existe !");
+            throw new ConflictException(
+                    "Le code « " + request.getCode() + " » est déjà attribué à un autre établissement. "
+                            + "Choisissez un code différent.");
         }
         if (tenantRepository.existsByNameIgnoreCase(request.getName())) {
-            throw new ConflictException("Name Etablissement deja Existe !");
+            throw new ConflictException(
+                    "Un établissement porte déjà le nom « " + request.getName() + " ». "
+                            + "Choisissez un nom différent.");
         }
         if (request.getType() == null) {
-            throw new BadRequestException("Type de l'etablissement est obligatoire !");
+            throw new BadRequestException("Le type d'établissement est obligatoire.");
         }
 
         // 1. Sauvegarder le tenant en DB avec statut PENDING
@@ -117,9 +124,21 @@ public class TenantServiceImpl implements TenantService {
             response.setAdminEmail(request.getEmailAdmin());
             return response;
 
+        } catch (KeycloakUserAlreadyExistsException e) {
+            // Une adresse déjà prise n'est pas une panne : c'est une saisie à
+            // corriger. Sans ce cas distinct, l'utilisateur recevait un 502
+            // « erreur de communication » suivi de la trace Keycloak.
+            log.warn("[Tenant] Adresse admin déjà utilisée dans Keycloak. tenantId={} email={}",
+                    tenantId, request.getEmailAdmin());
+            rollbackKeycloak(keycloakUserId, keycloakGroupId);
+            throw new ConflictException(
+                    "L'adresse « " + request.getEmailAdmin() + " » est déjà utilisée par un autre compte. "
+                            + "Indiquez une autre adresse pour l'administrateur.");
         } catch (Exception e) {
             log.error("[Tenant] Échec intégration Keycloak pour tenantId={}. Rollback.", tenantId, e);
             rollbackKeycloak(keycloakUserId, keycloakGroupId);
+            // Le détail technique reste dans le log ; l'appelant reçoit le message
+            // du handler, qui dit ce qui a été fait de sa demande.
             throw new KeycloakIntegrationException(
                     "Échec création tenant dans Keycloak: " + e.getMessage(), e);
         }
@@ -134,7 +153,7 @@ public class TenantServiceImpl implements TenantService {
     public TenantResponse findTenantById(Long id) {
         Tenant tenant = tenantRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException(
-                        "Etablissement avec ce ID " + id + " n'existe pas"));
+                        "Cet établissement est introuvable (identifiant " + id + ")."));
         return tenantMapper.toResponse(tenant);
     }
 
@@ -142,7 +161,7 @@ public class TenantServiceImpl implements TenantService {
     public TenantResponse findTenantByName(String name) {
         Tenant tenant = tenantRepository.findByNameIgnoreCase(name)
                 .orElseThrow(() -> new ResourceNotFoundException(
-                        "Etablissement avec le nom " + name + " n'existe pas"));
+                        "Aucun établissement ne porte le nom « " + name + " »."));
         return tenantMapper.toResponse(tenant);
     }
 
@@ -151,14 +170,14 @@ public class TenantServiceImpl implements TenantService {
         Tenant tenant = tenantRepository.findByCodeIgnoreCase(code)
                 .filter(t -> Boolean.TRUE.equals(t.getActive()))
                 .orElseThrow(() -> new ResourceNotFoundException(
-                        "Aucun établissement actif avec le code " + code));
+                        "Aucun établissement actif ne correspond au code « " + code + " »."));
         return toPublicResponse(tenant);
     }
 
     @Override
     public PublicTenantResponse findPublicTenantById(Long id) {
         Tenant tenant = tenantRepository.findById(id)
-                .orElseThrow(() -> new ResourceNotFoundException("Etablissement n'existe pas"));
+                .orElseThrow(() -> new ResourceNotFoundException("Cet établissement est introuvable : il a peut-être été supprimé."));
         return toPublicResponse(tenant);
     }
 
@@ -177,12 +196,14 @@ public class TenantServiceImpl implements TenantService {
     public TenantResponse updateTenant(Long id, UpdateTenantRequest request) {
         updateRequestValidator.validate(request);
         Tenant tenant = tenantRepository.findById(id)
-                .orElseThrow(() -> new ResourceNotFoundException("Etablissement n'existe pas"));
+                .orElseThrow(() -> new ResourceNotFoundException("Cet établissement est introuvable : il a peut-être été supprimé."));
 
         if (request.getName() != null
                 && !request.getName().equalsIgnoreCase(tenant.getName())
                 && tenantRepository.existsByNameIgnoreCaseAndTenantIdNot(request.getName(), id)) {
-            throw new ConflictException("Tenant name already exists");
+            throw new ConflictException(
+                    "Un établissement porte déjà le nom « " + request.getName() + " ». "
+                            + "Choisissez un nom différent.");
         }
 
         validateStatus(request.getStatus());
@@ -199,15 +220,60 @@ public class TenantServiceImpl implements TenantService {
     @Transactional
     public void deleteTenant(Long id) {
         Tenant tenant = tenantRepository.findById(id)
-                .orElseThrow(() -> new ResourceNotFoundException("Etablissement n'existe pas"));
+                .orElseThrow(() -> new ResourceNotFoundException("Cet établissement est introuvable : il a peut-être été supprimé."));
+
+        // Capturés avant la suppression : l'entité est détachée ensuite.
+        String adminKeycloakId = tenant.getAdminKeycloakId();
+        String groupId         = tenant.getKeycloakGroupId();
+
         tenantRepository.delete(tenant);
+
+        // Keycloak n'est pas transactionnel : on ne peut pas l'inscrire dans le
+        // rollback JPA. Le nettoyage est donc reporté APRÈS le commit — sinon un
+        // échec tardif (violation de clé étrangère depuis `subscriptions`, par
+        // exemple) laisserait un établissement bien vivant dont on aurait déjà
+        // détruit le compte administrateur.
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                cleanupKeycloak(id, adminKeycloakId, groupId);
+            }
+        });
+    }
+
+    /**
+     * Supprime le compte admin et le groupe Keycloak d'un établissement effacé.
+     * Best-effort : la ligne est déjà committée, échouer ici ne doit pas remonter
+     * une erreur à l'appelant — mais laisse une trace, car l'orphelin qui subsiste
+     * bloquera toute recréation avec la même adresse (Keycloak répondrait 409).
+     */
+    private void cleanupKeycloak(Long tenantId, String adminKeycloakId, String groupId) {
+        if (adminKeycloakId != null) {
+            try {
+                keycloakAdminService.deleteUser(adminKeycloakId);
+                log.info("[Tenant] Compte admin Keycloak supprimé. tenantId={} userId={}",
+                        tenantId, adminKeycloakId);
+            } catch (Exception e) {
+                log.warn("[Tenant] Compte admin Keycloak orphelin. tenantId={} userId={} : {}",
+                        tenantId, adminKeycloakId, e.getMessage());
+            }
+        }
+        if (groupId != null) {
+            try {
+                keycloakAdminService.deleteTenantGroup(groupId);
+                log.info("[Tenant] Groupe Keycloak supprimé. tenantId={} groupId={}", tenantId, groupId);
+            } catch (Exception e) {
+                log.warn("[Tenant] Groupe Keycloak orphelin. tenantId={} groupId={} : {}",
+                        tenantId, groupId, e.getMessage());
+            }
+        }
     }
 
     @Override
     @Transactional
     public void toggleActive(Long id, boolean active) {
         Tenant tenant = tenantRepository.findById(id)
-                .orElseThrow(() -> new ResourceNotFoundException("Etablissement n'existe pas"));
+                .orElseThrow(() -> new ResourceNotFoundException("Cet établissement est introuvable : il a peut-être été supprimé."));
         tenant.setStatus(active ? TenantStatus.ACTIVE : TenantStatus.SUSPENDED);
 
         // Synchroniser l'état de l'admin dans Keycloak
@@ -231,7 +297,7 @@ public class TenantServiceImpl implements TenantService {
     @Transactional
     public TenantResponse activateTenant(Long id) {
         Tenant tenant = tenantRepository.findById(id)
-                .orElseThrow(() -> new ResourceNotFoundException("Etablissement n'existe pas"));
+                .orElseThrow(() -> new ResourceNotFoundException("Cet établissement est introuvable : il a peut-être été supprimé."));
         tenant.setStatus(TenantStatus.ACTIVE);
 
         if (tenant.getAdminKeycloakId() != null) {
@@ -249,7 +315,7 @@ public class TenantServiceImpl implements TenantService {
     @Transactional
     public TenantResponse suspendTenant(Long id) {
         Tenant tenant = tenantRepository.findById(id)
-                .orElseThrow(() -> new ResourceNotFoundException("Etablissement n'existe pas"));
+                .orElseThrow(() -> new ResourceNotFoundException("Cet établissement est introuvable : il a peut-être été supprimé."));
         tenant.setStatus(TenantStatus.SUSPENDED);
 
         if (tenant.getAdminKeycloakId() != null) {
@@ -288,17 +354,29 @@ public class TenantServiceImpl implements TenantService {
     public String getKeycloakGroupId(String tenantId) {
         try {
             Long id = Long.parseLong(tenantId);
-            String groupId = tenantRepository.findKeycloakGroupIdById(id)
-                    .orElseThrow(() -> new ResourceNotFoundException(
-                            "Etablissement introuvable. tenantId=" + tenantId));
+            // Existence d'abord : la requête ne ramène qu'une colonne, et une
+            // colonne nulle rend le même Optional vide qu'une ligne absente.
+            // Sans ce test, un établissement bien présent mais sans groupe
+            // Keycloak était annoncé « introuvable » — le message envoyait
+            // chercher la panne là où elle n'est pas.
+            if (!tenantRepository.existsById(id)) {
+                throw new ResourceNotFoundException(
+                        "Cet établissement est introuvable (identifiant " + tenantId + ").");
+            }
+            String groupId = tenantRepository.findKeycloakGroupIdById(id).orElse(null);
             if (!StringUtils.hasText(groupId)) {
+                log.warn("[Tenant] Établissement sans groupe Keycloak — inscription inachevée "
+                        + "ou tenant écrit hors du parcours de création. tenantId={}", tenantId);
                 throw new IllegalStateException(
-                        "Etablissement sans groupe Keycloak (statut PENDING?). tenantId=" + tenantId);
+                        "L'inscription de cet établissement n'est pas terminée : son espace "
+                                + "d'authentification n'a pas été créé. Contactez l'administrateur "
+                                + "de la plateforme.");
             }
             log.debug("[Tenant] keycloakGroupId={} pour tenantId={}", groupId, tenantId);
             return groupId;
         } catch (NumberFormatException e) {
-            throw new ResourceNotFoundException("tenantId invalide: " + tenantId);
+            throw new ResourceNotFoundException(
+                    "Identifiant d'établissement invalide : « " + tenantId + " ».");
         }
     }
 
@@ -323,7 +401,8 @@ public class TenantServiceImpl implements TenantService {
     private void validateStatus(TenantStatus status) {
         if (status == null) return;
         if (status != TenantStatus.ACTIVE && status != TenantStatus.SUSPENDED) {
-            throw new BadRequestException("Statut tenant invalide");
+            throw new BadRequestException(
+                    "Statut d'établissement invalide : seuls « actif » et « suspendu » peuvent être appliqués.");
         }
     }
 }

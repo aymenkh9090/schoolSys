@@ -14,6 +14,10 @@ import org.springframework.util.StringUtils;
 @RequiredArgsConstructor
 public class EmailServiceImpl implements EmailService {
 
+    /** Nom commercial du produit. Centralisé ici : il apparaît dans l'objet,
+     *  dans le corps du message et comme nom d'expéditeur affiché. */
+    private static final String BRAND = "SchoolSys";
+
     private final JavaMailSender mailSender;
 
     @Value("${spring.mail.username:}")
@@ -25,10 +29,13 @@ public class EmailServiceImpl implements EmailService {
             MimeMessage message = mailSender.createMimeMessage();
             MimeMessageHelper helper = new MimeMessageHelper(message, "UTF-8");
             if (StringUtils.hasText(fromAddress)) {
-                helper.setFrom(fromAddress);
+                // Le destinataire voit "SchoolSys", pas une adresse Gmail nue.
+                // L'adresse elle-même reste celle du compte authentifié :
+                // Gmail réécrit toute autre valeur.
+                helper.setFrom(fromAddress, BRAND);
             }
             helper.setTo(data.toEmail());
-            helper.setSubject("Votre compte SmartSchool a été créé");
+            helper.setSubject("Votre compte " + BRAND + " a été créé");
             helper.setText(buildHtml(data), true);
             mailSender.send(message);
             log.info("[Email] Mail de bienvenue envoyé à {}", data.toEmail());
@@ -52,7 +59,7 @@ public class EmailServiceImpl implements EmailService {
                     <table role="presentation" width="100%%" style="max-width:520px;margin:0 auto;background:#ffffff;border:1px solid #ccd3e0;border-radius:6px;">
                       <tr>
                         <td style="padding:32px;">
-                          <p style="margin:0 0 16px;font-size:18px;font-weight:bold;">Bienvenue sur SmartSchool, %s</p>
+                          <p style="margin:0 0 16px;font-size:18px;font-weight:bold;">Bienvenue sur %s, %s</p>
                           %s
                           <p style="margin:0 0 16px;color:#4b5468;">Un compte vient d'être créé pour vous. Voici vos identifiants de connexion :</p>
                           <table role="presentation" style="width:100%%;background:#f4f6fb;border:1px solid #ccd3e0;border-radius:4px;margin:0 0 20px;">
@@ -73,7 +80,7 @@ public class EmailServiceImpl implements EmailService {
                     </table>
                   </body>
                 </html>
-                """.formatted(greetingName, schoolLine, escape(data.username()), escape(data.tempPassword()), data.loginUrl());
+                """.formatted(BRAND, greetingName, schoolLine, escape(data.username()), escape(data.tempPassword()), data.loginUrl());
     }
 
     private String escape(String value) {

@@ -98,6 +98,17 @@ HISTORY_METRICS: dict[str, tuple[str, str, str]] = {
 # Trop fin sur 24 h ferait évaluer 1 440 points pour trois chiffres.
 SUBQUERY_STEP = {"5m": "15s", "1h": "1m", "24h": "5m"}
 
+# Durée de chaque fenêtre, pour la requête de plage.
+WINDOW_MINUTES = {"5m": 5, "1h": 60, "24h": 24 * 60}
+
+# Points d'une courbe de tendance.
+#
+# Volontairement peu : une vignette de deux centimètres ne dit pas « voici la
+# valeur à 14 h 07 », elle dit « ça monte » ou « c'est plat ». Douze points
+# rendent cette forme-là ; deux cents la rendraient illisible et coûteraient une
+# évaluation cent fois plus lourde à Prometheus pour le même message.
+TREND_POINTS = 12
+
 
 # ── Base de données ──────────────────────────────────────────────────────────
 # `pending` est l'indicateur le PLUS PRÉDICTIF d'une saturation :
@@ -153,6 +164,31 @@ class MetricsService:
     def __init__(self, prometheus: PrometheusClient, actuator: ActuatorClient):
         self._prom = prometheus
         self._actuator = actuator
+
+    # ── Tendances ───────────────────────────────────────────────────────────
+
+    async def get_trends(self, window: str = "1h") -> dict[str, list[float]]:
+        """
+        La forme récente de chaque mesure — d'où l'on vient, pas où l'on en est.
+
+        Réutilise les expressions de `HISTORY_METRICS`, déjà normalisées dans
+        l'unité d'affichage (pourcentage, millisecondes) et déjà employées pour
+        les min/avg/max. Écrire une seconde version des mêmes requêtes finirait
+        par produire une courbe qui contredit le chiffre posé au-dessus d'elle.
+
+        Une métrique sans donnée est **absente** du dictionnaire plutôt que
+        présente et vide : l'interface n'affiche alors aucune courbe, au lieu
+        d'une ligne plate qui se lirait comme une mesure stable.
+        """
+        minutes = WINDOW_MINUTES.get(window, 60)
+        pas = max(15, minutes * 60 // TREND_POINTS)
+
+        tendances: dict[str, list[float]] = {}
+        for cle, (_libelle, _unite, expression) in HISTORY_METRICS.items():
+            points = await self._prom.query_range(expression, minutes, pas)
+            if points:
+                tendances[cle] = points
+        return tendances
 
     # ── Instantané global ───────────────────────────────────────────────────
 

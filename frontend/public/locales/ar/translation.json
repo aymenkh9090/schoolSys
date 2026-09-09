@@ -47,7 +47,12 @@
     "categoryPlanning": "جدول التوقيت",
     "categoryFollowup": "المتابعة",
     "categoryAnalytics": "التحليلات والتقارير",
-    "categoryAccount": "الحساب"
+    "categoryAccount": "الحساب",
+    "attendance": "الحضور",
+    "attendanceDaily": "تسجيل اليوم",
+    "staffJustifications": "مبررات الأعوان",
+    "attendanceHistory": "السجل",
+    "attendanceTeacherHours": "ساعات الأساتذة"
   },
   "common": {
     "save": "حفظ",

@@ -2,14 +2,20 @@ import json
 
 import pytest
 
+from app.models import ChatResponse, PlanningChatResponse
 from app.services.consigne_retrieval import ArticleConsigne
+from app.services.planning_assistant import PlanningAssistantService
 from app.services.dsl_translator import (
     DslTranslator,
     _clean,
     _describe_schema,
     _repair_instruction,
 )
-from app.tools.planning_handlers import PlanningToolHandlers, _sanitize_level
+from app.tools.planning_handlers import (
+    MAX_OCCURRENCES_CITED,
+    PlanningToolHandlers,
+    _sanitize_level,
+)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -565,3 +571,257 @@ async def test_le_bloc_articles_supporte_des_exemples_json():
     # Les deux articles ET le pied de prompt ont bien été assemblés.
     assert "§ II.2" in prompt and "§ III.2.c" in prompt
     assert prompt.index("§ II.2") < prompt.index("RÈGLE ABSOLUE SUR CES ARTICLES")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Étape 4 — l'assistant désigne, sans que le modèle touche à la structure
+# ─────────────────────────────────────────────────────────────────────────────
+#
+# La règle que ces tests protègent tient en une phrase : le modèle raconte, le
+# code désigne. Le handler continue de rendre au modèle du texte court et déjà
+# interprété — lui donner `occurrences` ferait annoncer par un 7B des scores et
+# des identifiants qui n'existent pas — et remplit en parallèle une liste que
+# l'interface transforme en puces cliquables.
+
+RELOCATION = {
+    "sessionId": 1001,
+    "lessonId": 1,
+    "subjectName": "Mathématiques",
+    "className": "7A",
+    "fromDay": "MONDAY",
+    "fromStartTime": "08:00",
+    "toDay": "THURSDAY",
+    "toStartTime": "10:00",
+    "toSlotId": 42,
+    "toRoomCode": "A1",
+    "text": (
+        "Déplacer Mathématiques · 7A · Mr. Dupont · Lundi 08:00 vers Jeudi 10:00 "
+        "— créneau libre pour l'enseignant et pour la classe, salle A1 disponible."
+    ),
+}
+
+CONFLIT_ENSEIGNANT = {
+    "constraintName": "TEACHER_CONFLICT",
+    "label": "Conflit d'enseignant",
+    "score": "-2hard/0medium/0soft",
+    "count": 2,
+    "examples": ["Mathématiques · 7A ↔ Mathématiques · 7B"],
+    "suggestion": RELOCATION["text"],
+    "occurrences": [
+        {
+            "label": "Mathématiques · 7A ↔ Mathématiques · 7B",
+            "score": "-1hard/0medium/0soft",
+            "sessions": [
+                {
+                    "lessonId": 1, "sessionId": 1001,
+                    "subjectCode": "MATH", "subjectName": "Mathématiques",
+                    "className": "7A", "teacherCode": "T1", "teacherName": "Mr. Dupont",
+                    "roomCode": "A1", "day": "MONDAY", "startTime": "08:00",
+                    "groupIndex": 0,
+                },
+                {
+                    "lessonId": 2, "sessionId": 1002,
+                    "subjectCode": "MATH", "subjectName": "Mathématiques",
+                    "className": "7B", "teacherCode": "T1", "teacherName": "Mr. Dupont",
+                    "roomCode": "B2", "day": "MONDAY", "startTime": "08:00",
+                    "groupIndex": 0,
+                },
+            ],
+            "relocation": RELOCATION,
+        }
+    ],
+}
+
+
+class FakeExplanationBackend:
+    """Le backend réduit aux deux appels qu'`explain_violations` effectue."""
+
+    def __init__(self, explanation):
+        self._explanation = explanation
+        self.appels = 0
+
+    async def get_jobs(self, token, school_year_id=None):
+        return [{"idTimetableJob": 7, "status": "INFEASIBLE", "scoreAchieved": "-2hard/0medium/0soft"}]
+
+    async def get_score_explanation(self, token, job_id):
+        self.appels += 1
+        return self._explanation
+
+
+def explication(violations, cle="hardViolations"):
+    return {"score": "-2hard/0medium/0soft", "feasible": False, cle: violations}
+
+
+def handlers_sur(explanation):
+    return PlanningToolHandlers(FakeExplanationBackend(explanation), token="tok")
+
+
+async def test_les_occurrences_deviennent_des_conflits_designes():
+    handlers = handlers_sur(explication([CONFLIT_ENSEIGNANT]))
+
+    await handlers.explain_violations()
+
+    assert len(handlers.cited_conflicts) == 1
+    conflit = handlers.cited_conflicts[0]
+    assert conflit.constraint == "Conflit d'enseignant"
+    assert conflit.severity == "HARD"
+    assert [s.session_id for s in conflit.sessions] == [1001, 1002]
+    assert [s.class_name for s in conflit.sessions] == ["7A", "7B"]
+
+
+async def test_la_proposition_est_recopiee_telle_quelle():
+    """
+    La phrase vient du solveur, qui seul sait quel créneau est libre. La
+    reformuler ici reviendrait à réécrire une garantie qu'on n'a pas donnée.
+    """
+    handlers = handlers_sur(explication([CONFLIT_ENSEIGNANT]))
+
+    await handlers.explain_violations()
+
+    proposition = handlers.cited_conflicts[0].relocation
+    assert proposition.text == RELOCATION["text"]
+    assert proposition.to_day == "THURSDAY"
+    assert proposition.to_start_time == "10:00"
+    assert proposition.to_slot_id == 42
+    # La cible du PATCH : sans elle, l'interface n'a rien à déclencher.
+    assert proposition.session_id == 1001
+
+
+async def test_sans_creneau_libre_aucune_proposition_n_est_fabriquee():
+    """Le silence est une réponse : sur un établissement saturé, c'est la bonne."""
+    sans_creneau = {**CONFLIT_ENSEIGNANT, "occurrences": [
+        {**CONFLIT_ENSEIGNANT["occurrences"][0], "relocation": None}
+    ]}
+    handlers = handlers_sur(explication([sans_creneau]))
+
+    await handlers.explain_violations()
+
+    assert handlers.cited_conflicts[0].relocation is None
+    # Les séances restent désignées : on sait toujours OÙ est le conflit.
+    assert len(handlers.cited_conflicts[0].sessions) == 2
+
+
+async def test_une_proposition_sans_phrase_est_ecartee():
+    """Des coordonnées sans texte ne font pas une proposition affichable."""
+    tronquee = {**CONFLIT_ENSEIGNANT, "occurrences": [
+        {**CONFLIT_ENSEIGNANT["occurrences"][0],
+         "relocation": {"toDay": "THURSDAY", "toStartTime": "10:00"}}
+    ]}
+    handlers = handlers_sur(explication([tronquee]))
+
+    await handlers.explain_violations()
+
+    assert handlers.cited_conflicts[0].relocation is None
+
+
+async def test_deux_appels_ne_cumulent_pas_les_conflits():
+    """
+    Le modèle peut rappeler l'outil dans le même tour — la boucle l'autorise.
+    Sans remise à zéro, le directeur verrait chaque conflit deux fois.
+    """
+    handlers = handlers_sur(explication([CONFLIT_ENSEIGNANT]))
+
+    await handlers.explain_violations()
+    await handlers.explain_violations()
+
+    assert len(handlers.cited_conflicts) == 1
+
+
+async def test_la_severite_suit_le_niveau_de_la_violation():
+    handlers = handlers_sur(explication([CONFLIT_ENSEIGNANT], cle="softViolations"))
+
+    await handlers.explain_violations()
+
+    assert handlers.cited_conflicts[0].severity == "SOFT"
+
+
+async def test_le_texte_rendu_au_modele_ne_contient_aucune_structure():
+    """
+    Le garde-fou de l'étape 4 : `occurrences` ne doit jamais atteindre le prompt.
+
+    Un 7B qui navigue dans un objet imbriqué se trompe de champ et annonce un
+    identifiant qui n'existe pas. Le modèle reçoit des phrases ; les
+    identifiants passent à côté de lui, par `cited_conflicts`.
+    """
+    handlers = handlers_sur(explication([CONFLIT_ENSEIGNANT]))
+
+    texte = await handlers.explain_violations()
+
+    for interdit in ("sessionId", "lessonId", "toSlotId", "occurrences", "{"):
+        assert interdit not in texte
+    # Ce que le modèle voit, en revanche : le constat et le remède, en clair.
+    assert "Conflit d'enseignant" in texte
+    assert RELOCATION["text"] in texte
+
+
+async def test_le_nombre_d_occurrences_citees_est_borne():
+    """Au-delà de quelques puces, le directeur ne lit plus, il fait défiler."""
+    beaucoup = {**CONFLIT_ENSEIGNANT,
+                "occurrences": CONFLIT_ENSEIGNANT["occurrences"] * 10}
+    handlers = handlers_sur(explication([beaucoup]))
+
+    await handlers.explain_violations()
+
+    assert len(handlers.cited_conflicts) == MAX_OCCURRENCES_CITED
+
+
+class FakeLoop:
+    """
+    Une boucle d'outils qui appelle l'outil, comme le modèle le ferait.
+
+    Elle ne rend au « modèle » que le texte du handler — c'est justement le
+    contrat qu'on veut tenir : la structure passe à côté de la boucle.
+    """
+
+    async def run(self, question, system_prompt, tool_definitions, registry,
+                  no_tool_message, exhausted_message):
+        self.texte_vu = await registry["explain_violations"]()
+        return ChatResponse(
+            answer="Deux cours du même professeur se chevauchent lundi à 8 h.",
+            tools_used=["explain_violations"],
+            duration_ms=1234,
+        )
+
+
+async def test_ask_rattache_les_designations_a_la_reponse():
+    """
+    Le bout de chaîne : ce que le handler a désigné arrive jusqu'à l'interface.
+
+    Les conflits sont relus sur l'objet handler après la boucle, et non extraits
+    de la génération : c'est ce qui garantit qu'aucun identifiant affiché ne
+    vient du modèle.
+    """
+    loop = FakeLoop()
+    service = PlanningAssistantService(
+        loop,
+        FakeExplanationBackend(explication([CONFLIT_ENSEIGNANT])),
+        translator=None,
+    )
+
+    reponse = await service.ask("pourquoi ce planning n'est-il pas bon ?", "tok")
+
+    assert isinstance(reponse, PlanningChatResponse)
+    assert reponse.answer.startswith("Deux cours")
+    # Ce que la boucle porte déjà ne doit pas se perdre au passage.
+    assert reponse.tools_used == ["explain_violations"]
+    assert reponse.duration_ms == 1234
+    # Et ce que le code a désigné arrive en plus.
+    assert len(reponse.conflicts) == 1
+    assert reponse.conflicts[0].relocation.text == RELOCATION["text"]
+    assert [s.session_id for s in reponse.conflicts[0].sessions] == [1001, 1002]
+
+
+async def test_les_identifiants_ne_sont_jamais_passes_au_modele():
+    loop = FakeLoop()
+    service = PlanningAssistantService(
+        loop,
+        FakeExplanationBackend(explication([CONFLIT_ENSEIGNANT])),
+        translator=None,
+    )
+
+    reponse = await service.ask("où sont les conflits ?", "tok")
+
+    # Le texte qu'a vu la boucle ne porte aucun identifiant…
+    assert "1001" not in loop.texte_vu
+    # …alors que la réponse rendue à l'interface, si.
+    assert reponse.conflicts[0].sessions[0].session_id == 1001

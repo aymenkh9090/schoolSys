@@ -1,0 +1,9 @@
+databaseChangeLog:
+  - include:
+      file: db/changelog.pointage/001-creation-presence-personnel.yaml
+  - include:
+      file: db/changelog.pointage/002-creation-justificatif-pointage.yaml
+  - include:
+      file: db/changelog.pointage/003-creation-suivi-heures-enseignant.yaml
+  - include:
+      file: db/changelog.pointage/004-ajout-periode-presence-personnel.yaml

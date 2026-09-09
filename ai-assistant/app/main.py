@@ -35,7 +35,10 @@ from app.models import (
     ConstraintProposalRequest,
     ConstraintProposalResponse,
     HealthSnapshot,
+    MetricTrends,
     PlanningChatRequest,
+    PlanningChatResponse,
+    TimeWindow,
 )
 from app.services.assistant import AssistantService, ToolLoop
 from app.services.cahier_assistant import CahierAssistantService
@@ -255,6 +258,22 @@ async def platform_health(
     return await state["metrics"].get_snapshot(window)
 
 
+@app.get("/api/monitoring/trends", response_model=MetricTrends, tags=["monitoring"])
+async def platform_trends(
+    window: TimeWindow = "1h",
+    user: dict = Depends(require_super_admin),
+):
+    """
+    La forme récente de chaque mesure — douze points par métrique.
+
+    Séparée de `/health` volontairement : celle-ci est rafraîchie toutes les
+    quinze secondes, alors qu'une tendance sur une heure ne change pas d'un
+    quart de minute. Les fusionner ferait réévaluer cinq requêtes de plage à
+    chaque battement, pour un tracé identique.
+    """
+    return MetricTrends(window=window, trends=await state["metrics"].get_trends(window))
+
+
 @app.get("/api/monitoring/slowest-endpoints", tags=["monitoring"])
 async def slowest_endpoints(
     window: str = "1h",
@@ -285,7 +304,11 @@ async def chat(
 # valide et enregistre.
 
 
-@app.post("/api/planning/assistant/chat", response_model=ChatResponse, tags=["planning"])
+@app.post(
+    "/api/planning/assistant/chat",
+    response_model=PlanningChatResponse,
+    tags=["planning"],
+)
 async def planning_chat(
     request: PlanningChatRequest,
     user: AuthenticatedUser = Depends(require_planning_user),
@@ -294,6 +317,11 @@ async def planning_chat(
     Question en langage naturel sur l'emploi du temps de son établissement.
 
     Lecture seule : les outils accessibles au modèle ne savent que lire.
+
+    `conflicts` porte les séances désignées et, quand un créneau convient, le
+    déplacement proposé. Ce champ est rempli par le code à partir de la réponse
+    du backend, jamais par le modèle : l'interface peut donc en faire des puces
+    cliquables sans craindre un identifiant inventé.
     """
     logger.info("Question Planning de %s : %r", user.username, request.message)
     return await state["planning"].ask(

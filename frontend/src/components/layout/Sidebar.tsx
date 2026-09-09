@@ -18,6 +18,7 @@ import {
   FileBarChart,
   SlidersHorizontal,
   Activity,
+  Clock,
 } from 'lucide-react'
 import { useAuth } from '@/hooks/useAuth'
 import { tenantApi } from '@/api/tenant.api'
@@ -120,6 +121,17 @@ function buildSchoolAdminNav(t: TFunction): NavEntry[] {
         { key: 'absenceStats', label: t('nav.statistics'), to: '/ecole/absences/stats' },
       ],
     },
+    {
+      key: 'attendance',
+      label: t('nav.attendance'),
+      icon: Clock,
+      children: [
+        { key: 'attendanceDaily', label: t('nav.attendanceDaily'), to: '/ecole/pointage' },
+        { key: 'staffJustifications', label: t('nav.staffJustifications'), to: '/ecole/pointage/justificatifs' },
+        { key: 'attendanceHistory', label: t('nav.attendanceHistory'), to: '/ecole/pointage/historique' },
+        { key: 'attendanceTeacherHours', label: t('nav.attendanceTeacherHours'), to: '/ecole/pointage/enseignants' },
+      ],
+    },
     { key: 'statistics', label: t('nav.statistics'), to: '/ecole/statistiques', icon: BarChart3 },
     { key: 'reports', label: t('nav.reports'), to: '/ecole/rapports', icon: FileBarChart },
     // Les réglages du compte ferment le menu : on n'y va qu'une fois de
@@ -153,6 +165,16 @@ function buildSurveillantNav(t: TFunction): NavEntry[] {
         { key: 'justifications', label: t('nav.justifications'), to: '/ecole/absences/justificatifs' },
         { key: 'rollcall', label: t('nav.rollcall'), to: '/ecole/absences/appel' },
         { key: 'absenceStats', label: t('nav.statistics'), to: '/ecole/absences/stats' },
+      ],
+    },
+    {
+      key: 'attendance',
+      label: t('nav.attendance'),
+      icon: Clock,
+      children: [
+        { key: 'attendanceDaily', label: t('nav.attendanceDaily'), to: '/ecole/pointage' },
+        { key: 'staffJustifications', label: t('nav.staffJustifications'), to: '/ecole/pointage/justificatifs' },
+        { key: 'attendanceHistory', label: t('nav.attendanceHistory'), to: '/ecole/pointage/historique' },
       ],
     },
     { key: 'planningView', label: t('nav.planningView'), to: '/ecole/planning/consultation', icon: TableProperties },
@@ -214,6 +236,7 @@ const CATEGORY_BY_KEY: Record<string, string> = {
   absences: 'nav.categoryFollowup',
   rollcall: 'nav.categoryFollowup',
   myClassLog: 'nav.categoryFollowup',
+  attendance: 'nav.categoryFollowup',
   statistics: 'nav.categoryAnalytics',
   reports: 'nav.categoryAnalytics',
 }

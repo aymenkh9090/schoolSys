@@ -20,7 +20,7 @@ mot pour mot.
 import logging
 
 from app.clients.backend import BackendClient
-from app.models import ChatResponse
+from app.models import PlanningChatResponse
 from app.services.assistant import ToolLoop
 from app.services.dsl_translator import ConstraintProposal, DslTranslator
 from app.tools.planning_definitions import TOOL_DEFINITIONS
@@ -75,19 +75,28 @@ class PlanningAssistantService:
         token: str,
         school_year_id: int | None = None,
         profile_id: int | None = None,
-    ) -> ChatResponse:
+    ) -> PlanningChatResponse:
         # Handlers construits par requête, liés au jeton de l'appelant : le
         # tenant n'est jamais un paramètre que le modèle pourrait choisir.
         handlers = PlanningToolHandlers(
             self._backend, token, school_year_id, profile_id
         )
-        return await self._loop.run(
+        reponse = await self._loop.run(
             question=question,
             system_prompt=SYSTEM_PROMPT,
             tool_definitions=TOOL_DEFINITIONS,
             registry=handlers.as_registry(),
             no_tool_message=NO_TOOL_MESSAGE,
             exhausted_message=EXHAUSTED_MESSAGE,
+        )
+        # Les désignations sont relues APRÈS la boucle, sur l'objet handler que
+        # cette requête a construit. C'est ce qui garantit qu'elles n'ont pas
+        # transité par le modèle : rien de cette structure n'est jamais entré
+        # dans un prompt ni sorti d'une génération. Le modèle raconte, le code
+        # désigne — et la frontière est ici.
+        return PlanningChatResponse(
+            **reponse.model_dump(),
+            conflicts=handlers.cited_conflicts,
         )
 
     # ── proposition de règle ──────────────────────────────────────────────────

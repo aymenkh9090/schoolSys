@@ -53,9 +53,101 @@ class HealthSnapshot(BaseModel):
     issues: list[str] = []
 
 
+class MetricTrends(BaseModel):
+    """
+    La forme récente des mesures, pour la vignette de tendance des tuiles KPI.
+
+    Un chiffre seul ne dit pas s'il monte. « 78 % de mémoire » se lit tout
+    autrement selon qu'on venait de 40 % ou de 82 % : dans le premier cas
+    quelque chose se passe, dans le second cela redescend.
+
+    Les points sont dans l'unité d'affichage de la tuile — pourcentage,
+    millisecondes — et non dans celle de Prometheus : la courbe et le chiffre
+    posé au-dessus d'elle doivent parler de la même chose.
+
+    Une métrique sans donnée est **absente** de `trends`, jamais présente avec
+    une liste vide. L'interface n'affiche alors aucune courbe, au lieu d'une
+    ligne plate qui se lirait comme une mesure stable.
+    """
+
+    window: TimeWindow
+
+    # Clés : memory, cpu, latency, errors, throughput — celles de HISTORY_METRICS.
+    trends: dict[str, list[float]] = {}
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Module Planning
 # ─────────────────────────────────────────────────────────────────────────────
+
+class CitedSession(BaseModel):
+    """
+    Une séance que l'assistant désigne — pas qu'il décrit.
+
+    Tous les champs viennent du backend, recopiés tels quels. Le modèle n'y
+    touche pas : il n'a jamais vu cette structure, et c'est délibéré (voir
+    `CitedConflict`).
+    """
+
+    session_id: int | None = None
+    lesson_id: int | None = None
+    subject_name: str | None = None
+    class_name: str | None = None
+    teacher_name: str | None = None
+    room_code: str | None = None
+    day: str | None = None
+    start_time: str | None = None
+    # 0 = classe entière, 1 = demi-groupe A, 2 = demi-groupe B.
+    group_index: int = 0
+
+
+class CitedRelocation(BaseModel):
+    """
+    Un déplacement possible, calculé par le solveur — jamais rédigé par le modèle.
+
+    Le créneau d'arrivée a été vérifié libre pour l'enseignant, pour la classe,
+    et une salle du bon type y est disponible. `session_id` est la cible du
+    PATCH que l'interface déclenchera si le directeur accepte : rien ici n'est
+    appliqué, c'est une proposition.
+    """
+
+    session_id: int | None = None
+    to_day: str | None = None
+    to_start_time: str | None = None
+    to_slot_id: int | None = None
+    to_room_code: str | None = None
+    # La phrase construite côté Java, affichée telle quelle. Trois consommateurs
+    # la reformuleraient autrement, et une même proposition dite de trois façons
+    # devient trois propositions aux yeux de qui la lit.
+    text: str
+
+
+class CitedConflict(BaseModel):
+    """
+    Un conflit désigné : la règle enfreinte, les séances en cause, le remède.
+
+    **Cette structure n'entre jamais dans le prompt.** Un modèle de 7 milliards
+    de paramètres qui navigue dans un objet imbriqué se trompe de champ et
+    annonce un score qui n'existe pas — c'est la raison d'être du texte
+    pré-interprété que les handlers rendent au modèle. Elle est remplie par le
+    code Python, en marge de la boucle d'outils, à partir de la réponse du
+    backend.
+
+    Le modèle raconte ; le code désigne.
+    """
+
+    # Le libellé lisible de la contrainte, ex. « Conflit d'enseignant ».
+    constraint: str
+    # HARD, MEDIUM ou SOFT — seul le premier rend un planning irremettable.
+    severity: str
+    # La phrase de l'occurrence, celle que le solveur produit.
+    label: str
+    sessions: list[CitedSession] = []
+    # Absent quand aucun créneau ne convient : fréquent sur un établissement
+    # saturé, et c'est une information en soi — le conflit ne se règle pas en
+    # déplaçant une case.
+    relocation: CitedRelocation | None = None
+
 
 class PlanningChatRequest(BaseModel):
     """Question sur l'emploi du temps de SON établissement."""
@@ -271,3 +363,16 @@ class CoursChatRequest(BaseModel):
     # mais une consigne pédagogique détaillée peut être longue.
     message: str = Field(..., min_length=1, max_length=1000)
     historique: list[CoursChatMessage] = []
+
+
+class PlanningChatResponse(ChatResponse):
+    """
+    La réponse du chat planning : la phrase du modèle, plus ce que le code désigne.
+
+    Distincte de `ChatResponse` plutôt qu'un champ de plus dessus : l'assistant
+    de supervision partage ce modèle et n'a aucun conflit d'emploi du temps à
+    porter. Un champ toujours vide chez l'un des deux consommateurs finit par
+    être lu comme un oubli.
+    """
+
+    conflicts: list[CitedConflict] = []

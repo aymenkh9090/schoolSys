@@ -47,6 +47,12 @@ import StatistiquesAbsences from '@/features/absence/StatistiquesAbsences'
 import CahiersSeance from '@/features/absence/CahiersSeance'
 import PilotagePedagogique from '@/features/absence/PilotagePedagogique'
 
+// Pointage
+import PointageJournalier from '@/features/pointage/PointageJournalier'
+import HistoriquePointage from '@/features/pointage/HistoriquePointage'
+import JustificatifsPointage from '@/features/pointage/JustificatifsPointage'
+import SuiviHeuresEnseignants from '@/features/pointage/SuiviHeuresEnseignants'
+
 
 // Statistiques
 import DashboardStatistiques from '@/features/statistiques/DashboardStatistiques'
@@ -158,6 +164,12 @@ export const router = createBrowserRouter([
       { path: 'absences/suivi', element: <Navigate to="/ecole/absences/justificatifs" replace /> },
       { path: 'absences/stats', element: <StatistiquesAbsences /> },
       { path: 'absences', element: <Navigate to="absences/appel" replace /> },
+
+      // Pointage
+      { path: 'pointage', element: <PointageJournalier /> },
+      { path: 'pointage/justificatifs', element: <JustificatifsPointage /> },
+      { path: 'pointage/historique', element: <HistoriquePointage /> },
+      { path: 'pointage/enseignants', element: <SuiviHeuresEnseignants /> },
 
 
       // Statistiques & rapports

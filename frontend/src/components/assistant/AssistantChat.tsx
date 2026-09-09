@@ -1,7 +1,18 @@
 import { useEffect, useRef, useState } from 'react'
-import { BookOpen, Bot, ChevronDown, Database, Eye, Send, ShieldCheck, Timer } from 'lucide-react'
+import {
+  ArrowRight,
+  BookOpen,
+  Bot,
+  ChevronDown,
+  Database,
+  Eye,
+  Send,
+  ShieldCheck,
+  Timer,
+  TriangleAlert,
+} from 'lucide-react'
 
-import type { ChatResponse, ConsigneArticle } from '@/api/aiAssistant.api'
+import type { ChatResponse, ConflitDesigne, ConsigneArticle } from '@/api/aiAssistant.api'
 import { useAuth } from '@/hooks/useAuth'
 import { cn } from '@/lib/utils'
 import { ReponseMarkdown } from './ReponseMarkdown'
@@ -16,6 +27,12 @@ import { ReponseMarkdown } from './ReponseMarkdown'
  */
 export interface ReponseAssistant extends ChatResponse {
   sources?: ConsigneArticle[]
+  /**
+   * `conflicts` n'existe que pour l'emploi du temps : c'est le seul assistant
+   * dont la réponse porte des objets que l'utilisateur peut aller corriger.
+   * Rempli par le service Python à partir du solveur, jamais par le modèle.
+   */
+  conflicts?: ConflitDesigne[]
 }
 
 export interface Suggestion {
@@ -55,6 +72,7 @@ interface Message {
   toolsUsed?: string[]
   durationMs?: number
   sources?: ConsigneArticle[]
+  conflicts?: ConflitDesigne[]
   /** Vrai quand le service n'a pas répondu : la bulle prend l'habillage d'alerte. */
   failed?: boolean
 }
@@ -127,6 +145,7 @@ export function AssistantChat({
           toolsUsed: res.tools_used,
           durationMs: res.duration_ms,
           sources: res.sources,
+          conflicts: res.conflicts,
         },
       ])
     } catch {
@@ -367,6 +386,10 @@ function Bubble({ message, initials }: { message: Message; initials: string }) {
           <SourcesCitees sources={message.sources} />
         )}
 
+        {message.conflicts && message.conflicts.length > 0 && (
+          <ConflitsDesignes conflits={message.conflicts} />
+        )}
+
         {/* Transparence : l'utilisateur voit sur quelles données la réponse
             s'appuie. Sans cela, un chiffre juste et un chiffre inventé se
             présentent exactement de la même façon. */}
@@ -388,6 +411,111 @@ function Bubble({ message, initials }: { message: Message; initials: string }) {
           </div>
         )}
       </div>
+    </div>
+  )
+}
+
+const JOURS: Record<string, string> = {
+  MONDAY: 'Lundi',
+  TUESDAY: 'Mardi',
+  WEDNESDAY: 'Mercredi',
+  THURSDAY: 'Jeudi',
+  FRIDAY: 'Vendredi',
+  SATURDAY: 'Samedi',
+  SUNDAY: 'Dimanche',
+}
+
+/** « MONDAY » + « 08:00 » → « Lundi 08:00 ». Le jour inconnu est rendu tel quel. */
+function quand(jour: string | null, heure: string | null): string {
+  const libelle = jour ? (JOURS[jour] ?? jour) : ''
+  return [libelle, heure].filter(Boolean).join(' ')
+}
+
+const GROUPES: Record<number, string> = { 1: 'Groupe A', 2: 'Groupe B' }
+
+/**
+ * Les conflits que la réponse désigne, et le déplacement qui les lèverait.
+ *
+ * <h4>Pourquoi ce bloc existe à côté de la réponse, et non dedans</h4>
+ *
+ * La phrase du modèle raconte : « deux cours du même professeur se chevauchent
+ * lundi à 8 h ». Elle ne se clique pas, ne se surligne pas, et laisse le
+ * directeur retrouver les deux séances à la main dans une grille de vingt-trois
+ * classes. Ce bloc, lui, ne vient pas du modèle : le service Python le remplit à
+ * partir de ce que le solveur a incriminé, identifiants compris. Le modèle
+ * raconte ; le code désigne.
+ *
+ * <h4>La proposition dit ce qui a été vérifié</h4>
+ *
+ * « Créneau libre pour l'enseignant et pour la classe » est un fait, contrôlé
+ * sur la solution par le backend. Ce n'est pas une promesse que le planning ira
+ * mieux : un déplacement peut dégrader une contrainte souple, et l'arbitrage
+ * revient au directeur. La phrase est donc affichée telle que le backend l'a
+ * construite, sans reformulation — la nuance décide de la confiance qu'on
+ * accordera aux propositions suivantes.
+ *
+ * <h4>Ce que ce bloc ne fait pas encore</h4>
+ *
+ * Il ne déplace rien, et ne se clique pas. Le surlignage dans la grille est
+ * l'étape suivante du plan ; tant qu'il n'existe pas, rendre ces lignes
+ * cliquables offrirait un geste sans destination. Un bouton qui ne mène nulle
+ * part coûte plus cher que pas de bouton.
+ */
+function ConflitsDesignes({ conflits }: { conflits: ConflitDesigne[] }) {
+  return (
+    <div className="w-full overflow-hidden rounded-xl border border-amber-200/70 bg-amber-50/40 dark:border-amber-500/25 dark:bg-amber-500/5">
+      <p className="flex items-center gap-1.5 border-b border-amber-200/70 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-amber-800 dark:border-amber-500/25 dark:text-amber-300">
+        <TriangleAlert size={12} />
+        {conflits.length === 1 ? 'Conflit désigné' : `${conflits.length} conflits désignés`}
+      </p>
+
+      <ul className="divide-y divide-amber-200/60 dark:divide-amber-500/20">
+        {conflits.map((conflit, index) => (
+          <li key={`${conflit.constraint}-${index}`} className="space-y-1.5 px-3 py-2.5">
+            <div className="flex items-center gap-2">
+              {/* Seul le niveau HARD rend un planning irremettable : le dire
+                  évite de faire courir le directeur après une préférence. */}
+              <span
+                className={cn(
+                  'shrink-0 rounded-md px-1.5 py-0.5 text-[10px] font-semibold uppercase shadow-sm',
+                  conflit.severity === 'HARD'
+                    ? 'bg-white text-amber-800 dark:bg-slate-800 dark:text-amber-300'
+                    : 'bg-white/70 text-brand-textMuted dark:bg-slate-800/70 dark:text-slate-400'
+                )}
+              >
+                {conflit.severity === 'HARD' ? 'bloquant' : conflit.severity.toLowerCase()}
+              </span>
+              <span className="min-w-0 flex-1 truncate text-xs font-medium text-brand-text dark:text-slate-200">
+                {conflit.constraint}
+              </span>
+            </div>
+
+            <ul className="space-y-1">
+              {conflit.sessions.map((seance, rang) => (
+                <li
+                  key={seance.session_id ?? seance.lesson_id ?? rang}
+                  className="flex flex-wrap items-baseline gap-x-1.5 text-xs text-brand-textMuted dark:text-slate-400"
+                >
+                  <span className="font-medium text-brand-text dark:text-slate-300">
+                    {[seance.subject_name, seance.class_name].filter(Boolean).join(' · ')}
+                  </span>
+                  <span>{quand(seance.day, seance.start_time)}</span>
+                  {seance.teacher_name && <span>· {seance.teacher_name}</span>}
+                  {seance.room_code && <span>· salle {seance.room_code}</span>}
+                  {seance.group_index > 0 && <span>· {GROUPES[seance.group_index]}</span>}
+                </li>
+              ))}
+            </ul>
+
+            {conflit.relocation && (
+              <p className="flex items-start gap-1.5 rounded-lg bg-white/70 px-2.5 py-1.5 text-xs leading-relaxed text-brand-text dark:bg-slate-900/50 dark:text-slate-200">
+                <ArrowRight size={13} className="mt-0.5 shrink-0 text-amber-700 dark:text-amber-400" />
+                {conflit.relocation.text}
+              </p>
+            )}
+          </li>
+        ))}
+      </ul>
     </div>
   )
 }

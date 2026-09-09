@@ -5,7 +5,11 @@ WORKDIR /build
 COPY package.json package-lock.json ./
 # `npm ci` et non `npm install` : installation reproductible à partir du
 # lock-file, et échec net si package.json et lock-file divergent.
-RUN npm ci
+#
+# `npm ci` efface node_modules avant d'installer : sans le cache BuildKit, la
+# moindre modification du lock-file relançait un téléchargement complet du
+# registre. Le cache vit hors des couches et n'est pas invalidé avec elles.
+RUN --mount=type=cache,target=/root/.npm npm ci
 
 COPY . .
 

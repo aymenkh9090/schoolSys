@@ -1,0 +1,133 @@
+databaseChangeLog:
+  - changeSet:
+      id: 001-pointage-seq-presence-personnel
+      author: smartschool
+      changes:
+        - createSequence:
+            sequenceName: seq_presence_personnel_id
+            startValue: 1
+            incrementBy: 1
+
+  - changeSet:
+      id: 001-pointage-table-presence-personnel
+      author: smartschool
+      changes:
+        - createTable:
+            tableName: presence_personnel
+            columns:
+              - column:
+                  name: id
+                  type: BIGINT
+                  constraints:
+                    primaryKey: true
+                    primaryKeyName: pk_presence_personnel
+                    nullable: false
+              - column:
+                  name: tenant_id
+                  type: VARCHAR(100)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: membre_personnel_id
+                  type: BIGINT
+                  constraints:
+                    nullable: false
+              - column:
+                  name: type_personnel
+                  type: VARCHAR(50)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: date_pointage
+                  type: DATE
+                  constraints:
+                    nullable: false
+              - column:
+                  name: heure_arrivee
+                  type: TIME
+              - column:
+                  name: heure_depart
+                  type: TIME
+              - column:
+                  name: statut
+                  type: VARCHAR(50)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: minutes_retard
+                  type: INTEGER
+              - column:
+                  name: note
+                  type: TEXT
+              - column:
+                  name: saisi_par
+                  type: VARCHAR(255)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: saisi_a
+                  type: TIMESTAMP
+                  constraints:
+                    nullable: false
+              - column:
+                  name: created_at
+                  type: TIMESTAMP
+                  defaultValueComputed: CURRENT_TIMESTAMP
+                  constraints:
+                    nullable: false
+              - column:
+                  name: updated_at
+                  type: TIMESTAMP
+                  defaultValueComputed: CURRENT_TIMESTAMP
+                  constraints:
+                    nullable: false
+              - column:
+                  name: created_by
+                  type: VARCHAR(120)
+                  defaultValue: system
+                  constraints:
+                    nullable: false
+              - column:
+                  name: updated_by
+                  type: VARCHAR(120)
+                  defaultValue: system
+                  constraints:
+                    nullable: false
+              - column:
+                  name: version
+                  type: INTEGER
+                  defaultValueNumeric: 0
+        - addUniqueConstraint:
+            tableName: presence_personnel
+            columnNames: tenant_id, membre_personnel_id, date_pointage
+            constraintName: uq_presence_personnel_tenant_membre_date
+        - createIndex:
+            tableName: presence_personnel
+            indexName: idx_presence_personnel_tenant
+            columns:
+              - column:
+                  name: tenant_id
+        - createIndex:
+            tableName: presence_personnel
+            indexName: idx_presence_personnel_date
+            columns:
+              - column:
+                  name: tenant_id
+              - column:
+                  name: date_pointage
+        - createIndex:
+            tableName: presence_personnel
+            indexName: idx_presence_personnel_membre
+            columns:
+              - column:
+                  name: tenant_id
+              - column:
+                  name: membre_personnel_id
+        - createIndex:
+            tableName: presence_personnel
+            indexName: idx_presence_personnel_statut
+            columns:
+              - column:
+                  name: tenant_id
+              - column:
+                  name: statut

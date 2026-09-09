@@ -15,6 +15,7 @@ tenant n'est pas un paramètre, c'est une propriété du jeton.
 import logging
 
 from app.clients.backend import BackendClient, BackendError
+from app.models import CitedConflict, CitedRelocation, CitedSession
 
 logger = logging.getLogger(__name__)
 
@@ -26,6 +27,11 @@ MAX_CONSTRAINTS_LISTED = 20
 MAX_VIOLATIONS_LISTED = 6
 MAX_EXAMPLES_PER_VIOLATION = 3
 
+# Occurrences désignées par violation. Ce ne sont PAS des lignes de prompt —
+# elles ne partent pas au modèle — mais des puces d'interface : au-delà, le
+# directeur ne lit plus, il fait défiler.
+MAX_OCCURRENCES_CITED = 3
+
 
 def _sanitize_level(level: str | None) -> str:
     """On ne fait jamais confiance à un argument venant du LLM."""
@@ -36,6 +42,40 @@ def _sanitize_level(level: str | None) -> str:
         logger.info("Niveau invalide du LLM : %r → repli sur ALL", level)
         return "ALL"
     return normalized
+
+
+def _to_cited_session(session: dict) -> CitedSession:
+    return CitedSession(
+        session_id=session.get("sessionId"),
+        lesson_id=session.get("lessonId"),
+        subject_name=session.get("subjectName") or session.get("subjectCode"),
+        class_name=session.get("className"),
+        teacher_name=session.get("teacherName"),
+        room_code=session.get("roomCode"),
+        day=session.get("day"),
+        start_time=session.get("startTime"),
+        group_index=session.get("groupIndex") or 0,
+    )
+
+
+def _to_cited_relocation(relocation: dict | None) -> CitedRelocation | None:
+    """
+    Sans `text`, il n'y a pas de proposition.
+
+    Le champ porte la phrase construite par le backend, seule à énoncer ce qui a
+    été vérifié. Fabriquer ici une phrase de remplacement à partir des
+    coordonnées reviendrait à réécrire une garantie qu'on n'a pas donnée.
+    """
+    if not relocation or not relocation.get("text"):
+        return None
+    return CitedRelocation(
+        session_id=relocation.get("sessionId"),
+        to_day=relocation.get("toDay"),
+        to_start_time=relocation.get("toStartTime"),
+        to_slot_id=relocation.get("toSlotId"),
+        to_room_code=relocation.get("toRoomCode"),
+        text=relocation["text"],
+    )
 
 
 class PlanningToolHandlers:
@@ -50,6 +90,12 @@ class PlanningToolHandlers:
         self._token = token
         self._school_year_id = school_year_id
         self._profile_id = profile_id
+
+        # Ce que le code désigne, en marge de ce que le modèle raconte. Rempli
+        # par explain_violations à partir de la réponse du backend, jamais par
+        # le modèle — qui ne voit que du texte déjà interprété. L'appelant le
+        # relit après la boucle d'outils : voir PlanningAssistantService.ask.
+        self.cited_conflicts: list[CitedConflict] = []
 
     # ── état général ──────────────────────────────────────────────────────────
 
@@ -93,6 +139,11 @@ class PlanningToolHandlers:
         except BackendError as exc:
             return f"Score explanation unavailable: {exc.detail}"
 
+        # Une nouvelle explication remplace la précédente : le modèle peut
+        # rappeler l'outil dans le même tour, et deux collectes cumulées
+        # afficheraient chaque conflit en double.
+        self.cited_conflicts = []
+
         score = explanation.get("score") or "unknown"
         feasible = explanation.get("feasible")
         lines = [
@@ -124,6 +175,7 @@ class PlanningToolHandlers:
                     lines.append(f"      · {example}")
                 if violation.get("suggestion"):
                     lines.append(f"      → {violation['suggestion']}")
+                self._cite(violation, name)
 
         if reported == 0:
             return (
@@ -131,6 +183,30 @@ class PlanningToolHandlers:
                 f"No violation at the requested level ({wanted})."
             )
         return "\n".join(lines)
+
+    # ── désignation, en marge du texte rendu au modèle ────────────────────────
+
+    def _cite(self, violation: dict, severity: str) -> None:
+        """
+        Recopie les occurrences du backend dans la liste destinée à l'interface.
+
+        Rien n'est calculé ici, et surtout rien n'est reformulé : les
+        coordonnées comme la phrase de proposition viennent du solveur, qui seul
+        sait quel créneau est libre. Cette fonction ne fait que transporter.
+        """
+        libelle = violation.get("label") or violation.get("constraintName") or "Contrainte"
+        for occurrence in (violation.get("occurrences") or [])[:MAX_OCCURRENCES_CITED]:
+            self.cited_conflicts.append(
+                CitedConflict(
+                    constraint=libelle,
+                    severity=severity,
+                    label=occurrence.get("label") or libelle,
+                    sessions=[
+                        _to_cited_session(s) for s in (occurrence.get("sessions") or [])
+                    ],
+                    relocation=_to_cited_relocation(occurrence.get("relocation")),
+                )
+            )
 
     # ── contraintes actives ───────────────────────────────────────────────────
 

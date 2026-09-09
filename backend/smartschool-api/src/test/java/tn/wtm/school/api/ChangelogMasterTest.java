@@ -39,41 +39,80 @@ class ChangelogMasterTest {
 
     private static final String MASTER_APPLICATIF = "db.changelog/db.changelog-master.yaml";
     private static final String MASTER_PLANNING   = "db/changelog.planing/db.changelog-master.yaml";
+    private static final String MASTER_POINTAGE   = "db/changelog.pointage/db.changelog-master.yaml";
 
     @Test
     @DisplayName("Le master applicatif délègue au master planning")
     void delegueAuMasterPlanning() {
-        assertThat(lignes(MASTER_APPLICATIF))
-                .as("""
-                    Le changelog chargé par Spring doit inclure le master du module planning,
-                    et non recopier ses migrations une par une : c'est la seule façon qu'il ait
-                    d'être à jour le jour où le module en ajoute une.""")
-                .anyMatch(l -> l.contains(MASTER_PLANNING));
+        verifieDelegation(MASTER_PLANNING);
     }
 
     @Test
     @DisplayName("Aucune migration planning n'est recopiée à côté")
-    void aucuneMigrationRecopiee() {
-        List<String> recopiees = lignes(MASTER_APPLICATIF).stream()
-                .filter(l -> l.contains("db/changelog.planing/"))
-                .filter(l -> !l.contains(MASTER_PLANNING))
-                .toList();
-
-        assertThat(recopiees)
-                .as("""
-                    Ces migrations sont citées à la main dans le master applicatif alors que le
-                    master planning les inclut déjà. Une liste doublée est une liste qui
-                    divergera : retirez-les et laissez l'include faire son travail.""")
-                .isEmpty();
+    void aucuneMigrationPlanningRecopiee() {
+        verifieAucuneRecopie("db/changelog.planing/", MASTER_PLANNING);
     }
 
     @Test
     @DisplayName("Le master planning est bien sur le classpath de l'application")
     void masterPlanningPresentSurLeClasspath() {
+        verifiePresenceSurClasspath(MASTER_PLANNING);
+    }
+
+    // ── Pointage ────────────────────────────────────────────────────────────
+    // Le module a été réinséré sans son include : les tables pointage_* ne
+    // devaient leur existence qu'à `ddl-auto: update`, et en prod, où
+    // application-prod.yml impose `validate`, l'application n'aurait pas
+    // démarré. Ces trois cas verrouillent la correction.
+
+    @Test
+    @DisplayName("Le master applicatif délègue au master pointage")
+    void delegueAuMasterPointage() {
+        verifieDelegation(MASTER_POINTAGE);
+    }
+
+    @Test
+    @DisplayName("Aucune migration pointage n'est recopiée à côté")
+    void aucuneMigrationPointageRecopiee() {
+        verifieAucuneRecopie("db/changelog.pointage/", MASTER_POINTAGE);
+    }
+
+    @Test
+    @DisplayName("Le master pointage est bien sur le classpath de l'application")
+    void masterPointagePresentSurLeClasspath() {
+        verifiePresenceSurClasspath(MASTER_POINTAGE);
+    }
+
+    // ── Les trois questions, posées une fois pour tous les modules ───────────
+
+    private static void verifieDelegation(String masterModule) {
+        assertThat(lignes(MASTER_APPLICATIF))
+                .as("""
+                    Le changelog chargé par Spring doit inclure %s,
+                    et non recopier ses migrations une par une : c'est la seule façon qu'il ait
+                    d'être à jour le jour où le module en ajoute une.""", masterModule)
+                .anyMatch(l -> l.contains(masterModule));
+    }
+
+    private static void verifieAucuneRecopie(String prefixe, String masterModule) {
+        List<String> recopiees = lignes(MASTER_APPLICATIF).stream()
+                .filter(l -> l.contains(prefixe))
+                .filter(l -> !l.contains(masterModule))
+                .toList();
+
+        assertThat(recopiees)
+                .as("""
+                    Ces migrations sont citées à la main dans le master applicatif alors que
+                    %s les inclut déjà. Une liste doublée est une liste qui
+                    divergera : retirez-les et laissez l'include faire son travail.""", masterModule)
+                .isEmpty();
+    }
+
+    private static void verifiePresenceSurClasspath(String masterModule) {
         // L'include ne vaut que si le fichier voyage avec l'application : il vit
-        // dans le jar du module planning, pas dans celui-ci.
-        assertThat(ChangelogMasterTest.class.getClassLoader().getResource(MASTER_PLANNING))
-                .as("le master planning doit être livré dans le classpath applicatif")
+        // dans le jar du module, pas dans celui-ci.
+        assertThat(ChangelogMasterTest.class.getClassLoader().getResource(masterModule))
+                .as("%s doit être livré dans le classpath applicatif", masterModule)
                 .isNotNull();
     }
 

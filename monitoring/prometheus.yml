@@ -20,7 +20,12 @@ scrape_configs:
       # Nécessite extra_hosts dans docker-compose.yml sous Linux.
       # Port 9091 = management.server.port (application.yml), et non 8080 :
       # l'actuator est exposé sur un port séparé de l'API métier.
-      - targets: ['host.docker.internal:9091']
+      # Deux cibles pour les deux modes de lancement. Une seule répond à la
+      # fois : l'autre apparaît DOWN dans /targets, c'est attendu.
+      #   host.docker.internal → API lancée dans l'IDE (nécessite extra_hosts
+      #                          dans docker-compose.yml sous Linux)
+      #   backend              → API en conteneur (docker compose --profile app)
+      - targets: ['host.docker.internal:9091', 'backend:9091']
         labels:
           application: 'smartschool-api'
           environment: 'demo'

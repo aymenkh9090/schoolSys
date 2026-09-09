@@ -109,7 +109,7 @@ export function LoginScreen() {
                 autoCorrect={false}
                 keyboardType="numbers-and-punctuation"
                 placeholder={DEFAULT_HOST}
-                hint="IP du portable sur le réseau local — le téléphone ne peut pas joindre « localhost ». Ports 8080 (API), 8081 (Keycloak) et 8001 (assistant)."
+                hint="IP du portable sur le réseau local — le téléphone ne peut pas joindre « localhost ». Ports 8080 (API), 8081 (Keycloak) et 8000 (assistant)."
               />
             </View>
           )}

@@ -160,10 +160,23 @@ public class Lesson {
 
     /** Exclusive end time = start + durationSlots × 30 min, or null if unplaced. */
     public java.time.LocalTime getEndTime() {
-        if (timeSlot == null || timeSlot.getStartTime() == null) {
+        return endTimeIfPlacedAt(timeSlot);
+    }
+
+    /**
+     * Fin qu'aurait cette séance si elle était posée sur {@code slot} —
+     * <em>sans</em> l'y poser.
+     *
+     * <p>Existe pour la recherche de créneau de remplacement, qui doit évaluer
+     * des positions hypothétiques sur la meilleure solution en mémoire. Muter
+     * la leçon pour tester, puis la remettre en place, exposerait la solution
+     * partagée à un état incohérent le temps du test.
+     */
+    public java.time.LocalTime endTimeIfPlacedAt(TimeSlotRef slot) {
+        if (slot == null || slot.getStartTime() == null) {
             return null;
         }
-        return timeSlot.getStartTime().plusMinutes((long) SLOT_MINUTES * Math.max(1, durationSlots));
+        return slot.getStartTime().plusMinutes((long) SLOT_MINUTES * Math.max(1, durationSlots));
     }
 
     /**
@@ -177,17 +190,34 @@ public class Lesson {
      * un faux conflit.
      */
     public boolean overlapsInTime(Lesson other) {
-        if (timeSlot == null || other.timeSlot == null) {
+        return wouldOverlapAt(timeSlot, other);
+    }
+
+    /**
+     * Même question, posée d'un créneau où la séance n'est pas encore : si on la
+     * posait sur {@code slot}, heurterait-elle {@code other} ?
+     *
+     * <p>{@link #overlapsInTime} en est le cas particulier — le créneau actuel.
+     * Les deux passent par ici pour que la règle de chevauchement, parité de
+     * quinzaine comprise, n'existe qu'à un seul endroit : une recherche de
+     * remplacement qui recopierait le calcul finirait par proposer un créneau
+     * que les contraintes refusent, ou par en écarter un qui convenait.
+     */
+    public boolean wouldOverlapAt(TimeSlotRef slot, Lesson other) {
+        if (slot == null || other.timeSlot == null) {
             return false;
         }
-        if (timeSlot.getDay() != other.timeSlot.getDay()) {
+        if (slot.getDay() != other.timeSlot.getDay()) {
             return false;
         }
         if (!sharesWeeksWith(other)) {
             return false;
         }
-        java.time.LocalTime aStart = getStartTime(), aEnd = getEndTime();
+        java.time.LocalTime aStart = slot.getStartTime(), aEnd = endTimeIfPlacedAt(slot);
         java.time.LocalTime bStart = other.getStartTime(), bEnd = other.getEndTime();
+        if (aStart == null || aEnd == null || bStart == null || bEnd == null) {
+            return false;
+        }
         return aStart.isBefore(bEnd) && bStart.isBefore(aEnd);
     }
 }

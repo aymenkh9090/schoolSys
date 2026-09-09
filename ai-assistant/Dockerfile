@@ -15,6 +15,14 @@ ENV PYTHONUNBUFFERED=1 \
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
+# Le corpus de la circulaire, lu au démarrage par le service consigne
+# (`consigne_corpus_path`, cf. app/config.py). Sans cette ligne le conteneur
+# copiait le code sans ses données et sortait en erreur dès l'amorçage :
+#   FileNotFoundError: '/app/data/corpus-consigne-2024.md'
+# Il vient AVANT le code : le corpus bouge moins souvent que les sources, donc
+# une modification de `app/` ne réinvalide pas cette couche.
+COPY data/ ./data/
+
 COPY app/ ./app/
 
 # Pas de root dans le conteneur : le service n'écrit rien sur le disque.

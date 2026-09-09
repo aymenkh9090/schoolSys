@@ -32,10 +32,11 @@ cet ordre.
 ```bash
 cd ~/pfe/schoolSys
 
-# 1. Les 6 conteneurs, avec le nom d'hôte fixe pour Keycloak.
-#    Sans la surcouche, le mobile obtiendra un 401 sur tous les écrans.
+# 1. Les conteneurs, avec le nom d'hôte fixe pour Keycloak.
+#    Sans LAN_HOST, le mobile obtiendra un 401 sur tous les écrans.
+#    (LAN_HOST se met dans le .env de la racine ; l'export sert ici au shell.)
 export LAN_HOST=$(ip -4 addr show | grep -oP '(?<=inet )192\.168\.[0-9.]+' | head -1)
-docker compose -f docker-compose.yml -f docker-compose.mobile.yml up -d
+docker compose up -d
 
 # 2. L'API. Le secret se relit par l'API d'admin (commande dans mobile/README.md).
 export KC_CLIENT_SECRET="<secret du client smartschool-backend>"
@@ -43,11 +44,14 @@ export KEYCLOAK_ISSUER_URI="http://$LAN_HOST:8081/realms/smartschool"
 export KEYCLOAK_SERVER_URL="http://$LAN_HOST:8081"
 cd backend && mvn spring-boot:run -pl smartschool-api -Dspring-boot.run.profiles=demo
 
-# 3. L'assistant — celui du port 8001, pas le conteneur : Ollama n'écoute
-#    que sur le 127.0.0.1 de l'hôte, hors de portée du conteneur.
-cd ai-assistant
-export KEYCLOAK_ISSUER_URL="http://$LAN_HOST:8081/realms/smartschool"
-.venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8001
+# 3. L'assistant : rien à lancer, le conteneur de l'étape 1 le sert sur 8000.
+#    Prérequis posé une fois par machine — sans quoi le chat seul échoue :
+#    Ollama n'écoute que sur 127.0.0.1, hors de portée d'un conteneur.
+#      sudo mkdir -p /etc/systemd/system/ollama.service.d
+#      printf '[Service]\nEnvironment="OLLAMA_HOST=0.0.0.0"\n' \
+#        | sudo tee /etc/systemd/system/ollama.service.d/override.conf
+#      sudo systemctl daemon-reload && sudo systemctl restart ollama
+curl -s "http://$LAN_HOST:8000/health"   # doit afficher "ollama":true
 
 # 4. Le mobile. `npm start` impose le port 8082 : le 8081 est pris par Keycloak.
 cd mobile && npm start
@@ -79,9 +83,12 @@ CORS — une application native n'y est pas soumise — mais **l'émetteur du je
 Keycloak en `start-dev` le construit depuis l'en-tête `Host` : un jeton demandé
 depuis le téléphone porte `http://<ip>:8081/…` là où l'API attend
 `http://localhost:8081/…`. Résultat : connexion réussie, **401 sur tous les
-écrans**, sans rien qui explique pourquoi. `docker-compose.mobile.yml` fixe
-`KC_HOSTNAME` ; `application.yml` externalise `issuer-uri` et `server-url`, avec
-`localhost` par défaut — le web n'est pas touché.
+écrans**, sans rien qui explique pourquoi. La surcouche
+`docker-compose.mobile.yml` fixait `KC_HOSTNAME` ; elle a depuis été supprimée,
+`KC_HOSTNAME` étant passé dans le `docker-compose.yml` avec repli sur
+`localhost`, piloté par le seul `LAN_HOST`. `application.yml` externalise
+`issuer-uri` et `server-url`, avec `localhost` par défaut — le web n'est pas
+touché.
 
 ### Le § 5 est terminé.
 
@@ -275,7 +282,7 @@ Le projet réduit raconte **une seule histoire**, de bout en bout :
 | Module supprimé | Fichiers Java | Argument |
 |---|---|---|
 | `budget-business` | 41 | CRUD financier. Aucun lien avec l'emploi du temps ni avec la consigne. C'est un autre projet. |
-| `pointage-business` | 34 | Pointage du **personnel**. Redondant avec l'absence **élève**, qui est celle que la consigne encadre. |
+| ~~`pointage-business`~~ | 34 | Pointage du **personnel**. Retiré au recentrage, puis **réinséré le 8 septembre 2026** — voir `plan-recuperation-pointage.md`. L'argument de redondance avec l'absence **élève** ne vaut donc plus : la formulation de soutenance doit être reprise en conséquence. |
 | `audit-business` | 17 | Journal technique. Ne se démontre pas, ne se soutient pas. |
 | `notification-business` | 11 | Notifications persistées. La progression du solveur passe déjà par WebSocket (`SolverProgressWebSocketAdapter`), qui **ne dépend pas** de ce module. |
 
@@ -1156,6 +1163,96 @@ des coordonnées en `tn.schoolsys`.
 > CI existe pour attraper — une configuration qui ne marche que sur la machine
 > de son auteur. Aucun test unitaire ne l'aurait révélé.
 
+### 7.6 La couverture, là où elle manquait — ✅ FAIT
+
+Le § 7.2 désignait le vrai chantier de fond : *« la cible utile est
+`absence-business` — 14,8 % sur un module qui part en mobile, c'est le vrai
+trou »*. Le § 7.3 y ajoutait `smartschool-api`. Les deux sont traités ici, et
+**94 tests** ont été écrits pour cela.
+
+Le point de départ n'était pas « du code mal testé », c'était **du code pas
+testé du tout**. Sur les quatre services d'`absence-business`, un seul portait
+des tests ; trois — le cahier de séance, les statistiques, les justificatifs —
+étaient à **0 ligne couverte sur 224**. Côté API, le publieur de métriques
+Prometheus et l'intercepteur STOMP étaient dans le même état.
+
+| | Avant | Après |
+|---|---|---|
+| Tests backend | 761 | **855** |
+| Couverture lignes (agrégat) | 37,6 % | **43,9 %** |
+| Couverture branches | 34,7 % | **39,8 %** |
+| Couverture méthodes | — | **49,6 %** |
+| `absence-business` | 21,3 % | **61,4 %** |
+| `smartschool-api` | 11,3 % | **38,4 %** |
+
+#### Ce que ces tests vérifient, et pourquoi ceux-là
+
+Le critère de choix n'a pas été le nombre de lignes à gagner, mais **ce qui
+casse en silence**. Quatre endroits le méritaient.
+
+| Où | Ce qui n'était garanti par rien | Tests |
+|---|---|---|
+| `ServiceCahierImpl` | Le corpus d'indexation de l'assistant : son **périmètre** (un enseignant n'indexe que ses séances — c'est déduit du compte, jamais reçu en paramètre), son plafond de 2 000 documents, sa borne plancher à `LocalDate.EPOCH`, et la résolution des libellés en **trois requêtes pour tout le corpus** et non trois par séance | 23 |
+| `ServiceJustificatifImpl` | Le cycle de vie complet : un justificatif ne se dépose que sur une absence, il est imputable à un compte, il ne se traite qu'une fois, et **seule l'approbation** rend l'absence justifiée | 16 |
+| `ServiceStatistiquesAbsenceImpl` | Les chiffres des tableaux de bord : séances **distinctes** et non lignes d'appel, taux arrondi au centième, division par zéro sur un relevé vide, drapeau `estJustifie` nullable | 13 |
+| `PlanificateurVerrouillageSeance` | Le seul écrivain sans utilisateur derrière lui, et la raison de verrouillage qui distingue une fermeture automatique d'une fermeture administrative | 3 |
+| `StompAuthChannelInterceptor` | **Le cloisonnement multi-établissement du canal WebSocket** — voir ci-dessous | 15 |
+| `SchoolMetricsPublisher` | Ce que Prometheus lit réellement : noms de séries, étiquettes, valeurs, et les deux garde-fous (plafond de cardinalité, exclusion des `tenant_id` orphelins) | 10 |
+| Import CSV/Excel (×3 contrôleurs) | La détection du format, le refus du fichier vide, le flux illisible traduit en 400, et les modèles relus par POI | 14 |
+
+**Le test qui justifie à lui seul l'exercice** est celui de l'abonnement STOMP.
+Le filtre Hibernate qui protège les requêtes REST **n'existe pas sur le canal du
+broker** : le cloisonnement y repose entièrement sur une comparaison de préfixe
+dans `StompAuthChannelInterceptor`, qui n'était couverte par rien. Le cas limite
+est écrit noir sur blanc : un jeton de l'établissement `28` ne doit pas
+s'abonner à `/topic/281/…`. Sans la barre oblique finale dans la comparaison, ce
+test échoue — et aucun test d'API REST n'aurait pu le révéler.
+
+#### Deux partis pris de méthode
+
+**Le registre Micrometer est réel, pas doublé.** `SchoolMetricsPublisherTest`
+s'appuie sur un `SimpleMeterRegistry` : ce qui est vérifié n'est pas qu'une
+méthode a été appelée, mais **ce que Prometheus lirait** — le nom des séries,
+leurs étiquettes, leurs valeurs. Un mock de `MeterRegistry` n'aurait rien dit de
+la cardinalité, qui est pourtant le seul vrai risque de ce composant.
+
+**Les `Specification` JPA sont exécutées, pas contournées.** Trois services
+construisent leurs filtres dynamiquement, chacun avec le même commentaire : un
+critère absent ne doit produire **aucun prédicat**, parce que PostgreSQL rejette
+un `(:param IS NULL OR ...)` dont le paramètre vaut `null`. C'est la raison
+d'être de ces `Specification`, et rien ne la vérifiait. `CapturePredicats`
+exécute la lambda sur des doubles de l'API Criteria et compte les prédicats
+assemblés — la seule façon de tester la règle sans base de données. Deux pièges
+de Mockito y sont consignés : l'inférence qui choisit la mauvaise surcharge de
+`equal()`, et l'`ArgumentCaptor` qui n'apparie pas un `varargs` de plusieurs
+arguments.
+
+#### Ce qui reste découvert, et pourquoi
+
+`DemoDataRunner` — **484 lignes, soit 40 % du module API à lui seul** — reste à
+0 %. C'est délibéré : ce code ne s'exécute que sous le profil `demo` pour
+peupler le jeu de démonstration, il n'a aucun chemin en production, et le tester
+reviendrait à écrire des tests sur des données de test. Le citer est plus honnête
+que de le couvrir : **sans lui, `smartschool-api` serait à 64 %** et non à 38 %.
+
+Une observation faite au passage et laissée telle quelle : les contrôleurs
+`Teacher`, `Room` et `Eleve` **réécrivent chacun le même code d'import** —
+détection du format, génération du classeur, réponse CSV. La triplication est un
+fait du dépôt, pas un choix défendu ici ; les tests la prennent pour ce qu'elle
+est en vérifiant les trois, de sorte qu'une divergence entre eux se voie. La
+factoriser demanderait un refactoring que le gel du code ne permet plus.
+
+`security-module` (5,7 %) et `common-module` (10,8 %) restent les deux derniers
+trous. Le premier a reçu ses 14 premiers tests au run #15 ; le second est
+traversé par les tests des autres modules sans être testé pour lui-même.
+
+> **Ce qu'il faut en dire au jury.** La couverture globale reste sous les 50 %,
+> et c'est assumé : la répartition compte plus que le total. Les deux modules
+> qui portent la logique — `planning` à 60,6 %, `absence` à 61,4 % — sont les
+> mieux couverts, et le module le moins couvert est celui qui ne sert qu'à
+> peupler une démonstration. Un projet à 80 % obtenu sur des getters vaudrait
+> moins.
+
 ## 8. Calendrier — 3 jours
 
 Ordonné par **risque décroissant** : ce qui est cheap et visible d'abord, ce
@@ -1259,6 +1356,8 @@ conteneurisation — avec la frontière CI/CD explicitée.
 | Systèmes RAG | 1 (cahier) | **2 (cahier + consigne réglementaire)** |
 | CI/CD | aucun | **GitHub Actions + JaCoCo + SonarCloud + Docker** |
 | Dépôt git | aucun | **GitHub** |
+| Tests backend | 562 | **855** |
+| Couverture lignes | 29,7 % | **43,9 %** |
 
 **La phrase d'ouverture de la soutenance** :
 
