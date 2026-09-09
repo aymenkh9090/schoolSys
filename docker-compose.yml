@@ -1,4 +1,3 @@
-version: "3.8"
 name: sc-p
 
 services:
@@ -35,6 +34,23 @@ services:
       KC_DB_USERNAME: keycloak
       KC_DB_PASSWORD: keycloak_secret
       KC_HTTP_PORT: 8081
+      # ── L'émetteur du jeton, figé ici et nulle part ailleurs ────────────────
+      # Sans cette ligne, `start-dev` construit l'émetteur à partir de l'en-tête
+      # Host de la requête : un jeton demandé via localhost porte
+      # `http://localhost:8081/...`, le même demandé via l'IP du poste porte
+      # `http://<ip>:8081/...`. L'API n'en attend qu'un — elle répond 401 à
+      # l'autre, et le front, qui n'affiche pas les 401, rend des écrans vides.
+      # La panne ressemble alors à « il n'y a pas de données ».
+      #
+      # LAN_HOST vient du `.env` de la racine (voir .env.example). Le laisser
+      # vide convient tant qu'on travaille au navigateur ; le renseigner est
+      # obligatoire dès qu'un téléphone entre en jeu, puisqu'un téléphone ne
+      # peut pas joindre « localhost ». C'est la seule chose qu'imposait
+      # l'ancienne surcouche docker-compose.mobile.yml, supprimée depuis.
+      KC_HOSTNAME: http://${LAN_HOST:-localhost}:8081
+      # La validation du jeton par l'API va chercher les clés publiques : ce
+      # trajet reste interne et n'a aucune raison de passer par l'IP du LAN.
+      KC_HOSTNAME_BACKCHANNEL_DYNAMIC: "true"
     ports:
       - "8081:8081"
     depends_on:
@@ -57,6 +73,11 @@ services:
       - "5432:5432"
     networks:
       - smartschool-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d smartschool"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   # ── Prometheus : collecte des métriques ────────────────────────────────────
   #  # Vient scraper /actuator/prometheus de smartschool-api toutes les 15 s.
@@ -128,12 +149,12 @@ services:
       PROMETHEUS_URL: http://prometheus:9090
       # Conteneur → hôte : Spring Boot tourne dans l'IDE.
       # Port 9091 = management.server.port (l'actuator), et non 8080.
-      ACTUATOR_URL: http://host.docker.internal:9091
+      ACTUATOR_URL: http://${API_HOST:-host.docker.internal}:9091
       # API métier du backend (module Planning) — port 8080, pas 9091.
       # L'assistant y rejoue le jeton de l'utilisateur : il n'a pas de compte de
       # service, donc pas d'accès aux données d'un établissement dont
       # l'utilisateur n'est pas membre.
-      BACKEND_URL: http://host.docker.internal:8080
+      BACKEND_URL: http://${API_HOST:-host.docker.internal}:8080
       # Ollama est installé sur l'hôte, pas en conteneur
       OLLAMA_URL: http://host.docker.internal:11434
       OLLAMA_MODEL: ${ASSISTANT_MODEL:-qwen2.5:7b}
@@ -148,7 +169,7 @@ services:
       # KEYCLOAK_ISSUER_URL = identité LOGIQUE inscrite dans le token, telle que
       # le navigateur a vu Keycloak. Sans cette ligne, tous les tokens émis via
       # localhost:8081 seraient rejetés ("Invalid issuer").
-      KEYCLOAK_ISSUER_URL: http://localhost:8081/realms/smartschool
+      KEYCLOAK_ISSUER_URL: http://${LAN_HOST:-localhost}:8081/realms/smartschool
       AUTH_ENABLED: "true"
       CORS_ORIGINS: http://localhost:5173,http://localhost:3000
     ports:
@@ -166,6 +187,89 @@ services:
       interval: 30s
       timeout: 5s
       retries: 3
+
+  # ── Backend Spring Boot ────────────────────────────────────────────────────
+  # Profil "app" : activé par COMPOSE_PROFILES=app dans le .env de la racine,
+  # que docker compose lit tout seul. Un `docker compose up -d --build` lance
+  # donc la pile complète sans drapeau. Pour revenir au mode développement
+  # (API dans l'IDE, infra en conteneurs), vider COMPOSE_PROFILES — le .env.example
+  # porte les deux lignes à commuter.
+  # API : http://localhost:8080   Swagger : http://localhost:8080/swagger-ui.html
+  backend:
+    profiles: ["app"]
+    build: ./backend
+    container_name: smartschool-api-ss
+    environment:
+      # La base n'est plus sur localhost mais sur le réseau Docker. Spring Boot
+      # traduit SPRING_DATASOURCE_URL en spring.datasource.url (relaxed binding),
+      # donc application.yml n'a pas besoin d'être modifié.
+      SPRING_DATASOURCE_URL: jdbc:postgresql://app-db:5432/smartschool
+      DB_PASSWORD: ${DB_PASSWORD:-smartschool}
+
+      # ⚠️ Les DEUX URL Keycloak ci-dessous sont différentes, et c'est voulu.
+      # ISSUER_URI = identité inscrite dans le jeton, telle que le NAVIGATEUR a
+      # vu Keycloak : "localhost:8081". Le backend doit comparer le claim `iss`
+      # à cette valeur, sinon tout jeton est rejeté ("Invalid issuer").
+      # JWK_SET_URI = adresse RÉSEAU d'où télécharger les clés publiques. Depuis
+      # un conteneur, "localhost" désigne le conteneur lui-même : il faut le nom
+      # du service Docker. Sans cette seconde variable, Spring tenterait la
+      # découverte OIDC sur l'issuer et échouerait au démarrage (Connection refused).
+      # Meme LAN_HOST que KC_HOSTNAME plus haut : les deux doivent tomber
+      # d'accord au caractere pres, c'est tout l'enjeu.
+      KEYCLOAK_ISSUER_URI: http://${LAN_HOST:-localhost}:8081/realms/smartschool
+      SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_JWK_SET_URI: http://keycloak:8081/realms/smartschool/protocol/openid-connect/certs
+      # Admin REST API (création des comptes) : appel serveur→serveur, nom Docker.
+      KEYCLOAK_SERVER_URL: http://keycloak:8081
+      # Sans secret, l'application refuse de démarrer (placeholder non résolu
+      # dans application.yml). À renseigner dans .env — cf. .env.example.
+      KC_CLIENT_SECRET: ${KC_CLIENT_SECRET:-}
+
+      # Mail de bienvenue avec mot de passe temporaire. Vide = envoi désactivé,
+      # la création de compte réussit quand même (cf. EmailServiceImpl).
+      SMTP_USERNAME: ${SMTP_USERNAME:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+
+      # URL du front telle qu'un humain la tape : sert au lien "Se connecter"
+      # du mail et à la liste blanche CORS. Le front conteneurisé est publié
+      # sur 3000, le port du dev server Vite (cf. vite.config.ts).
+      FRONTEND_BASE_URL: http://localhost:3000
+      APP_CORS_ALLOWED_ORIGINS: http://localhost:3000,http://localhost:5173
+      ENVIRONMENT: demo
+    ports:
+      # 8080 : API métier. 9091 : actuator, scrapé par Prometheus.
+      - "8080:8080"
+      - "9091:9091"
+    depends_on:
+      app-db:
+        condition: service_healthy
+      keycloak:
+        condition: service_started
+    networks:
+      - smartschool-network
+
+  # ── Frontend React (build Vite servi par nginx) ────────────────────────────
+  # UI : http://localhost:3000  — même port que le dev server Vite, donc les
+  # redirect URIs du client Keycloak restent valables sans reconfiguration.
+  frontend:
+    profiles: ["app"]
+    build:
+      context: ./frontend
+      # Vite fige les VITE_* À LA COMPILATION : ce sont des ARG de build, pas
+      # des variables d'exécution du conteneur nginx. Elles décrivent ce que le
+      # NAVIGATEUR doit joindre — donc localhost, jamais un nom de service Docker.
+      args:
+        VITE_API_URL: http://localhost:8080
+        VITE_KEYCLOAK_URL: http://${LAN_HOST:-localhost}:8081
+        VITE_KEYCLOAK_REALM: smartschool
+        VITE_KEYCLOAK_CLIENT_ID: smartschool-frontend
+        VITE_AI_ASSISTANT_URL: http://localhost:8000
+    container_name: smartschool-front-ss
+    ports:
+      - "3000:80"
+    depends_on:
+      - backend
+    networks:
+      - smartschool-network
 
 
 networks:

@@ -47,6 +47,33 @@ public class TimetableSession extends TenantEntity {
     @Column(name = "teaching_assignment_id")
     private Long teachingAssignmentId;
 
+    /**
+     * Identifiant de la {@link Lesson} dont cette ligne est le résultat — le
+     * {@code @PlanningId} vu par Timefold.
+     *
+     * <h4>Pourquoi cette colonne existe</h4>
+     *
+     * Timefold explique un score en désignant des objets : un conflit
+     * d'enseignant incrimine deux {@code Lesson}. Sans ce report, rien ne
+     * reliait ces objets aux lignes de cette table — l'explication ne pouvait
+     * donc être qu'une phrase (« Maths · 7A · Ahmed · lundi 08:00 »), jamais un
+     * identifiant. L'interface ne pouvait pas surligner la case fautive, et une
+     * suggestion de correction ne pouvait pas s'accrocher au
+     * {@code PATCH /jobs/{id}/sessions/{sessionId}} qui sait pourtant déplacer
+     * cette séance.
+     *
+     * <p><b>Portée de l'identifiant.</b> Il vient d'un compteur remis à zéro à
+     * chaque construction du problème ({@code LessonGenerator}) : il n'est
+     * unique qu'à l'intérieur d'un job. La clé de rapprochement est donc le
+     * couple {@code (jobId, lessonId)}, jamais {@code lessonId} seul.
+     *
+     * <p>Nullable : les lignes produites avant cette colonne n'en portent pas,
+     * et l'explication doit rester lisible sur ces jobs-là — sans identifiant,
+     * simplement.
+     */
+    @Column(name = "lesson_id")
+    private Long lessonId;
+
     // ── snapshot fields — denormalised for fast grid rendering ────────────────
 
     @Column(name = "subject_code", length = 30)

@@ -13,6 +13,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 import tn.wtm.school.common.config.TenantFilterConstants;
 import tn.wtm.school.common.context.TenantContext;
+import tn.wtm.school.security.keycloak.service.KeycloakAdminService;
 import tn.wtm.school.org.dto.request.SchoolConfigRequestDTO;
 import tn.wtm.school.org.dto.request.WorkingDayRequestDTO;
 import tn.wtm.school.org.entity.ClassGroup;
@@ -167,6 +168,7 @@ public class DemoDataRunner implements ApplicationRunner {
     // ══════════════════════════════════════════════════════════════════════════
 
     private final TenantRepository              tenantRepository;
+    private final KeycloakAdminService          keycloakAdminService;
     private final SchoolYearRepository          schoolYearRepository;
     private final LevelRepository               levelRepository;
     private final ClassGroupRepository          classGroupRepository;
@@ -429,7 +431,7 @@ public class DemoDataRunner implements ApplicationRunner {
      * claim {@code tenant_id}.
      */
     private Tenant etablissement(Etablissement specification) {
-        return tenantRepository.findByCodeIgnoreCase(specification.code())
+        Tenant tenant = tenantRepository.findByCodeIgnoreCase(specification.code())
                 .orElseGet(() -> tenantRepository.save(Tenant.builder()
                         .code(specification.code())
                         .name(specification.nom())
@@ -440,6 +442,36 @@ public class DemoDataRunner implements ApplicationRunner {
                         .status(TenantStatus.ACTIVE)
                         .plan(specification.plan())
                         .build()));
+        return espaceAuthentification(tenant);
+    }
+
+    /**
+     * Le groupe Keycloak de l'établissement, que le seeder doit créer lui-même.
+     *
+     * <p>Un tenant né ici n'est pas passé par {@code TenantServiceImpl.create()},
+     * seul endroit qui crée ce groupe : sa colonne {@code keycloak_group_id}
+     * restait vide. Or créer un compte pour cet établissement commence par
+     * demander ce groupe — sur une base neuve, toute création de compte
+     * échouait donc, alors que l'établissement, lui, était bien là.
+     *
+     * <p>L'échec Keycloak n'interrompt pas l'amorçage : le jeu de démonstration
+     * doit rester consultable même si le realm n'est pas joignable.
+     */
+    private Tenant espaceAuthentification(Tenant tenant) {
+        if (tenant.getKeycloakGroupId() != null && !tenant.getKeycloakGroupId().isBlank()) {
+            return tenant;
+        }
+        try {
+            String groupId = keycloakAdminService.ensureTenantGroup(
+                    String.valueOf(tenant.getTenantId()), tenant.getName());
+            tenant.setKeycloakGroupId(groupId);
+            return tenantRepository.save(tenant);
+        } catch (RuntimeException e) {
+            log.warn("[Demo] Groupe Keycloak non provisionné pour '{}' ({}) : {}. "
+                            + "La création de comptes restera impossible pour cet établissement.",
+                    tenant.getName(), tenant.getTenantId(), e.getMessage());
+            return tenant;
+        }
     }
 
     private SchoolYear anneeScolaire() {

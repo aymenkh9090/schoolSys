@@ -41,6 +41,11 @@ class LiquibaseChangelogTest {
             // `ddl-auto`, donc pas du tout sur une installation en `validate`.
             assertThat(tableExists(conn, "custom_constraint")).isTrue();
 
+            // La colonne de rapprochement ajoutée par la migration 017 : sans
+            // elle, l'explication de score ne peut désigner aucune séance et
+            // l'interface n'a rien à surligner.
+            assertThat(columns(conn, "planning_timetable_session")).contains("lesson_id");
+
             // Tenant isolation: definition has no tenant_id, profile and setting do
             assertThat(columns(conn, "constraint_definition")).doesNotContain("tenant_id");
             assertThat(columns(conn, "constraint_profile")).contains("tenant_id");

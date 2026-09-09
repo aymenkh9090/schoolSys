@@ -129,8 +129,14 @@ export default function AssistantChat() {
       </div>
 
       {/* ── Fil de la conversation ──────────────────────────────────────── */}
+      {/* 30rem : même hauteur utile que l'assistant de contraintes, pour la
+          raison qui y est documentée — en dessous, deux échanges suffisent à
+          repousser la réponse hors du champ au moment même où on la lit.
+          Hauteur fixe une fois la conversation lancée, et non `flex-1` comme
+          là-bas : ce panneau est empilé dans le flux de la page, sans parent
+          qui borne sa hauteur, donc c'est lui qui doit fixer la sienne. */}
       <div
-        className={cn('space-y-4 overflow-y-auto px-5 py-5', empty ? 'min-h-[22rem]' : 'h-[26rem]')}
+        className={cn('space-y-4 overflow-y-auto px-5 py-5', empty ? 'min-h-[30rem]' : 'h-[30rem]')}
       >
         {empty ? (
           <EmptyState onPick={send} disabled={loading} />

@@ -96,10 +96,10 @@ et c'est une décision qui doit rester justifiée.
 
 ```bash
 export LAN_HOST=$(ip -4 addr show | grep -oP '(?<=inet )192\.168\.[0-9.]+' | head -1)
-docker compose -f docker-compose.yml -f docker-compose.mobile.yml up -d
+docker compose up -d   # LAN_HOST renseigné dans le .env de la racine
 ```
 
-Sans la surcouche, Keycloak en `start-dev` construit l'émetteur du jeton à partir
+Sans `LAN_HOST`, Keycloak en `start-dev` construit l'émetteur du jeton à partir
 de l'en-tête `Host` : un jeton demandé depuis le téléphone porte
 `http://<ip>:8081/...` là où l'API attend `http://localhost:8081/...`, et l'API
 répond **401 sans rien expliquer**. C'est le blocage classique de ce montage.

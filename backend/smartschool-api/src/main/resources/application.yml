@@ -1,4 +1,20 @@
 spring:
+  # ── Le .env de la racine, lu par l'API comme il l'est par docker compose ───
+  # Sans ces lignes, `docker compose` lisait le .env et l'API non : les deux
+  # cotes pouvaient donc diverger silencieusement sur LAN_HOST, et le seul
+  # symptome etait un 401 que le front n'affichait pas. Chaque chemin est
+  # `optional:` — un .env absent ne bloque pas le demarrage — et le suffixe
+  # [.properties] dit a Spring comment lire un fichier sans extension.
+  #
+  # Les trois chemins couvrent les repertoires de travail possibles : la racine
+  # du depot, `backend/`, et `backend/smartschool-api/` (celui de
+  # `mvn spring-boot:run -pl smartschool-api`). Une variable d'environnement
+  # exportee reste prioritaire sur le fichier.
+  config:
+    import:
+      - optional:file:./.env[.properties]
+      - optional:file:../.env[.properties]
+      - optional:file:../../.env[.properties]
   application:
     name: smartschool-api
   datasource:
@@ -28,12 +44,18 @@ spring:
     oauth2:
       resourceserver:
         jwt:
-          # Externalise pour la demonstration mobile : un telephone ne peut pas
-          # joindre "localhost", il obtient donc son jeton aupres de Keycloak par
-          # l'IP du reseau local. L'emetteur inscrit dans le jeton est alors cette
-          # IP, et la validation echoue si l'API en attend une autre. Les deux
-          # cotes doivent designer Keycloak par la MEME URL — d'ou la variable.
-          issuer-uri: ${KEYCLOAK_ISSUER_URI:http://localhost:8081/realms/smartschool}
+          # L'API et Keycloak doivent designer le meme emetteur, au caractere
+          # pres : Spring valide le claim `iss` et repond 401 sur la moindre
+          # difference. Un telephone ne pouvant pas joindre "localhost", la
+          # demonstration mobile passe par l'IP du poste — et les deux cotes
+          # doivent basculer ensemble.
+          #
+          # D'ou le repli en cascade sur LAN_HOST, la MEME variable que celle
+          # qui fixe KC_HOSTNAME dans docker-compose.yml : un seul
+          # `export LAN_HOST=<ip>` aligne Keycloak, cette API et l'assistant.
+          # KEYCLOAK_ISSUER_URI reste disponible pour forcer une valeur
+          # complete, mais n'est plus necessaire au cas courant.
+          issuer-uri: ${KEYCLOAK_ISSUER_URI:http://${LAN_HOST:localhost}:8081/realms/smartschool}
   # ── Envoi d'email (mot de passe temporaire à la création de compte) ────────
   mail:
     host: smtp.gmail.com
@@ -63,7 +85,8 @@ app:
 #   manage-users, view-users dans realm-management.
 keycloak:
   admin:
-    server-url: ${KEYCLOAK_SERVER_URL:http://localhost:8081}
+    # Meme cascade que l'emetteur ci-dessus : LAN_HOST suffit.
+    server-url: ${KEYCLOAK_SERVER_URL:http://${LAN_HOST:localhost}:8081}
     realm: smartschool
     client-id: smartschool-backend
     client-secret: ${KC_CLIENT_SECRET}

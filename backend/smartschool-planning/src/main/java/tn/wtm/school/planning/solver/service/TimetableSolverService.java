@@ -3,6 +3,7 @@ package tn.wtm.school.planning.solver.service;
 import ai.timefold.solver.core.api.score.buildin.hardmediumsoft.HardMediumSoftScore;
 import ai.timefold.solver.core.api.score.ScoreExplanation;
 import ai.timefold.solver.core.api.score.constraint.ConstraintMatch;
+import ai.timefold.solver.core.api.score.constraint.ConstraintMatchTotal;
 import ai.timefold.solver.core.api.solver.SolutionManager;
 import ai.timefold.solver.core.api.solver.SolverJob;
 import ai.timefold.solver.core.api.solver.SolverManager;
@@ -408,6 +409,10 @@ public class TimetableSolverService extends TenantService {
                                     "Le détail des violations n'est plus en mémoire "
                                             + "(instance backend redémarrée depuis, ou job annulé). "
                                             + "Score archivé : " + job.getScoreAchieved()))
+                            // Rien à désigner : la solution n'est plus en mémoire, donc
+                            // aucun ConstraintMatch n'existe. Liste vide et non `null` —
+                            // l'interface parcourt ce champ sans le tester.
+                            .occurrences(List.of())
                             .suggestion("Relancez une génération pour obtenir un détail à jour des conflits.")
                             .build();
             return ScoreExplanationResponse.builder()
@@ -427,13 +432,27 @@ public class TimetableSolverService extends TenantService {
         HardMediumSoftScore score = explanation.getScore();
         ValidationReport    validation = businessValidator.valider(solution);
 
+        // Le pont entre ce que Timefold incrimine et ce que l'interface sait
+        // manipuler. Lu une fois pour les trois niveaux : une contrainte violée
+        // cent fois ne doit pas provoquer cent requêtes.
+        Map<Long, Long> sessionIdByLessonId = sessionRepository
+                .findByJobIdAndTenantId(jobId, tenantId).stream()
+                .filter(s -> s.getLessonId() != null)
+                .collect(Collectors.toMap(
+                        TimetableSession::getLessonId,
+                        TimetableSession::getIdTimetableSession,
+                        // Deux lignes pour un même lessonId ne devrait pas exister.
+                        // Si cela arrive, on garde la première plutôt que de faire
+                        // échouer une explication sur une anomalie de données.
+                        (premiere, doublon) -> premiere));
+
         return ScoreExplanationResponse.builder()
                 .jobId(jobId).score(score.toString())
                 // « Faisable » veut dire « remettable », ici comme sur le job.
                 .feasible(score.isFeasible() && validation.estConforme())
-                .hardViolations(explainLevel(explanation, "HARD"))
-                .mediumViolations(explainLevel(explanation, "MEDIUM"))
-                .softViolations(explainLevel(explanation, "SOFT"))
+                .hardViolations(explainLevel(explanation, "HARD", sessionIdByLessonId))
+                .mediumViolations(explainLevel(explanation, "MEDIUM", sessionIdByLessonId))
+                .softViolations(explainLevel(explanation, "SOFT", sessionIdByLessonId))
                 .businessValidation(validation.findings().stream()
                         .map(TimetableSolverService::toBusinessFinding)
                         .toList())
@@ -1167,6 +1186,9 @@ public class TimetableSolverService extends TenantService {
     private TimetableSession toSession(Lesson l, Long jobId, Long yearId, String tenantId) {
         TimetableSession s = TimetableSession.builder()
                 .jobId(jobId).academicYearId(yearId)
+                // Le lien vers l'objet que Timefold incrimine dans ses
+                // ConstraintMatch. Voir TimetableSession.lessonId.
+                .lessonId(l.getId())
                 .teachingAssignmentId(l.getTeachingAssignmentId())
                 .subjectCode(l.getSubjectCode()).subjectName(l.getSubjectName())
                 .studentClassName(l.getStudentClassName())
@@ -1236,7 +1258,8 @@ public class TimetableSolverService extends TenantService {
      */
     private List<ScoreExplanationResponse.ConstraintViolation> explainLevel(
             ScoreExplanation<TimetableSolution, HardMediumSoftScore> explanation,
-            String level) {
+            String level,
+            Map<Long, Long> sessionIdByLessonId) {
         return explanation.getConstraintMatchTotalMap().values().stream()
                 .filter(cmt -> {
                     HardMediumSoftScore s = cmt.getScore();
@@ -1256,10 +1279,68 @@ public class TimetableSolverService extends TenantService {
                                 .distinct()
                                 .limit(MAX_EXAMPLES)
                                 .toList())
+                        .occurrences(occurrencesOf(cmt, sessionIdByLessonId))
                         .suggestion(CONSTRAINT_SUGGESTIONS.getOrDefault(cmt.getConstraintName(), DEFAULT_SUGGESTION))
                         .build())
                 .sorted(Comparator.comparingInt(ScoreExplanationResponse.ConstraintViolation::getCount).reversed())
                 .toList();
+    }
+
+    /**
+     * Désigne les violations au lieu de les décrire : une entrée par
+     * {@link ConstraintMatch} portant les séances en cause, identifiants compris.
+     *
+     * <p>Les matches sans aucune {@link Lesson} incriminée sont écartés — ce sont
+     * les contraintes à seuil, dont le tuple porte une clé de groupe
+     * (« enseignant|MONDAY ») et un cumul, pas des séances. Il n'y a rien à
+     * pointer dans une grille pour « M. Ahmed dépasse 6 h ce jour-là » : les
+     * six séances sont en cause à parts égales, et en désigner une serait
+     * l'accuser à tort. Le libellé textuel reste, lui, parfaitement lisible.
+     */
+    private List<ScoreExplanationResponse.Occurrence> occurrencesOf(
+            ConstraintMatchTotal<HardMediumSoftScore> cmt,
+            Map<Long, Long> sessionIdByLessonId) {
+        return cmt.getConstraintMatchSet().stream()
+                .filter(match -> match.getIndictedObjectList().stream().anyMatch(Lesson.class::isInstance))
+                .limit(MAX_EXAMPLES)
+                .map(match -> ScoreExplanationResponse.Occurrence.builder()
+                        .label(describeMatch(match))
+                        .score(match.getScore().toString())
+                        .sessions(match.getIndictedObjectList().stream()
+                                .filter(Lesson.class::isInstance)
+                                .map(Lesson.class::cast)
+                                .distinct()
+                                .map(lesson -> toSessionRef(lesson, sessionIdByLessonId))
+                                .toList())
+                        .build())
+                .toList();
+    }
+
+    /**
+     * Une leçon du solveur, rendue sous la forme que l'interface sait manipuler.
+     *
+     * <p>{@code sessionId} vaut {@code null} quand la leçon n'a pas de ligne
+     * persistée en face : job produit avant la colonne {@code lesson_id}. On le
+     * laisse vide plutôt que de rapprocher les lignes sur leurs coordonnées —
+     * un tel rapprochement désignerait la mauvaise séance dès qu'un
+     * déplacement manuel a eu lieu, et se tromperait sans le dire.
+     */
+    private static ScoreExplanationResponse.SessionRef toSessionRef(
+            Lesson lesson, Map<Long, Long> sessionIdByLessonId) {
+        return ScoreExplanationResponse.SessionRef.builder()
+                .lessonId(lesson.getId())
+                .sessionId(sessionIdByLessonId.get(lesson.getId()))
+                .subjectCode(lesson.getSubjectCode())
+                .subjectName(lesson.getSubjectName())
+                .className(lesson.getStudentClassName())
+                .teacherCode(lesson.getTeacher() != null ? lesson.getTeacher().getCode() : null)
+                .teacherName(lesson.getTeacher() != null ? lesson.getTeacher().getName() : null)
+                .roomCode(lesson.getRoom() != null ? lesson.getRoom().getCode() : null)
+                .day(lesson.getTimeSlot() != null && lesson.getTimeSlot().getDay() != null
+                        ? lesson.getTimeSlot().getDay().name() : null)
+                .startTime(lesson.getStartTime() != null ? lesson.getStartTime().toString() : null)
+                .groupIndex(lesson.getGroupIndex())
+                .build();
     }
 
     /**

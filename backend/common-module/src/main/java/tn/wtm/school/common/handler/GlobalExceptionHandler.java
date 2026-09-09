@@ -89,7 +89,8 @@ public class GlobalExceptionHandler {
         ErrorResponse errorResponse = ErrorResponse.builder()
                 .status(HttpStatus.INTERNAL_SERVER_ERROR.value())
                 .error("Internal_Server_Error")
-                .message("An unexpected error occurred. Please try again later.")
+                .message("Une erreur inattendue est survenue. Réessayez dans un instant, "
+                        + "et prévenez l'administrateur si le problème persiste.")
                 .timestamp(LocalDateTime.now())
                 .build();
         return new ResponseEntity<>(errorResponse, HttpStatus.INTERNAL_SERVER_ERROR);
@@ -140,12 +141,22 @@ public class GlobalExceptionHandler {
     }
 
 
+    /**
+     * Le message reprend les violations elles-mêmes, pas la source : celle-ci est
+     * le nom qualifié de la classe du DTO, que le client affichait tel quel
+     * (« ...dto.CreateTenantRequest ») sans jamais dire quel champ corriger.
+     * La source reste dans le log, où elle sert encore.
+     */
     @ExceptionHandler(ObjectValidationException.class)
     public ResponseEntity<ErrorResponse> handleObjectValidationException(ObjectValidationException ex){
+        log.warn("[400] Validation échouée sur {} : {}", ex.getViolationSource(), ex.getViolations());
+        String message = ex.getViolations() == null || ex.getViolations().isEmpty()
+                ? "Certains champs saisis sont invalides."
+                : String.join(" ", new java.util.TreeSet<>(ex.getViolations()));
         ErrorResponse errorResponse = ErrorResponse.builder()
                 .status(HttpStatus.BAD_REQUEST.value())
                 .error("Object_Validation_Exception")
-                .message("Validation failed for: " + ex.getViolationSource())
+                .message(message)
                 .violations(ex.getViolations())
                 .timestamp(LocalDateTime.now())
                 .build();
@@ -193,7 +204,12 @@ public class GlobalExceptionHandler {
         ErrorResponse errorResponse = ErrorResponse.builder()
                 .status(HttpStatus.BAD_GATEWAY.value())
                 .error("Keycloak_Integration_Exception")
-                .message("Erreur de communication avec le service d'authentification : " + ex.getMessage())
+                // Le détail (statut, corps de la réponse Keycloak) part dans le log
+                // ci-dessus : le remonter à l'appelant lui montrait une trace sans
+                // lui dire ce qu'il devait faire, ni ce qu'était devenue sa demande.
+                .message("Le service d'authentification n'a pas pu traiter la demande. "
+                        + "Aucune modification n'a été conservée : réessayez dans un instant, "
+                        + "et prévenez l'administrateur si le problème persiste.")
                 .timestamp(LocalDateTime.now())
                 .build();
         return new ResponseEntity<>(errorResponse, HttpStatus.BAD_GATEWAY);
@@ -222,8 +238,9 @@ public class GlobalExceptionHandler {
         ErrorResponse errorResponse = ErrorResponse.builder()
                 .status(HttpStatus.CONFLICT.value())
                 .error("Data_Integrity_Exception")
-                .message("Opération impossible : elle contredit une contrainte de la base "
-                        + "(donnée encore référencée ailleurs, ou valeur déjà utilisée).")
+                .message("Opération impossible : cette donnée est encore utilisée ailleurs, "
+                        + "ou l'une des valeurs saisies est déjà prise. "
+                        + "Vérifiez votre saisie, ou supprimez d'abord les éléments qui en dépendent.")
                 .timestamp(LocalDateTime.now())
                 .build();
         return new ResponseEntity<>(errorResponse, HttpStatus.CONFLICT);

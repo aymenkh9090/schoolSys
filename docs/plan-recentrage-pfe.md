@@ -32,10 +32,11 @@ cet ordre.
 ```bash
 cd ~/pfe/schoolSys
 
-# 1. Les 6 conteneurs, avec le nom d'hôte fixe pour Keycloak.
-#    Sans la surcouche, le mobile obtiendra un 401 sur tous les écrans.
+# 1. Les conteneurs, avec le nom d'hôte fixe pour Keycloak.
+#    Sans LAN_HOST, le mobile obtiendra un 401 sur tous les écrans.
+#    (LAN_HOST se met dans le .env de la racine ; l'export sert ici au shell.)
 export LAN_HOST=$(ip -4 addr show | grep -oP '(?<=inet )192\.168\.[0-9.]+' | head -1)
-docker compose -f docker-compose.yml -f docker-compose.mobile.yml up -d
+docker compose up -d
 
 # 2. L'API. Le secret se relit par l'API d'admin (commande dans mobile/README.md).
 export KC_CLIENT_SECRET="<secret du client smartschool-backend>"
@@ -79,9 +80,12 @@ CORS — une application native n'y est pas soumise — mais **l'émetteur du je
 Keycloak en `start-dev` le construit depuis l'en-tête `Host` : un jeton demandé
 depuis le téléphone porte `http://<ip>:8081/…` là où l'API attend
 `http://localhost:8081/…`. Résultat : connexion réussie, **401 sur tous les
-écrans**, sans rien qui explique pourquoi. `docker-compose.mobile.yml` fixe
-`KC_HOSTNAME` ; `application.yml` externalise `issuer-uri` et `server-url`, avec
-`localhost` par défaut — le web n'est pas touché.
+écrans**, sans rien qui explique pourquoi. La surcouche
+`docker-compose.mobile.yml` fixait `KC_HOSTNAME` ; elle a depuis été supprimée,
+`KC_HOSTNAME` étant passé dans le `docker-compose.yml` avec repli sur
+`localhost`, piloté par le seul `LAN_HOST`. `application.yml` externalise
+`issuer-uri` et `server-url`, avec `localhost` par défaut — le web n'est pas
+touché.
 
 ### Le § 5 est terminé.
 

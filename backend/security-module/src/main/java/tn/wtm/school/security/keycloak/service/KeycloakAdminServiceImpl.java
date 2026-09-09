@@ -10,6 +10,7 @@ import org.keycloak.representations.idm.*;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import tn.wtm.school.security.exception.KeycloakIntegrationException;
+import tn.wtm.school.security.exception.KeycloakUserAlreadyExistsException;
 import tn.wtm.school.security.keycloak.dto.KeycloakCreatedUserDTO;
 import tn.wtm.school.security.utils.PasswordGeneratorUtil;
 
@@ -28,6 +29,9 @@ public class KeycloakAdminServiceImpl implements KeycloakAdminService {
     @Value("${keycloak.admin.realm}")
     private String realm;
 
+    /** Attribut du groupe repris dans le JWT par le Protocol Mapper. */
+    private static final String TENANT_ID_ATTRIBUTE = "tenant_id";
+
     // ── Groupes (= Tenants) ────────────────────────────────────────────────
 
     @Override
@@ -37,7 +41,7 @@ public class KeycloakAdminServiceImpl implements KeycloakAdminService {
         GroupRepresentation group = new GroupRepresentation();
         group.setName(tenantName);
         // Attribut tenant_id propagé dans le JWT via Protocol Mapper (Group Attribute Mapper)
-        group.setAttributes(Map.of("tenant_id", List.of(tenantId)));
+        group.setAttributes(Map.of(TENANT_ID_ATTRIBUTE, List.of(tenantId)));
 
         try (Response response = getRealm().groups().add(group)) {
             if (response.getStatus() != 201) {
@@ -51,6 +55,42 @@ public class KeycloakAdminServiceImpl implements KeycloakAdminService {
             log.info("[Keycloak] Groupe créé. groupId={}", groupId);
             return groupId;
         }
+    }
+
+    /**
+     * Le groupe de l'établissement, qu'il existe déjà ou non.
+     *
+     * <p>Un groupe Keycloak survit à une remise à zéro de la base applicative :
+     * après un {@code docker compose down -v} côté application, le realm garde
+     * les groupes des tenants disparus. Recréer le groupe échouerait alors en
+     * 409 sur le nom, et l'attribut {@code tenant_id} du groupe survivant
+     * désignerait un identifiant qui n'existe plus. On réutilise donc le groupe
+     * homonyme et on réaligne son attribut sur le tenant courant.
+     */
+    @Override
+    public String ensureTenantGroup(String tenantId, String tenantName) {
+        GroupRepresentation existant = getRealm().groups().groups(tenantName, 0, 100).stream()
+                .filter(g -> tenantName.equalsIgnoreCase(g.getName()))
+                .findFirst()
+                .orElse(null);
+
+        if (existant == null) {
+            return createTenantGroup(tenantId, tenantName);
+        }
+
+        GroupRepresentation complet = getRealm().groups().group(existant.getId()).toRepresentation();
+        List<String> porte = complet.getAttributes() == null
+                ? null
+                : complet.getAttributes().get(TENANT_ID_ATTRIBUTE);
+        if (porte == null || !porte.contains(tenantId)) {
+            log.warn("[Keycloak] Groupe '{}' réaligné sur tenantId={} (portait {}).",
+                    tenantName, tenantId, porte);
+            complet.setAttributes(Map.of(TENANT_ID_ATTRIBUTE, List.of(tenantId)));
+            getRealm().groups().group(complet.getId()).update(complet);
+        }
+        log.info("[Keycloak] Groupe existant réutilisé. groupId={} tenantId={}",
+                complet.getId(), tenantId);
+        return complet.getId();
     }
 
     @Override
@@ -98,7 +138,7 @@ public class KeycloakAdminServiceImpl implements KeycloakAdminService {
 
         try (Response response = getRealm().users().create(user)) {
             if (response.getStatus() == 409) {
-                throw new KeycloakIntegrationException("[Keycloak] Utilisateur déjà existant : " + email);
+                throw new KeycloakUserAlreadyExistsException(email);
             }
             if (response.getStatus() != 201) {
                 String body = response.readEntity(String.class);

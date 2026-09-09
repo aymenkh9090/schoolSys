@@ -51,8 +51,81 @@ public class ScoreExplanationResponse {
         private int count;
         /** Exemples concrets (enseignant/classe/créneau concernés), limités en nombre. */
         private List<String> examples;
+        /**
+         * Les mêmes violations que {@link #examples}, mais désignées au lieu
+         * d'être décrites : chaque entrée porte les identifiants des séances en
+         * cause. C'est ce qui permet à l'interface de surligner la case fautive
+         * et à une suggestion de viser un déplacement précis.
+         *
+         * <p>{@code examples} n'est pas remplacé pour autant : une contrainte à
+         * seuil (« pas plus de 6 h par jour ») n'incrimine aucune séance en
+         * particulier — son tuple porte la clé de groupe et le cumul — et n'a
+         * donc rien à mettre ici. La phrase reste alors le seul rendu possible.
+         */
+        private List<Occurrence> occurrences;
         /** Suggestion concrète et actionnable pour résoudre ce type de conflit. */
         private String suggestion;
+    }
+
+    /**
+     * Une violation, une. Là où {@code ConstraintViolation} agrège tout ce
+     * qu'une contrainte reproche, ceci est un {@code ConstraintMatch} de
+     * Timefold : le fait élémentaire dont le score est la somme.
+     */
+    @Getter @Setter
+    @NoArgsConstructor @AllArgsConstructor
+    @Builder
+    public static class Occurrence {
+        /** La phrase déjà lisible, identique à l'entrée correspondante d'{@code examples}. */
+        private String label;
+        /** Score infligé par cette occurrence seule, ex. "-1hard/0medium/0soft". */
+        private String score;
+        /**
+         * Les séances mises en cause — deux pour un conflit (l'enseignant est
+         * <em>ici</em> et <em>là</em>), une seule pour une salle trop petite.
+         *
+         * <p>C'est la liste entière qui répond à « où exactement » : surligner
+         * une seule des deux séances d'un conflit ne montrerait pas le conflit.
+         */
+        private List<SessionRef> sessions;
+    }
+
+    /**
+     * Une séance désignée : de quoi la retrouver dans la grille, et de quoi la
+     * déplacer.
+     *
+     * <h4>Les coordonnées sont celles du solveur</h4>
+     *
+     * {@code day} et {@code startTime} disent où la séance était posée
+     * <em>quand la violation a été constatée</em>. Si un utilisateur a déplacé
+     * la séance depuis (via {@code PATCH /jobs/{id}/sessions/{sessionId}}),
+     * elles ne décrivent plus la grille — mais {@code sessionId}, lui, reste
+     * juste. C'est l'identifiant qui sert d'ancre, jamais les coordonnées.
+     */
+    @Getter @Setter
+    @NoArgsConstructor @AllArgsConstructor
+    @Builder
+    public static class SessionRef {
+        /** Identifiant Timefold, unique à l'intérieur du job seulement. */
+        private Long lessonId;
+        /**
+         * Identifiant de la ligne persistée, cible du PATCH de déplacement.
+         * {@code null} quand la séance n'a pas été retrouvée : job antérieur à
+         * la colonne {@code lesson_id}, ou séance qu'aucune solution n'a placée.
+         */
+        private Long sessionId;
+        private String subjectCode;
+        private String subjectName;
+        private String className;
+        private String teacherCode;
+        private String teacherName;
+        private String roomCode;
+        /** Nom du jour tel que {@link java.time.DayOfWeek}, ex. "MONDAY". */
+        private String day;
+        /** Heure de début au format ISO, ex. "08:00". */
+        private String startTime;
+        /** 0 = classe entière, 1 = demi-groupe A, 2 = demi-groupe B. */
+        private int groupIndex;
     }
 
     /** Un constat de la validation métier, mis à plat pour l'interface. */

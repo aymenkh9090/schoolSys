@@ -416,6 +416,19 @@ class TimetableSolverServicePersistResultTest {
     }
 
     @Test
+    @DisplayName("Le lessonId suit la séance jusqu'en base — sans lui, aucune violation n'est localisable")
+    void lessonIdIsCarriedOntoTheSavedSession() {
+        stubJobFound();
+        Lesson lesson = placedLesson(7L);
+
+        persist(solution(FEASIBLE_SCORE, List.of(lesson)));
+
+        // C'est le seul lien entre ce que Timefold incrimine (des Lesson) et ce
+        // que l'interface sait déplacer (des lignes de cette table).
+        assertThat(capturedSessions().getFirst().getLessonId()).isEqualTo(lesson.getId());
+    }
+
+    @Test
     void sessionTenantIdIsSetFromParameter() {
         stubJobFound();
         persist(solution(FEASIBLE_SCORE, List.of(placedLesson(1L))));

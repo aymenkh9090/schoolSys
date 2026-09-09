@@ -11,6 +11,13 @@ public interface KeycloakAdminService {
     String createTenantGroup(String tenantId, String tenantName);
 
     /**
+     * Le groupe de l'établissement, créé s'il manque, réutilisé (et réaligné sur
+     * le tenant courant) s'il existe déjà sous ce nom. Idempotent : c'est ce
+     * qu'appellent les amorçages qui écrivent le tenant directement en base.
+     */
+    String ensureTenantGroup(String tenantId, String tenantName);
+
+    /**
      * Crée un utilisateur Keycloak avec mot de passe temporaire.
      * Assigne le rôle et ajoute l'user au groupe automatiquement.
      */

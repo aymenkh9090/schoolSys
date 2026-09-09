@@ -11,6 +11,7 @@ import tn.wtm.school.common.exceptions.ConflictException;
 import tn.wtm.school.common.exceptions.ResourceNotFoundException;
 import tn.wtm.school.common.validations.ObjectsValidator;
 import tn.wtm.school.security.email.EmailService;
+import tn.wtm.school.security.exception.KeycloakUserAlreadyExistsException;
 import tn.wtm.school.security.keycloak.dto.KeycloakCreatedUserDTO;
 import tn.wtm.school.security.keycloak.service.KeycloakAdminService;
 import tn.wtm.school.tenant.dto.CreateTenantRequest;
@@ -97,7 +98,9 @@ class TenantServiceImplTest {
         when(tenantRepository.existsByCodeIgnoreCase("IBN")).thenReturn(true);
 
         assertThatThrownBy(() -> service.createTenant(request("IBN", "College Ibn Khaldoun", TenantPlan.FREE)))
-                .isInstanceOf(ConflictException.class);
+                .isInstanceOf(ConflictException.class)
+                // Le message part tel quel à l'écran : il doit nommer le code refusé.
+                .hasMessageContaining("IBN");
 
         verifyNoInteractions(keycloakAdminService);
     }
@@ -108,9 +111,36 @@ class TenantServiceImplTest {
         when(tenantRepository.existsByNameIgnoreCase("College Ibn Khaldoun")).thenReturn(true);
 
         assertThatThrownBy(() -> service.createTenant(request("IBN", "College Ibn Khaldoun", TenantPlan.FREE)))
-                .isInstanceOf(ConflictException.class);
+                .isInstanceOf(ConflictException.class)
+                .hasMessageContaining("College Ibn Khaldoun");
 
         verifyNoInteractions(keycloakAdminService);
+    }
+
+    /**
+     * Une adresse admin déjà prise dans Keycloak est une saisie à corriger, pas
+     * une panne : l'appelant doit recevoir un conflit nommant l'adresse, et non
+     * le 502 « erreur de communication » suivi de la trace Keycloak.
+     */
+    @Test
+    void rejectsAdminEmailAlreadyTakenAsConflict() {
+        when(tenantRepository.existsByCodeIgnoreCase("IBN")).thenReturn(false);
+        when(tenantRepository.existsByNameIgnoreCase("College Ibn Khaldoun")).thenReturn(false);
+        when(tenantRepository.save(any(Tenant.class))).thenAnswer(invocation -> {
+            Tenant t = invocation.getArgument(0);
+            t.setTenantId(1L);
+            return t;
+        });
+        when(keycloakAdminService.createTenantGroup(anyString(), anyString())).thenReturn("group-uuid-123");
+        when(keycloakAdminService.createUser(anyString(), anyString(), anyString(), anyString(), anyString()))
+                .thenThrow(new KeycloakUserAlreadyExistsException("admin@ibn.tn"));
+
+        assertThatThrownBy(() -> service.createTenant(request("IBN", "College Ibn Khaldoun", TenantPlan.FREE)))
+                .isInstanceOf(ConflictException.class)
+                .hasMessageContaining("admin@ibn.tn");
+
+        // Le groupe créé juste avant ne doit pas survivre à l'échec.
+        verify(keycloakAdminService).deleteTenantGroup("group-uuid-123");
     }
 
     @Test
@@ -177,6 +207,44 @@ class TenantServiceImplTest {
 
         assertThatThrownBy(() -> service.suspendTenant(99L))
                 .isInstanceOf(ResourceNotFoundException.class);
+    }
+
+    /**
+     * Les deux causes de « pas de groupe » ne se disent pas de la même façon.
+     *
+     * <p>La requête qui lit {@code keycloak_group_id} ne ramène qu'une colonne :
+     * une ligne absente et une colonne nulle rendent le même Optional vide. Le
+     * service annonçait donc « établissement introuvable » à un établissement
+     * bien présent mais dont l'espace Keycloak n'a jamais été créé — ce qui
+     * arrive à tout tenant écrit directement en base par un amorçage.
+     */
+    @Test
+    void reportsMissingKeycloakGroupWithoutClaimingTenantIsMissing() {
+        when(tenantRepository.existsById(2L)).thenReturn(true);
+        when(tenantRepository.findKeycloakGroupIdById(2L)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.getKeycloakGroupId("2"))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("espace")
+                .hasMessageNotContaining("introuvable");
+    }
+
+    @Test
+    void reportsUnknownTenantWhenNoRowMatches() {
+        when(tenantRepository.existsById(99L)).thenReturn(false);
+
+        assertThatThrownBy(() -> service.getKeycloakGroupId("99"))
+                .isInstanceOf(ResourceNotFoundException.class)
+                .hasMessageContaining("99");
+        verify(tenantRepository, never()).findKeycloakGroupIdById(any());
+    }
+
+    @Test
+    void returnsKeycloakGroupIdWhenTenantIsFullyProvisioned() {
+        when(tenantRepository.existsById(2L)).thenReturn(true);
+        when(tenantRepository.findKeycloakGroupIdById(2L)).thenReturn(Optional.of("grp-2"));
+
+        assertThat(service.getKeycloakGroupId("2")).isEqualTo("grp-2");
     }
 
     private CreateTenantRequest request(String code, String name, TenantPlan plan) {

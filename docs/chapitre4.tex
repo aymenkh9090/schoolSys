@@ -1,0 +1,276 @@
+% =====================================================================
+%  Chapitre 4 — Assistant intelligent et industrialisation
+%  Inclusion dans le rapport :  \input{chapitre4}
+%
+%  Préambule attendu du document principal :
+%     \usepackage[T1]{fontenc}  \usepackage[utf8]{inputenc}
+%     \usepackage[french]{babel}  \usepackage{graphicx}  \usepackage{booktabs}
+%     \graphicspath{{images/}}
+%
+%  Classe « article » : remplacer \chapter par \section et décaler les
+%  \section / \subsection d'un niveau.
+%
+%  IMAGES — chaque figure porte déjà sa ligne \includegraphics en commentaire.
+%  Déposer la capture dans docs/images/ sous le nom indiqué, décommenter cette
+%  ligne, puis supprimer le \captureAPlacer situé juste en dessous.
+%
+%  VOLUME — calibré pour 5 pages en 12 pt, interligne 1,5, avec 6 figures.
+%  Si le chapitre déborde : réduire les hauteurs passées à \captureAPlacer
+%  (et les largeurs des \includegraphics) de 40mm à 34mm.
+% =====================================================================
+
+% Cadre gris affiché tant que la capture n'est pas déposée.
+\providecommand{\captureAPlacer}[2]{%
+  \fbox{\begin{minipage}[c][#1][c]{0.82\linewidth}%
+    \centering\small\itshape Capture à insérer : \texttt{#2}%
+  \end{minipage}}%
+}
+
+\chapter{Assistant intelligent et industrialisation}
+
+\section{Introduction}
+
+Toutes les réponses de la plateforme décrite jusqu'ici sont calculées par des
+requêtes écrites à l'avance. Ce chapitre traite les deux besoins qui échappent
+à ce cadre.
+
+Le premier est fonctionnel : « quelles classes ont pris du retard sur le
+programme ? » ne désigne aucune colonne, et la circulaire ministérielle
+n\textsuperscript{o}~66 du 04/09/2024, qui régit la construction des emplois du
+temps, est un document numérisé de sept pages en arabe que personne
+n'interroge. Une couche d'assistance conversationnelle a donc été ajoutée, sous
+une contrainte explicite : \textbf{aucune réponse n'est émise si elle n'est pas
+vérifiable}, et le modèle de langage n'écrit jamais en base. Le second est un
+besoin d'industrialisation : six services conteneurisés et trois bases de code
+ne se valident pas à la main.
+
+\section{Architecture de la couche intelligente}
+
+L'intelligence artificielle est isolée dans un microservice Python/FastAPI
+distinct du backend Java. Ce découpage apporte un écosystème d'outils
+(embeddings, extraction PDF) absent de Java, un cycle de vie propre — le
+service peut tomber sans emporter la plateforme — et une frontière de sécurité
+nette.
+
+Le modèle est \textbf{exécuté localement} par Ollama (\texttt{qwen2.5:7b},
+embeddings \texttt{nomic-embed-text}) : aucune donnée d'élève ne quitte
+l'établissement. Le choix résulte d'une mesure sur la machine de développement
+(RTX 3050, 6~Go) : le 7B tient entièrement en mémoire graphique (4,75~Go) et
+répond en 2,7 à 6,5~s, contre 1,4 à 2,7~s pour un 3B nettement moins fiable sur
+la traduction de contraintes.
+
+Le service n'a aucun compte de service : il \textbf{rejoue le jeton JWT de
+l'utilisateur}, vérifié avec les clés publiques de Keycloak. Un assistant ne
+peut donc jamais lire plus que l'utilisateur qui l'interroge. Enfin, le modèle
+ne compose jamais lui-même une requête : il \emph{choisit} un outil dans un
+catalogue figé de quatorze outils, et le code exécute une requête écrite à la
+main. Un mode de défaillance est ainsi supprimé plutôt qu'interdit par une
+consigne.
+
+\begin{figure}[htbp]
+  \centering
+  % \includegraphics[width=0.82\linewidth]{ch4-architecture.png}
+  \captureAPlacer{46mm}{images/ch4-architecture.png}
+  \caption{Architecture de la couche intelligente : clients web et mobile,
+  microservice FastAPI, Ollama local et les trois sources de vérité.}
+  \label{fig:ch4-architecture}
+\end{figure}
+
+\begin{table}[htbp]
+  \centering\small
+  \caption{Les trois assistants, leur rôle et leur source de vérité.}
+  \label{tab:ch4-assistants}
+  \begin{tabular}{@{}llll@{}}
+    \toprule
+    \textbf{Assistant} & \textbf{Rôle} & \textbf{Source} & \textbf{Écriture} \\
+    \midrule
+    Contraintes    & Administrateur & API planning + circulaire & sur confirmation \\
+    Cahier / cours & Enseignant     & Séances de l'utilisateur, PDF & aucune \\
+    Supervision    & Super admin    & Prometheus + Actuator & aucune \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\section{Assistant de l'administrateur : les contraintes}
+
+\subsection{Le problème traité}
+
+La génération d'un emploi du temps repose sur un solveur piloté par des
+contraintes exprimées dans un langage dédié (DSL). Ces règles sont le
+c\oe{}ur du produit, et pourtant elles restaient inaccessibles au directeur :
+les écrire suppose de connaître la syntaxe, le catalogue des types et leurs
+paramètres. Les recommandations de la circulaire vivaient donc dans sa tête,
+sans jamais devenir des règles activées dans le solveur.
+
+\subsection{La chaîne de traduction}
+
+L'assistant traduit une phrase en règle DSL au terme d'une chaîne dont chaque
+étape retire au modèle une décision :
+
+\begin{enumerate}\itemsep1pt \parskip0pt
+  \item recherche des trois articles les plus pertinents de la circulaire ;
+  \item prompt construit sur le \emph{catalogue réel} du backend et ces articles ;
+  \item génération JSON contrainte, température 0 ;
+  \item \textbf{validation par le validateur Java}, puis analyse d'impact
+        (conflits avec les règles déjà actives) ;
+  \item en cas de refus, une seule correction, l'erreur du validateur en entrée ;
+  \item restitution de la règle, des conflits et des \textbf{articles cités} —
+        \textbf{sans aucune écriture}.
+\end{enumerate}
+
+L'enregistrement est une route distincte, déclenchée par un clic sur la règle
+affichée mot pour mot. Le modèle ne décide ni de la validité de la règle (le
+validateur le fait), ni de sa faisabilité (l'analyse d'impact), ni de son
+enregistrement (l'utilisateur). C'est cette séparation qui rend acceptable
+qu'un modèle de sept milliards de paramètres se trompe : une règle fausse est
+\emph{refusée}, jamais \emph{appliquée}.
+
+\subsection{Ancrage documentaire et évaluation}
+
+Les vingt-deux articles de la circulaire sont indexés une fois pour toutes ;
+à cette taille, aucune base vectorielle n'est justifiée. La recherche est
+\textbf{hybride}, et c'est une mesure qui l'a imposée : tous les articles
+traitant du même sujet dans la même langue administrative, la recherche dense
+seule répondait à « combien d'heures de mathématiques en
+8\textsuperscript{e} ? » par l'article sur la durée de la journée plutôt que
+par le tableau des volumes horaires. Un canal lexical pondéré par l'IDF a été
+ajouté, le score valant $\text{dense} + \lambda \cdot \text{lexical}$ avec
+$\lambda = 0{,}30$. Sur seize questions de référence, le bon article passe de
+\textbf{6 à 11} en première position et de \textbf{10 à 14} dans les trois
+premiers.
+
+L'apport dépasse la performance : le directeur qui active « six heures par jour
+au maximum » sait que la règle vient de l'article~II.2, page~2, et peut le
+lire. La contrainte devient \textbf{traçable jusqu'à sa source réglementaire},
+ce qu'aucun validateur ne peut fournir.
+
+\begin{figure}[htbp]
+  \centering
+  % \includegraphics[width=0.82\linewidth]{ch4-assistant-contraintes.png}
+  \captureAPlacer{40mm}{images/ch4-assistant-contraintes.png}
+  \caption{Proposition d'une contrainte à partir d'une demande en langage
+  naturel : règle DSL, conflits détectés et articles cités.}
+  \label{fig:ch4-contraintes}
+\end{figure}
+
+\section{Assistant de l'enseignant}
+
+\paragraph{Interroger ses cahiers de séance.} Un cahier de séance est du texte
+libre — « les élèves bloquent sur la factorisation ». Aucune requête SQL ne
+répond à « qu'ai-je traité avec la 8\textsuperscript{e}~A ? » : la notion
+cherchée est dans les mots. Une recherche sémantique est donc construite sur
+les séances de l'utilisateur, indexées à la première question puis évincées
+après dix minutes. Le même mécanisme sert le directeur pour le pilotage
+pédagogique : seul change le corpus, décidé par le backend à partir du compte
+porté par le jeton.
+
+\paragraph{Préparer un cours.} L'enseignant joint le chapitre qu'il va traiter
+et demande une explication, des exercices ou un QCM corrigé. Le document est
+extrait une fois, gardé en mémoire — jamais sur disque — et \textbf{rattaché au
+compte qui l'a déposé} : un identifiant deviné n'ouvre pas le cours d'un
+collègue. Deux garde-fous complètent l'entrée : un PDF numérisé sans couche de
+texte est \emph{refusé en nommant la cause} plutôt que résumé au hasard, et
+toute troncature est annoncée à l'utilisateur.
+
+\begin{figure}[htbp]
+  \centering
+  % \includegraphics[width=0.82\linewidth]{ch4-assistant-enseignant.png}
+  \captureAPlacer{40mm}{images/ch4-assistant-enseignant.png}
+  \caption{Application mobile : interrogation des cahiers de séance et
+  préparation de cours à partir d'un document déposé.}
+  \label{fig:ch4-enseignant}
+\end{figure}
+
+\section{Assistant du super administrateur}
+
+Le super administrateur exploite une plateforme multi-établissements dont
+l'état technique tient dans plusieurs centaines de séries temporelles.
+L'assistant de supervision les traduit en français : « y a-t-il un problème sur
+la plateforme ? » déclenche des outils tels que \texttt{get\_platform\_health},
+\texttt{get\_memory\_usage} ou \texttt{get\_slowest\_endpoints}.
+
+La garantie est la même qu'ailleurs, appliquée ici à la métrologie :
+\textbf{les requêtes PromQL sont figées dans le code}, le modèle ne fait que
+désigner celle à exécuter. La réponse expose les outils réellement appelés ;
+une réponse sans appel d'outil est, par construction, inventée — c'est le
+critère de vérification retenu par les tests.
+
+\begin{figure}[htbp]
+  \centering
+  % \includegraphics[width=0.82\linewidth]{ch4-assistant-supervision.png}
+  \captureAPlacer{40mm}{images/ch4-assistant-supervision.png}
+  \caption{Assistant de supervision : diagnostic adossé aux métriques réelles,
+  avec la liste des outils appelés.}
+  \label{fig:ch4-supervision}
+\end{figure}
+
+\section{Industrialisation et exploitation}
+
+\subsection{Intégration continue}
+
+Un pipeline GitHub Actions se déclenche à chaque \emph{push} et chaque
+\emph{pull request} vers \texttt{main}, en quatre travaux : \textbf{backend}
+(\texttt{mvn verify} sur six modules, 845 assertions, couverture JaCoCo agrégée
+et analyse SonarCloud) ; \textbf{front} (ESLint puis contrôle de typage
+\texttt{tsc}, qui a rattrapé les imports morts lors de la suppression de
+modules) ; \textbf{assistant IA} (193 tests \texttt{pytest}, exécutables en
+intégration continue parce que Ollama et le backend y sont remplacés par des
+doubles) ; \textbf{images Docker} (construction des trois images, sans
+publication). Deux réglages méritent d'être signalés : \texttt{concurrency}
+annule le pipeline précédent d'une branche encore en cours, et
+\texttt{fetch-depth:~0} est indispensable à SonarCloud pour distinguer le code
+neuf du code existant.
+
+\subsection{Qualité du code : JaCoCo et SonarCloud}
+
+La couverture est mesurée par JaCoCo module par module, puis agrégée dans un
+module dédié. Le rapport est publié en artefact et son résumé — lignes,
+branches, instructions — injecté dans le compte rendu de chaque exécution. Ce
+même fichier XML est transmis à SonarCloud, qui ajoute les axes que la
+couverture ne mesure pas : bogues probables, vulnérabilités, points sensibles
+de sécurité, duplications et dette technique.
+
+\begin{figure}[htbp]
+  \centering
+  % \includegraphics[width=0.82\linewidth]{ch4-ci-sonar.png}
+  \captureAPlacer{40mm}{images/ch4-ci-sonar.png}
+  \caption{Pipeline d'intégration continue et tableau de bord SonarCloud du
+  projet avec la couverture agrégée.}
+  \label{fig:ch4-ci}
+\end{figure}
+
+\subsection{Conteneurisation et supervision}
+
+Un fichier \texttt{docker-compose.yml} décrit l'environnement complet :
+Keycloak et sa base, la base applicative PostgreSQL, Prometheus, Grafana et
+l'assistant IA ; une surcouche expose la plateforme à l'application mobile sur
+le réseau local. Aucun secret n'est versionné — seul le modèle
+\texttt{.env.example} figure au dépôt — et Liquibase reste l'unique source de
+vérité du schéma.
+
+Le backend expose ses métriques via Actuator et Micrometer ; Prometheus les
+collecte, Grafana les restitue dans un tableau de bord provisionné au
+démarrage. Cette chaîne n'est pas décorative : elle est la source de données de
+l'assistant de supervision, ce qui fait de l'observabilité une brique
+fonctionnelle du produit et non un simple outil d'exploitation.
+
+\begin{figure}[htbp]
+  \centering
+  % \includegraphics[width=0.82\linewidth]{ch4-monitoring.png}
+  \captureAPlacer{40mm}{images/ch4-monitoring.png}
+  \caption{Tableau de bord Grafana alimenté par Prometheus : mémoire JVM,
+  charge processeur et latence HTTP.}
+  \label{fig:ch4-monitoring}
+\end{figure}
+
+\section{Conclusion}
+
+Les deux moitiés de ce chapitre servent la même exigence : \emph{une sortie
+n'est acceptée que si elle est vérifiable}. Le choix d'outils la vérifie contre
+des requêtes écrites à la main, la recherche documentaire contre un texte
+citable, la traduction de contraintes contre un validateur Java, et
+l'intégration continue vérifie l'ensemble à chaque modification. Les limites
+sont assumées : le modèle reste un 7B local, parfois inexact mais toujours
+soumis à un contrôle externe avant d'atteindre les données, et la chaîne
+s'arrête à la construction des images, le déploiement continu sortant du
+périmètre du projet.
