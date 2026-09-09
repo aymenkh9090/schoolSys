@@ -6,42 +6,75 @@ Microservice Python/FastAPI qui lit les métriques réelles de la plateforme
 Le LLM **ne compose jamais de PromQL** : il choisit un outil dans une liste
 figée (`app/tools/`), et le code exécute une requête écrite à la main.
 
-## Démarrage en développement (recommandé)
+## Prérequis : Ollama doit écouter au-delà de la boucle locale
+
+**Sans cette étape, le chat ne marche que sur le poste.** Par défaut Ollama se
+lie à `127.0.0.1:11434` : il est alors invisible depuis un conteneur Docker,
+qui l'appelle par la passerelle (`host.docker.internal`, soit `172.17.0.1`).
+L'assistant en conteneur démarre quand même et se dit `UP` — c'est le champ
+`"ollama": false` de `/health` qui trahit la panne, et le chat qui échoue.
+
+```bash
+sudo mkdir -p /etc/systemd/system/ollama.service.d
+printf '[Service]\nEnvironment="OLLAMA_HOST=0.0.0.0"\n' \
+  | sudo tee /etc/systemd/system/ollama.service.d/override.conf
+sudo systemctl daemon-reload && sudo systemctl restart ollama
+```
+
+Un fichier `override.conf` plutôt qu'une modification de `ollama.service` : la
+mise à jour d'Ollama réécrit l'unité et emporterait la ligne, jamais le
+répertoire `.d`. Vérification : `ss -tlnp | grep 11434` doit afficher
+`0.0.0.0:11434`, et non `127.0.0.1:11434`.
+
+Reste ensuite `ollama pull qwen2.5:7b` et `ollama pull nomic-embed-text`.
+
+## L'instance qui sert le front et le mobile : le conteneur, sur 8000
+
+`docker compose up -d` suffit. Le conteneur `ai-assistant-ss` publie
+`0.0.0.0:8000`, donc il est joignable depuis le réseau local sans que personne
+ait à y penser, et il redémarre avec la pile.
+
+C'est le port que le mobile interroge (`mobile/src/config.ts`).
+
+> **Pourquoi ce n'est plus le 8001.** Le mobile a longtemps visé une instance
+> uvicorn lancée à la main sur le poste, parce qu'elle était alors la seule à
+> atteindre Ollama. Mauvaise idée : uvicorn se lie à `127.0.0.1` par défaut, et
+> `--host 0.0.0.0` est exactement le genre de détail qu'on oublie. Le service
+> répondait parfaitement depuis le poste — `/docs` en 200, `/health` en `UP` —
+> pendant que le téléphone affichait « Serveur injoignable ». La panne est
+> revenue deux fois, la seconde en pointant au passage vers une **vieille copie
+> du dépôt**, restée ouverte dans l'IDE et dépourvue des routes du mobile.
+> La corriger « pour de bon » demandait de supprimer l'étape manuelle, pas de
+> mieux la documenter : d'où `OLLAMA_HOST` ci-dessus, qui rend le conteneur
+> capable de tout servir.
+
+## Démarrage en développement (itération sur le code Python)
+
+Pour travailler sur le service avec le rechargement à chaud, sans reconstruire
+l'image à chaque modification :
 
 ```bash
 cd <racine-du-dépôt>/ai-assistant
 python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 cp .env.example .env        # puis passer AUTH_ENABLED=false pour tester sans Keycloak
-./run-dev.sh
+./run-dev.sh                # écoute sur 0.0.0.0:8001
 ```
 
 - Doc interactive : http://localhost:8001/docs
-- Prérequis : `docker compose up -d prometheus` et `ollama pull qwen2.5:7b`
+- Prérequis : `docker compose up -d prometheus`
 
-`run-dev.sh` pose `UVICORN_HOST=0.0.0.0` avant d'appeler uvicorn. Le passer à
-la main marche aussi (`uvicorn app.main:app --reload --host 0.0.0.0 --port
-8001`), mais c'est précisément ce qu'on oublie — d'où le script.
+Cette instance-là ne sert **pas** le mobile : elle est là pour le `--reload`.
+Pour l'y brancher malgré tout le temps d'une mise au point, il faut changer
+`PORT_AI` dans `mobile/src/config.ts`.
 
-**`--host 0.0.0.0` n'est pas décoratif.** Sans lui, uvicorn n'écoute que sur
-`127.0.0.1` : le service répond parfaitement depuis le poste de développement,
-et reste injoignable pour l'application mobile, qui l'appelle par l'IP du
-portable sur le réseau local. Le symptôme est trompeur — `/health` répond `UP`
-dans le navigateur pendant que le téléphone rapporte
-`Failed to connect to 192.168.0.235:8001`.
-
-Mettre `UVICORN_HOST` dans `.env` ne remplace pas le script : **ça ne
-fonctionne pas**. Ni le `.env` du dossier, ni `uvicorn --env-file .env` ne
-changent l'interface d'écoute — les deux se lient à `127.0.0.1`. Un fichier
-d'environnement est chargé après l'analyse de la ligne de commande, quand
-l'hôte est déjà résolu ; seule une variable exportée dans l'environnement du
-processus est lue.
-
-Le port 8001 est celui que le mobile interroge (`mobile/src/config.ts`). Le
-conteneur `ai-assistant-ss` occupe le 8000 : il est joignable depuis le réseau,
-mais il ne voit pas Ollama (`"ollama": false`), Ollama n'écoutant lui-même que
-sur `127.0.0.1`. C'est donc bien l'instance locale, sur 8001, qui sert le
-mobile.
+`run-dev.sh` pose `UVICORN_HOST=0.0.0.0` avant d'appeler uvicorn, pour que la
+même étourderie ne coûte pas une seconde séance de débogage. Mettre
+`UVICORN_HOST` dans `.env` ne le remplacerait pas : **ça ne fonctionne pas**.
+Ni le `.env` du dossier, ni `uvicorn --env-file .env` ne changent l'interface
+d'écoute — les deux se lient à `127.0.0.1`. Un fichier d'environnement est
+chargé après l'analyse de la ligne de commande, quand l'hôte est déjà résolu ;
+seule une variable exportée dans l'environnement du processus est lue.
 
 ### Choix du modèle
 

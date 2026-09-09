@@ -67,11 +67,11 @@ les assistants sont indisponibles.
 > (`--import-realm`) : c'est le prérequis d'un déploiement continu, pas encore
 > fait.
 
-> **Le conteneur `ai-assistant` ne sert pas le chat.** Il expose le tableau de
-> bord de supervision, mais Ollama n'écoute que sur le `127.0.0.1` de l'hôte,
-> hors de sa portée. Pour les assistants, lancer l'instance de développement :
-> `cd ai-assistant && uvicorn app.main:app --port 8001` (voir
-> `ai-assistant/README.md`).
+> **Le conteneur `ai-assistant` sert le chat, à une condition.** Ollama écoute
+> par défaut sur le seul `127.0.0.1` de l'hôte, hors de portée d'un conteneur :
+> le tableau de bord fonctionne, le chat non, et `/health` répond `UP` avec
+> `"ollama": false`. Poser `OLLAMA_HOST=0.0.0.0` une fois par machine règle la
+> question — commande dans `ai-assistant/README.md`.
 
 Le port hôte de Grafana est **3001** et non 3000 : ce dernier est pris par le
 serveur de développement du frontend.
@@ -329,8 +329,14 @@ Puis scanner le QR code avec **Expo Go**.
 > et celui de l'assistant ; si l'API tourne hors Docker, elle doit recevoir le
 > même (`KEYCLOAK_ISSUER_URI`).
 
-La procédure complète — variables d'environnement, assistant sur le port 8001,
-tableau de dépannage — est dans **`mobile/README.md`**.
+L'assistant du mobile est servi par le conteneur `ai-assistant` (port 8000),
+lancé par le `docker compose up -d` ci-dessus. Il lui faut toutefois un Ollama
+qui écoute au-delà de `127.0.0.1`, sans quoi le chat échoue seul, pile debout
+(`/health` répond `UP` avec `"ollama": false`) — voir le prérequis
+`OLLAMA_HOST` dans **`ai-assistant/README.md`**.
+
+La procédure complète — variables d'environnement, assistant, tableau de
+dépannage — est dans **`mobile/README.md`**.
 
 ## Tester l'API sans le frontend (Postman/curl)
 

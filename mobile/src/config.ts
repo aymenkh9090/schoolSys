@@ -17,11 +17,20 @@ const HOST_KEY = 'smartschool.host'
 export const DEFAULT_HOST = process.env.EXPO_PUBLIC_HOST ?? '192.168.0.235'
 
 // Ports fixés par docker-compose et application.yml. Le backend tourne sur
-// l'hôte (8080), Keycloak dans Docker (8081), le service Python en uvicorn
-// (8001 — l'instance qui atteint Ollama, cf. ai-assistant/README.md).
+// l'hôte (8080), Keycloak dans Docker (8081), l'assistant dans Docker (8000).
+//
+// **8000 et non 8001**, et c'est le correctif d'une panne qui est revenue deux
+// fois. Le 8001 désignait l'instance uvicorn lancée à la main sur le poste : la
+// seule à atteindre Ollama, mais liée à `127.0.0.1` par défaut. Elle répondait
+// donc au poste et à rien d'autre — le téléphone affichait « Serveur
+// injoignable » chaque fois qu'on oubliait `--host 0.0.0.0`, c'est-à-dire
+// chaque fois. Le conteneur, lui, publie `0.0.0.0:8000` sans qu'on ait à y
+// penser, et atteint Ollama depuis que celui-ci écoute sur toutes les
+// interfaces (`OLLAMA_HOST`, cf. ai-assistant/README.md). Plus aucune commande
+// à ne pas oublier : `docker compose up -d` suffit.
 const PORT_API = 8080
 const PORT_KEYCLOAK = 8081
-const PORT_AI = 8001
+const PORT_AI = 8000
 
 let host = DEFAULT_HOST
 

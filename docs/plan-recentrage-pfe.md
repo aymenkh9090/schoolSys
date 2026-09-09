@@ -44,11 +44,14 @@ export KEYCLOAK_ISSUER_URI="http://$LAN_HOST:8081/realms/smartschool"
 export KEYCLOAK_SERVER_URL="http://$LAN_HOST:8081"
 cd backend && mvn spring-boot:run -pl smartschool-api -Dspring-boot.run.profiles=demo
 
-# 3. L'assistant — celui du port 8001, pas le conteneur : Ollama n'écoute
-#    que sur le 127.0.0.1 de l'hôte, hors de portée du conteneur.
-cd ai-assistant
-export KEYCLOAK_ISSUER_URL="http://$LAN_HOST:8081/realms/smartschool"
-.venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8001
+# 3. L'assistant : rien à lancer, le conteneur de l'étape 1 le sert sur 8000.
+#    Prérequis posé une fois par machine — sans quoi le chat seul échoue :
+#    Ollama n'écoute que sur 127.0.0.1, hors de portée d'un conteneur.
+#      sudo mkdir -p /etc/systemd/system/ollama.service.d
+#      printf '[Service]\nEnvironment="OLLAMA_HOST=0.0.0.0"\n' \
+#        | sudo tee /etc/systemd/system/ollama.service.d/override.conf
+#      sudo systemctl daemon-reload && sudo systemctl restart ollama
+curl -s "http://$LAN_HOST:8000/health"   # doit afficher "ollama":true
 
 # 4. Le mobile. `npm start` impose le port 8082 : le 8081 est pris par Keycloak.
 cd mobile && npm start

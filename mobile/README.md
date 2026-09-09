@@ -125,22 +125,35 @@ curl -s -H "Authorization: Bearer $TOKEN" \
   "http://localhost:8081/admin/realms/smartschool/clients/$CID/client-secret" | jq -r .value
 ```
 
-### 3. L'assistant (facultatif, pour l'onglet question libre)
+### 3. L'assistant : rien à lancer, mais Ollama doit sortir de sa boucle locale
 
-Le conteneur `ai-assistant` (port 8000) sert le tableau de bord mais **pas** le
-chat : Ollama n'écoute que sur `127.0.0.1` de l'hôte. Pour le chat, lancer
-l'instance de développement, en écoutant sur toutes les interfaces afin que le
-téléphone puisse l'atteindre :
+Le conteneur `ai-assistant` (port 8000) sert le chat comme le tableau de bord,
+et le mobile l'interroge là (`src/config.ts`). Il est déjà démarré par le
+`docker compose up -d` de l'étape 1, et publie `0.0.0.0:8000` — donc joignable
+depuis le téléphone sans commande supplémentaire.
+
+Une seule chose à faire, **une fois par machine** : Ollama se lie par défaut à
+`127.0.0.1:11434`, où aucun conteneur ne peut le joindre.
 
 ```bash
-cd ai-assistant
-export KEYCLOAK_ISSUER_URL="http://$LAN_HOST:8081/realms/smartschool"
-uvicorn app.main:app --host 0.0.0.0 --port 8001
+sudo mkdir -p /etc/systemd/system/ollama.service.d
+printf '[Service]\nEnvironment="OLLAMA_HOST=0.0.0.0"\n' \
+  | sudo tee /etc/systemd/system/ollama.service.d/override.conf
+sudo systemctl daemon-reload && sudo systemctl restart ollama
 ```
 
-`--host 0.0.0.0` parce que le défaut n'écoute que la boucle locale — invisible
-depuis le téléphone. `KEYCLOAK_ISSUER_URL` pour la même raison que côté API :
-le service Python valide lui aussi l'émetteur du jeton.
+Le contrôle tient en une ligne — `"ollama"` doit valoir `true` :
+
+```bash
+curl -s http://$LAN_HOST:8000/health
+```
+
+> **Ce que remplace cette étape.** Le mobile visait auparavant une instance
+> uvicorn lancée à la main sur le port 8001, seule à atteindre Ollama. Elle
+> écoutait `127.0.0.1` dès qu'on oubliait `--host 0.0.0.0` : le poste voyait un
+> service en parfait état pendant que le téléphone affichait « Serveur
+> injoignable ». Une étape manuelle qu'on peut rater est une panne à retardement
+> — mieux vaut qu'il n'y ait plus d'étape.
 
 ### 4. L'application
 
