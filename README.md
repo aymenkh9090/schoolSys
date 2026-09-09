@@ -299,7 +299,14 @@ VITE_API_URL=http://localhost:8080
 VITE_KEYCLOAK_URL=http://localhost:8081
 VITE_KEYCLOAK_REALM=smartschool
 VITE_KEYCLOAK_CLIENT_ID=smartschool-frontend
+VITE_AI_ASSISTANT_URL=http://localhost:8000
+VITE_GRAFANA_URL=http://localhost:3001
 ```
+
+`VITE_AI_ASSISTANT_URL` sur le **8000**, celui du conteneur — le même que le
+mobile interroge. Le pointer sur 8001 est l'erreur qui coûte le plus de temps
+ici : le web se met alors à dépendre d'un `uvicorn` lancé à la main, et les deux
+clients ne parlent plus au même assistant.
 
 ## 6. Se connecter
 
