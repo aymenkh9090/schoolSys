@@ -20,7 +20,7 @@
 | Étape | État |
 |---|---|
 | 1 — `occurrences` : désigner les séances en cause | **faite** — `ScoreExplanationResponse.Occurrence` + `SessionRef`, colonne `lesson_id` (migration 017). `ScoreExplanationOccurrencesTest` 7/7 et `TimetableSolverServicePersistResultTest` 46/46 au vert |
-| 2 — Surlignage dans la grille | à faire |
+| 2 — Surlignage dans la grille | **faite** — `designation.ts` (cible + URL), `TimetableGrid.highlightedSessionIds`, bandeau de comptage sur la consultation |
 | 3 — Suggestions calculées, pas figées | **faite** — `AlternativeSlotFinder` + `Relocation` sur chaque occurrence. 18 tests de contraintes rejouées, 5 tests de bout en bout, module à 425/425 |
 | 4 — L'assistant rend des désignations | **faite** — `PlanningChatResponse.conflicts`, rempli par le handler Python. 10 tests. Puces non cliquables tant que l'étape 2 n'existe pas |
 | 5 — Proposer / confirmer un déplacement | à faire, optionnel |
@@ -106,18 +106,35 @@ dépend : rien en aval ne peut pointer une case tant que ce n'est pas livré.
 valide le changelog, migration 017 comprise. Rien n'est en attente sur cette étape :
 les couches en aval peuvent désormais pointer une case.
 
-### Étape 2 — Le surlignage dans la grille
+### Étape 2 — Le surlignage dans la grille — **faite**
 
-`ScoreExplanationPanel.tsx` n'affiche aujourd'hui que les phrases. Le champ
-`occurrences` du DTO n'a **aucun consommateur** côté front — attention au
-`occurrences` déjà présent dans `frontend/src/api/planning.api.ts:178`, qui est
-celui des *suggestions de règles* et n'a rien à voir.
+Chaque occurrence porte un bouton « Voir dans la grille » qui ouvre la
+consultation et y surligne **toutes** ses séances. Aucun LLM.
 
-Cliquer une violation surligne **toutes** les séances de l'occurrence : n'en
-montrer qu'une sur les deux d'un conflit ne montre pas le conflit.
+**L'obstacle n'était pas le surlignage, c'était la distance.** Le panneau
+d'explication est une modale de `GenerationPlanning` ; la grille vit dans
+`ConsultationPlanning`, un autre écran. Le pont passe par l'URL
+(`/planning/consultation?jobId&mode&code&highlight`) plutôt que par un état
+partagé : le lien se colle dans un message, se rouvre le lendemain, survit à un
+rechargement. `designation.ts` porte les deux bouts — construire le lien, le
+relire — pour que les paramètres ne soient jamais écrits deux fois.
 
-C'est l'étape qui apporte le plus de valeur pour le moins de travail, et elle
-n'a besoin d'aucun LLM.
+**Quelle grille montrer ?** L'enseignant d'abord quand toutes les séances le
+partagent : un conflit d'enseignant oppose deux *classes*, et une grille de
+classe n'en montrerait qu'une. La classe ensuite, « toutes les classes » en
+dernier recours.
+
+**Ce qui n'est pas montré est dit.** Un bandeau annonce « 2 séances désignées —
+1 visible sur cette grille », et renvoie vers la vue qui les réunit. Sans lui,
+une seule case surlignée se lit comme un bug plutôt que comme un cadrage.
+
+Le surlignage s'appuie sur `sessionId`, jamais sur les coordonnées : `day` et
+`startTime` disent où la séance était **quand la violation a été constatée**, et
+cessent de décrire la grille au premier déplacement manuel.
+
+Pas de bouton quand aucune séance n'a de ligne persistée (job antérieur à la
+migration 017) : un geste sans effet coûte plus cher que son absence — on
+l'essaie, et on doute du reste de l'écran.
 
 ### Étape 3 — Des suggestions calculées, pas figées — **faite**
 
@@ -176,10 +193,11 @@ désignées et — quand un créneau convient — le déplacement calculé à l'
   L'assistant de supervision partage ce modèle et n'a aucun conflit d'emploi du
   temps à porter ; un champ toujours vide chez l'un des deux consommateurs finit
   par être lu comme un oubli. La route déclare le modèle enrichi.
-- **Les puces ne sont pas cliquables.** Le surlignage dans la grille est
-  l'étape 2, qui n'est pas faite : rendre ces lignes cliquables offrirait un
-  geste sans destination. Le bloc affiche les séances et la proposition ; le
-  clic viendra avec la cible.
+- **Les puces de l'assistant ne sont pas encore cliquables.** Elles l'étaient
+  bloquées par l'étape 2, désormais faite — la cible existe. Ce qui manque
+  maintenant est le `jobId` : `CitedConflict` ne le porte pas, et l'écran de chat
+  ne le connaît pas davantage. Le rendre depuis le service Python est un petit
+  ajout, mais c'en est un.
 
 ### Étape 5 — Proposer, puis confirmer un déplacement — optionnel
 

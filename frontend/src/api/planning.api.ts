@@ -204,12 +204,84 @@ export interface TimetableJob {
 }
 
 // ── Score explanation (panneau "pourquoi ce planning ?") ───────────────────
+
+/**
+ * Une séance désignée par le solveur : de quoi la retrouver, et de quoi la déplacer.
+ *
+ * `sessionId` est l'identifiant de la ligne persistée — le même que
+ * `SessionView.id` dans les grilles. C'est lui, et lui seul, qui permet de
+ * surligner la bonne case : `day` et `startTime` disent où la séance était
+ * *quand la violation a été constatée*, et cessent de décrire la grille dès
+ * qu'un déplacement manuel a eu lieu.
+ *
+ * Nul quand la séance n'a pas de ligne en face — job antérieur à la colonne
+ * `lesson_id`. La désignation reste lisible, mais elle ne se surligne pas.
+ */
+export interface ViolationSessionRef {
+  lessonId: number | null
+  sessionId: number | null
+  subjectCode: string | null
+  subjectName: string | null
+  className: string | null
+  teacherCode: string | null
+  teacherName: string | null
+  roomCode: string | null
+  /** Nom du jour côté Java, ex. "MONDAY". */
+  day: string | null
+  startTime: string | null
+  groupIndex: number
+}
+
+/**
+ * Un déplacement possible, **vérifié** sur la solution par le backend.
+ *
+ * Le créneau d'arrivée est libre pour l'enseignant, pour la classe, et une salle
+ * du bon type y est disponible. `text` est affiché tel quel : le reformuler
+ * reviendrait à réécrire une garantie que le front n'est pas en mesure de donner.
+ */
+export interface ViolationRelocation {
+  sessionId: number | null
+  lessonId: number | null
+  subjectName: string | null
+  className: string | null
+  fromDay: string | null
+  fromStartTime: string | null
+  toDay: string | null
+  toStartTime: string | null
+  toSlotId: number | null
+  toRoomCode: string | null
+  text: string
+}
+
+/**
+ * Une violation, une — le `ConstraintMatch` élémentaire dont le score est la somme.
+ *
+ * ⚠️ À ne pas confondre avec le champ `occurrences` de `ConstraintSuggestion`,
+ * plus haut dans ce fichier : celui-là est un simple compte, et n'a rien à voir.
+ */
+export interface ViolationOccurrence {
+  label: string
+  score: string
+  /** Les deux séances d'un conflit, ou la seule d'une salle trop petite. */
+  sessions: ViolationSessionRef[]
+  /** Nul quand aucun créneau ne convient — courant sur un planning saturé. */
+  relocation: ViolationRelocation | null
+}
+
 export interface ConstraintViolation {
   constraintName: string
   label: string
   score: string
   count: number
   examples: string[]
+  /**
+   * Vide pour les contraintes à seuil : « pas plus de 6 h par jour »
+   * n'incrimine aucune séance en particulier — son tuple porte une clé de
+   * groupe et un cumul. Les six séances sont en cause à parts égales, et en
+   * désigner une serait l'accuser à tort. `examples` reste alors le seul rendu
+   * honnête.
+   */
+  occurrences: ViolationOccurrence[]
   suggestion?: string
 }
 

@@ -47,9 +47,26 @@ interface Props {
   view: { schedule: DaySchedule[] }
   canEdit: boolean
   onChanged: () => void
+  /**
+   * Les séances à désigner dans cette grille, par identifiant de ligne.
+   *
+   * Vient de l'explication de score : le solveur incrimine des séances, et
+   * l'écran doit pouvoir les montrer plutôt que les décrire. On surligne
+   * **toutes** celles de la liste que cette grille contient — n'en montrer
+   * qu'une sur les deux d'un conflit ne montrerait pas le conflit.
+   *
+   * L'identifiant, jamais les coordonnées : `day` et `startTime` disent où la
+   * séance était quand la violation a été constatée, et cessent de décrire la
+   * grille au premier déplacement manuel.
+   */
+  highlightedSessionIds?: number[]
 }
 
-export function TimetableGrid({ jobId, view, canEdit, onChanged }: Props) {
+export function TimetableGrid({ jobId, view, canEdit, onChanged, highlightedSessionIds }: Props) {
+  const highlighted = useMemo(
+    () => new Set(highlightedSessionIds ?? []),
+    [highlightedSessionIds]
+  )
   const [editingSession, setEditingSession] = useState<FlatSession | null>(null)
   const [pendingId, setPendingId] = useState<number | null>(null)
 
@@ -242,6 +259,7 @@ export function TimetableGrid({ jobId, view, canEdit, onChanged }: Props) {
                       color={colorForSubject(s.subjectCode, colorMap)}
                       canEdit={canEdit}
                       pending={pendingId === s.id}
+                      highlighted={highlighted.has(s.id)}
                       className="flex-1 min-w-0"
                       onEdit={() => setEditingSession(s)}
                     />
@@ -280,12 +298,14 @@ function DroppableCell({ day, startTime, canEdit, style }: { day: string; startT
 }
 
 function SessionCard({
-  session, color, canEdit, pending, className, onEdit,
+  session, color, canEdit, pending, highlighted, className, onEdit,
 }: {
   session: FlatSession
   color: string
   canEdit: boolean
   pending: boolean
+  /** Séance désignée par une violation : elle doit se voir sans se chercher. */
+  highlighted?: boolean
   className?: string
   onEdit: () => void
 }) {
@@ -309,6 +329,13 @@ function SessionCard({
         canEdit && 'cursor-grab active:cursor-grabbing touch-none',
         pending && 'opacity-50 pointer-events-none',
         isDragging && 'opacity-70 shadow-lg',
+        // L'anneau se pose PAR-DESSUS la bordure de matière, sans la remplacer :
+        // la couleur reste le repère qui permet de lire la grille d'un coup
+        // d'œil, et l'ambre ne dit qu'une chose de plus — « c'est ici ».
+        // `ring-offset` détache l'anneau des cartes voisines, sans quoi deux
+        // séances contiguës surlignées se lisent comme un seul bloc.
+        highlighted &&
+          'ring-2 ring-amber-500 ring-offset-1 ring-offset-white shadow-md dark:ring-amber-400 dark:ring-offset-slate-900 print:ring-1',
         className
       )}
       {...(canEdit ? { ...listeners, ...attributes } : {})}

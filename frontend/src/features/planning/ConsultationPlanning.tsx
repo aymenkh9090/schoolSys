@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { CalendarDays, Search, Printer, MousePointerClick, AlertTriangle, LayoutGrid } from 'lucide-react'
+import { CalendarDays, Search, Printer, MousePointerClick, AlertTriangle, LayoutGrid, Crosshair, X } from 'lucide-react'
 
 import { PageHeader } from '@/components/ui/PageHeader'
 import { Button } from '@/components/ui/Button'
@@ -11,17 +12,8 @@ import { organisationApi } from '@/api/organisation.api'
 import { useAuth } from '@/hooks/useAuth'
 import { cn } from '@/lib/utils'
 import { TimetableGrid } from './TimetableGrid'
+import { ALL, VIEW_MODES, lireDesignation, type ViewMode } from './designation'
 import { STATUS_LABELS, STATUS_VARIANTS, hasTimetable, describeScore } from './jobStatus'
-
-type ViewMode = 'class' | 'teacher' | 'room'
-const VIEW_MODES: { value: ViewMode; label: string }[] = [
-  { value: 'class', label: 'Classe' },
-  { value: 'teacher', label: 'Enseignant' },
-  { value: 'room', label: 'Salle' },
-]
-
-/** Code interne de la requête « tout afficher » — jamais un code réel. */
-const ALL = '*'
 
 /** Grilles affichées par page en mode « toutes ». 0 = pas de pagination. */
 const PAGE_SIZES = [6, 12, 24, 0]
@@ -50,12 +42,25 @@ function viewTitle(view: AnyTimetableView): string {
 export default function ConsultationPlanning() {
   const qc = useQueryClient()
   const { isSchoolAdmin } = useAuth()
-  const [viewMode, setViewMode] = useState<ViewMode>('class')
-  const [jobId, setJobId] = useState('')
-  const [classCode, setClassCode] = useState('')
-  const [teacherCode, setTeacherCode] = useState('')
-  const [roomCode, setRoomCode] = useState('')
-  const [query, setQuery] = useState<{ jobId: number; mode: ViewMode; code: string } | null>(null)
+  const [searchParams, setSearchParams] = useSearchParams()
+
+  // Lue une seule fois, au montage. La relire à chaque rendu ferait ressusciter
+  // la désignation après que l'utilisateur l'a effacée.
+  const [designation] = useState(() => lireDesignation(searchParams))
+  const designeeParUrl = (mode: ViewMode) =>
+    designation?.query.mode === mode && designation.query.code !== ALL
+      ? designation.query.code
+      : ''
+
+  const [viewMode, setViewMode] = useState<ViewMode>(designation?.query.mode ?? 'class')
+  const [jobId, setJobId] = useState(designation ? String(designation.query.jobId) : '')
+  const [classCode, setClassCode] = useState(designeeParUrl('class'))
+  const [teacherCode, setTeacherCode] = useState(designeeParUrl('teacher'))
+  const [roomCode, setRoomCode] = useState(designeeParUrl('room'))
+  const [query, setQuery] = useState<{ jobId: number; mode: ViewMode; code: string } | null>(
+    designation?.query ?? null
+  )
+  const [surlignees, setSurlignees] = useState<number[]>(designation?.ids ?? [])
   const [yearId, setYearId] = useState('')
   const [levelId, setLevelId] = useState('')
   const [page, setPage] = useState(0)
@@ -127,6 +132,27 @@ export default function ConsultationPlanning() {
   const safePage = Math.min(page, lastPage)
   const pagedViews = shownViews.slice(safePage * effectivePageSize, (safePage + 1) * effectivePageSize)
   const isPaginated = pagedViews.length < shownViews.length
+
+  // Combien des séances désignées cette page montre-t-elle vraiment ? Un conflit
+  // d'enseignant oppose deux classes, et une grille de classe n'en montre qu'une :
+  // l'écrire vaut mieux que de laisser croire que la seconde n'existe pas.
+  const cibles = new Set(surlignees)
+  const visibles = pagedViews.reduce(
+    (total, v) =>
+      total + v.schedule.reduce(
+        (parJour, ds) => parJour + ds.sessions.filter((se) => cibles.has(se.id)).length,
+        0
+      ),
+    0
+  )
+
+  /** Rend la grille à son état ordinaire, URL comprise. */
+  function effacerDesignation() {
+    setSurlignees([])
+    const params = new URLSearchParams(searchParams)
+    params.delete('highlight')
+    setSearchParams(params, { replace: true })
+  }
 
   const currentCode = viewMode === 'class' ? classCode : viewMode === 'teacher' ? teacherCode : roomCode
 
@@ -348,6 +374,40 @@ export default function ConsultationPlanning() {
             className="print:hidden"
           />
 
+          {surlignees.length > 0 && (
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 rounded-xl border border-amber-200 bg-amber-50/60 px-4 py-2.5 print:hidden dark:border-amber-500/25 dark:bg-amber-500/5">
+              <Crosshair size={15} className="shrink-0 text-amber-600 dark:text-amber-400" />
+              <p className="text-sm text-brand-text dark:text-slate-200">
+                <strong className="font-medium">
+                  {surlignees.length === 1
+                    ? '1 séance désignée'
+                    : `${surlignees.length} séances désignées`}
+                </strong>{' '}
+                {visibles === surlignees.length ? (
+                  <span className="text-brand-textMuted dark:text-slate-400">
+                    — {visibles === 1 ? 'elle est surlignée' : 'toutes surlignées'} ci-dessous.
+                  </span>
+                ) : (
+                  /* Le cas fréquent : un conflit oppose deux classes, et cette
+                     grille n'en montre qu'une. La vue « Enseignant » les réunit
+                     quand elles partagent le professeur — c'est ce qu'on suggère
+                     plutôt que de laisser l'utilisateur conclure à une erreur. */
+                  <span className="text-brand-textMuted dark:text-slate-400">
+                    — {visibles} visible{visibles > 1 ? 's' : ''} sur cette grille. Les autres sont
+                    ailleurs : essayez la vue « Enseignant », ou « Toutes » dans ce mode.
+                  </span>
+                )}
+              </p>
+              <button
+                type="button"
+                onClick={effacerDesignation}
+                className="ms-auto inline-flex items-center gap-1 rounded-lg border border-amber-300/70 px-2 py-1 text-xs text-amber-800 transition-colors hover:bg-amber-100/60 dark:border-amber-500/30 dark:text-amber-300 dark:hover:bg-amber-500/10"
+              >
+                <X size={12} /> Effacer
+              </button>
+            </div>
+          )}
+
           {pagedViews.map((v) => (
             <div
               key={viewKey(v)}
@@ -363,6 +423,7 @@ export default function ConsultationPlanning() {
                 jobId={query.jobId}
                 view={v}
                 canEdit={isSchoolAdmin && hasTimetable(v.status)}
+                highlightedSessionIds={surlignees}
                 onChanged={() => qc.invalidateQueries({ queryKey: ['timetable-view', query] })}
               />
             </div>
