@@ -22,7 +22,7 @@
 | 1 — `occurrences` : désigner les séances en cause | **faite** — `ScoreExplanationResponse.Occurrence` + `SessionRef`, colonne `lesson_id` (migration 017). `ScoreExplanationOccurrencesTest` 7/7 et `TimetableSolverServicePersistResultTest` 46/46 au vert |
 | 2 — Surlignage dans la grille | à faire |
 | 3 — Suggestions calculées, pas figées | **faite** — `AlternativeSlotFinder` + `Relocation` sur chaque occurrence. 18 tests de contraintes rejouées, 5 tests de bout en bout, module à 425/425 |
-| 4 — L'assistant rend des désignations | à faire |
+| 4 — L'assistant rend des désignations | **faite** — `PlanningChatResponse.conflicts`, rempli par le handler Python. 10 tests. Puces non cliquables tant que l'étape 2 n'existe pas |
 | 5 — Proposer / confirmer un déplacement | à faire, optionnel |
 
 ### Ce qui existe déjà
@@ -156,19 +156,30 @@ serait tu sur des créneaux valides, en silence.
 recopierait ce calcul finirait par proposer un créneau que les contraintes
 refusent.
 
-### Étape 4 — L'assistant rend des désignations
+### Étape 4 — L'assistant rend des désignations — **faite**
 
-**Ne pas donner `occurrences` au modèle.** Un 7B qui navigue dans une structure
-imbriquée se trompe de champ et annonce un score qui n'existe pas — c'est la
-raison d'être du texte pré-interprété documenté en tête de
-`planning_handlers.py`.
+`occurrences` n'entre pas dans le prompt, et un test le garantit : le texte
+rendu au modèle ne contient ni `sessionId`, ni `lessonId`, ni accolade. Un 7B
+qui navigue dans une structure imbriquée se trompe de champ et annonce un score
+qui n'existe pas.
 
-Le handler garde donc sa sortie textuelle, et `ChatResponse`
-(`ai-assistant/app/models.py:17`) gagne un champ de séances citées, **rempli par
-le handler Python, pas par le modèle**. L'écran affiche la réponse en français
-plus des puces cliquables qui pointent la grille.
+Le handler garde sa sortie textuelle et remplit **en parallèle**
+`cited_conflicts`, relu par `PlanningAssistantService.ask` après la boucle
+d'outils. Chaque conflit porte la règle enfreinte, sa sévérité, les séances
+désignées et — quand un créneau convient — le déplacement calculé à l'étape 3.
 
 > Le modèle raconte ; le code désigne.
+
+**Deux écarts au plan, assumés :**
+
+- **`PlanningChatResponse` plutôt qu'un champ de plus sur `ChatResponse`.**
+  L'assistant de supervision partage ce modèle et n'a aucun conflit d'emploi du
+  temps à porter ; un champ toujours vide chez l'un des deux consommateurs finit
+  par être lu comme un oubli. La route déclare le modèle enrichi.
+- **Les puces ne sont pas cliquables.** Le surlignage dans la grille est
+  l'étape 2, qui n'est pas faite : rendre ces lignes cliquables offrirait un
+  geste sans destination. Le bloc affiche les séances et la proposition ; le
+  clic viendra avec la cible.
 
 ### Étape 5 — Proposer, puis confirmer un déplacement — optionnel
 

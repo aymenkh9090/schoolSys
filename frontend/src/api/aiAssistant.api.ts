@@ -55,6 +55,59 @@ export interface ChatResponse {
   duration_ms: number
 }
 
+/** Une séance que l'assistant désigne — de quoi la retrouver dans la grille. */
+export interface SeanceDesignee {
+  session_id: number | null
+  lesson_id: number | null
+  subject_name: string | null
+  class_name: string | null
+  teacher_name: string | null
+  room_code: string | null
+  /** Nom du jour côté Java, ex. "MONDAY". */
+  day: string | null
+  start_time: string | null
+  /** 0 = classe entière, 1 = demi-groupe A, 2 = demi-groupe B. */
+  group_index: number
+}
+
+/**
+ * Un déplacement possible, calculé par le solveur.
+ *
+ * Le créneau d'arrivée a été vérifié libre pour l'enseignant, pour la classe, et
+ * une salle du bon type y est disponible. `text` porte la phrase construite côté
+ * Java : l'afficher telle quelle est délibéré — la reformuler ici reviendrait à
+ * réécrire une garantie que le front n'est pas en mesure de donner.
+ */
+export interface DeplacementPropose {
+  session_id: number | null
+  to_day: string | null
+  to_start_time: string | null
+  to_slot_id: number | null
+  to_room_code: string | null
+  text: string
+}
+
+/**
+ * Un conflit désigné : la règle enfreinte, les séances en cause, le remède.
+ *
+ * **Rempli par le code, jamais par le modèle.** Le service Python le construit à
+ * partir de la réponse du backend, en marge de la boucle d'outils : le modèle ne
+ * voit que du texte déjà interprété. C'est ce qui permet d'afficher ces
+ * identifiants sans craindre qu'ils aient été inventés.
+ */
+export interface ConflitDesigne {
+  constraint: string
+  severity: string
+  label: string
+  sessions: SeanceDesignee[]
+  /** Absent quand aucun créneau ne convient — fréquent sur un planning saturé. */
+  relocation: DeplacementPropose | null
+}
+
+export interface PlanningChatResponse extends ChatResponse {
+  conflicts: ConflitDesigne[]
+}
+
 export type TimeWindow = '5m' | '1h' | '24h'
 
 export const aiAssistantApi = {
@@ -149,7 +202,7 @@ export const planningAssistantApi = {
   /** Question en langage naturel sur l'emploi du temps. Lecture seule. */
   ask: (message: string, params?: { schoolYearId?: number; profileId?: number }) =>
     aiClient
-      .post<ChatResponse>(
+      .post<PlanningChatResponse>(
         '/api/planning/assistant/chat',
         {
           message,

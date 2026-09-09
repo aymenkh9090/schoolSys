@@ -36,6 +36,7 @@ from app.models import (
     ConstraintProposalResponse,
     HealthSnapshot,
     PlanningChatRequest,
+    PlanningChatResponse,
 )
 from app.services.assistant import AssistantService, ToolLoop
 from app.services.cahier_assistant import CahierAssistantService
@@ -285,7 +286,11 @@ async def chat(
 # valide et enregistre.
 
 
-@app.post("/api/planning/assistant/chat", response_model=ChatResponse, tags=["planning"])
+@app.post(
+    "/api/planning/assistant/chat",
+    response_model=PlanningChatResponse,
+    tags=["planning"],
+)
 async def planning_chat(
     request: PlanningChatRequest,
     user: AuthenticatedUser = Depends(require_planning_user),
@@ -294,6 +299,11 @@ async def planning_chat(
     Question en langage naturel sur l'emploi du temps de son établissement.
 
     Lecture seule : les outils accessibles au modèle ne savent que lire.
+
+    `conflicts` porte les séances désignées et, quand un créneau convient, le
+    déplacement proposé. Ce champ est rempli par le code à partir de la réponse
+    du backend, jamais par le modèle : l'interface peut donc en faire des puces
+    cliquables sans craindre un identifiant inventé.
     """
     logger.info("Question Planning de %s : %r", user.username, request.message)
     return await state["planning"].ask(
