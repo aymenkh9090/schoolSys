@@ -24,7 +24,7 @@
 | Étape | État |
 |---|---|
 | 1 — Publier les trois images sur Docker Hub | **faite** — job `docker` sous garde de secret, étiquettes `latest` + `sha-<commit>`, `image:` sur les trois services du compose |
-| 2 — Le profil `demo` atteint les conteneurs, et devient pilotable | à faire |
+| 2 — Le profil `demo` atteint les conteneurs, et devient pilotable | **faite** — `SPRING_PROFILES_ACTIVE` sur le service `backend`, `demo` par défaut, désarmable par une valeur vide |
 | 3 — Sauvegarder les deux bases, ensemble | à faire |
 | 4 — Figer le jeu de référence | à faire |
 | 5 — Le déploiement local, sur runner self-hosted | à faire |
@@ -153,7 +153,7 @@ version — c'est le geste de retour arrière.
 Secrets and variables → Actions. Tant qu'ils manquent, le job construit sans
 publier — il ne casse pas.
 
-### Étape 2 — Le profil `demo` atteint les conteneurs, et devient pilotable
+### Étape 2 — Le profil `demo` atteint les conteneurs, et devient pilotable — **faite**
 
 Une seule ligne sur le service `backend` du compose :
 
@@ -177,6 +177,22 @@ celui-ci ne désarme que la purge *demandée*, pas celle déclenchée par
 `.env.example` porte la consigne, en toutes lettres : **`demo` au premier
 démarrage, vide dès que la base contient quelque chose qu'on regretterait.**
 
+**Livrée.** Un détail décide de tout : la variable est écrite
+`${SPRING_PROFILES_ACTIVE-demo}`, avec un tiret **sans deux-points**, seule
+ligne du fichier dans ce cas. Avec `:-`, Docker traite une valeur vide comme
+une valeur absente et remet `demo` — le désarmement deviendrait inexprimable.
+« Non renseigné » et « renseigné vide » doivent rester deux choses distinctes,
+et c'est ce caractère qui les sépare. Les deux cas sont vérifiés à
+`docker compose config` : `demo` d'un côté, `""` de l'autre.
+
+**Ce que l'étape ne risquait pas, contrôle fait.** Faire tourner le seeder dans
+un conteneur l'expose à un Keycloak pas encore prêt — `depends_on` ne garantit
+que `service_started`. Sans précaution, un `ApplicationRunner` qui lève empêche
+Spring Boot de démarrer, et « base vide » deviendrait « backend qui ne démarre
+pas ». `espaceAuthentification()` prévoyait déjà le cas : l'appel Keycloak est
+sous `try/catch`, l'échec se solde par un `warn`. Aucune modification Java n'a
+donc été nécessaire.
+
 ### Étape 3 — Sauvegarder les deux bases, ensemble
 
 Deux scripts dans `scripts/`, `sauvegarde.sh` et `restauration.sh`, chacun
@@ -187,10 +203,13 @@ docker compose exec -T app-db      pg_dump -U postgres smartschool
 docker compose exec -T keycloak-db pg_dump -U keycloak  keycloak
 ```
 
-**Pourquoi les deux, toujours.** `DemoDataRunner` crée les comptes par
-`KeycloakAdminService` : les `school_user` vivent dans `app_pg_data`, les
-identifiants correspondants dans `keycloak_pg_data`. Restaurer l'un sans
-l'autre donne des utilisateurs qui pointent vers des comptes absents. Le
+**Pourquoi les deux, toujours.** La base applicative référence Keycloak par
+identifiant : `DemoDataRunner` fait créer le **groupe** de chaque établissement
+(`espaceAuthentification()`) et range son identifiant dans
+`tenant.keycloak_group_id`. Les comptes créés ensuite depuis l'application
+ajoutent une seconde paire — un `school_user` dans `app_pg_data`, un utilisateur
+dans `keycloak_pg_data`. Restaurer l'un sans l'autre laisse donc des
+identifiants qui ne désignent plus rien, et toute création de compte échoue. Le
 symptôme ressemble à une panne d'authentification, et se cherche du mauvais
 côté. **Les deux volumes forment un couple ; les scripts refusent de les
 dissocier.**
@@ -203,8 +222,9 @@ faire dans l'historique.
 Une fois la base semée et vérifiée, le couple de dumps est figé dans
 `docs/sql/`, à côté de `rattrapage-volumes-t1.sql`. C'est le **jeu de
 référence** : sur une machine neuve, Ibn Khaldoun et Carthage se remettent en
-place en quelques secondes, sans rejouer le seeder ni recréer les comptes
-Keycloak, et à l'identique.
+place en quelques secondes, à l'identique, et le realm arrive avec ses clients,
+ses rôles et ses groupes déjà créés — le § 2 du README n'est plus à refaire à
+la main.
 
 Les données sont fictives — noms tunisiens générés par `NomsTunisiens` — donc
 rien ne s'oppose à les versionner.
