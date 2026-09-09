@@ -2,16 +2,20 @@ import { useQuery } from '@tanstack/react-query'
 import {
   Activity,
   AlertTriangle,
+  CheckCircle2,
   Cpu,
   Database,
   ExternalLink,
   Gauge,
+  HelpCircle,
   MemoryStick,
   ShieldAlert,
   Timer,
+  XCircle,
 } from 'lucide-react'
 import { PageHeader } from '@/components/ui/PageHeader'
-import { StatCard } from '@/components/ui/StatCard'
+import { cn } from '@/lib/utils'
+import { KpiCard, StatutCard } from './KpiCard'
 import { aiAssistantApi, type HealthSnapshot } from '@/api/aiAssistant.api'
 import AssistantChat from './AssistantChat'
 
@@ -21,7 +25,7 @@ const GRAFANA_URL = import.meta.env.VITE_GRAFANA_URL ?? 'http://localhost:3001'
 const GRAFANA_DASHBOARD = `${GRAFANA_URL}/d/smartschool-jvm/jvm`
 
 export default function MonitoringPage() {
-  const { data, isLoading, isError } = useQuery({
+  const { data, isLoading, isError, isFetching } = useQuery({
     queryKey: ['ai', 'health'],
     queryFn: () => aiAssistantApi.getHealth('5m'),
     // 15 s : aligné sur le scrape_interval de Prometheus.
@@ -61,65 +65,82 @@ export default function MonitoringPage() {
       )}
 
       {data && (
-        <div className="space-y-6">
+        // Rafraîchi toutes les 15 s. On garde le rendu précédent, simplement
+        // atténué, plutôt que de repasser par un squelette : un écran qui
+        // clignote quatre fois par minute devient impossible à surveiller.
+        <div className={cn('space-y-6 transition-opacity', isFetching && 'opacity-60')}>
           <StatusBanner snapshot={data} />
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            <StatCard
-              title="Mémoire (heap)"
-              value={fmt(data.heap_percent, ' %')}
+          {/* Les mesures qui ont une limite : chacune se lit face à la sienne.
+              Les seuils reprennent ceux de THRESHOLDS côté Python — l'écran et
+              le service doivent qualifier un incident de la même façon, sans
+              quoi le bandeau dirait « critique » pendant qu'une tuile reste
+              verte. */}
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <KpiCard
+              label="Mémoire (heap)"
+              valeur={data.heap_percent}
+              unite=" %"
               icon={MemoryStick}
-              color={colorFor(data.heap_percent, 75, 90)}
+              seuils={{ alerte: 75, critique: 90 }}
+              max={100}
+              detail={
+                data.heap_used_mb !== null && data.heap_max_mb !== null
+                  ? `${data.heap_used_mb.toFixed(0)} Mo sur ${data.heap_max_mb.toFixed(0)}`
+                  : undefined
+              }
             />
-            <StatCard
-              title="CPU"
-              value={fmt(data.cpu_percent, ' %')}
+            <KpiCard
+              label="CPU"
+              valeur={data.cpu_percent}
+              unite=" %"
               icon={Cpu}
-              color={colorFor(data.cpu_percent, 70, 85)}
+              seuils={{ alerte: 70, critique: 85 }}
+              max={100}
             />
-            <StatCard
-              title="Latence p95"
-              value={fmt(data.latency_p95_ms, ' ms', 0)}
+            <KpiCard
+              label="Latence p95"
+              valeur={data.latency_p95_ms}
+              unite=" ms"
+              decimales={0}
               icon={Timer}
-              color={colorFor(data.latency_p95_ms, 1000, 3000)}
+              seuils={{ alerte: 1000, critique: 3000 }}
+              detail="95 % des requêtes sont plus rapides"
             />
-            <StatCard
-              title="Taux d'erreur"
-              value={fmt(data.error_rate_percent, ' %', 2)}
+            <KpiCard
+              label="Taux d'erreur"
+              valeur={data.error_rate_percent}
+              unite=" %"
+              decimales={2}
               icon={ShieldAlert}
-              color={colorFor(data.error_rate_percent, 1, 5)}
+              seuils={{ alerte: 1, critique: 5 }}
             />
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            <StatCard
-              title="Débit"
-              value={fmt(data.requests_per_second, ' req/s', 2)}
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            {/* Pas de jauge ici : un débit n'a pas de limite au-delà de laquelle
+                il irait mal. Une piste sans seuil n'aurait rien à montrer. */}
+            <KpiCard
+              label="Débit"
+              valeur={data.requests_per_second}
+              unite=" req/s"
+              decimales={2}
               icon={Activity}
-              color="blue"
             />
-            <StatCard
-              title="Application"
-              value={data.app_status}
-              icon={Gauge}
-              color={data.app_status === 'UP' ? 'green' : 'red'}
-            />
-            <StatCard
-              title="Base de données"
-              value={data.db_status}
+            <KpiCard
+              label="Connexions en attente"
+              valeur={data.db_connections_pending}
+              decimales={0}
               icon={Database}
-              color={data.db_status === 'UP' ? 'green' : 'red'}
+              seuils={{ alerte: 1, critique: 5 }}
+              detail={
+                data.db_connections_active !== null
+                  ? `${data.db_connections_active.toFixed(0)} connexions actives`
+                  : undefined
+              }
             />
-            <StatCard
-              title="Connexions DB"
-              value={`${fmt(data.db_connections_active, '', 0)} actives · ${fmt(
-                data.db_connections_pending,
-                '',
-                0
-              )} en attente`}
-              icon={Database}
-              color={colorFor(data.db_connections_pending, 1, 5)}
-            />
+            <StatutCard label="Application" statut={data.app_status} icon={Gauge} />
+            <StatutCard label="Base de données" statut={data.db_status} icon={Database} />
           </div>
 
           <AssistantChat />
@@ -144,10 +165,21 @@ function StatusBanner({ snapshot }: { snapshot: HealthSnapshot }) {
     UNKNOWN: 'État indéterminé',
   }[snapshot.status]
 
+  // Une icône dans les quatre cas, y compris celui qui va bien. Sans elle,
+  // « tout fonctionne » ne se distinguait de « incident » que par la teinte du
+  // bandeau — la même faiblesse que les tuiles avaient, et elle porte ici sur
+  // la phrase la plus importante de l'écran.
+  const Icone = {
+    HEALTHY: CheckCircle2,
+    WARNING: AlertTriangle,
+    CRITICAL: XCircle,
+    UNKNOWN: HelpCircle,
+  }[snapshot.status]
+
   return (
     <div className={`rounded-xl border p-4 ${style}`}>
       <div className="flex items-center gap-2 font-semibold">
-        {snapshot.status !== 'HEALTHY' && <AlertTriangle size={18} />}
+        <Icone size={18} className="shrink-0" />
         {label}
       </div>
       {snapshot.issues.length > 0 && (
@@ -159,20 +191,4 @@ function StatusBanner({ snapshot }: { snapshot: HealthSnapshot }) {
       )}
     </div>
   )
-}
-
-/**
- * Affiche explicitement « n/d » quand la donnée manque.
- * Ne JAMAIS afficher 0 pour une valeur absente : ce serait un mensonge visuel.
- */
-function fmt(value: number | null, unit = '', digits = 1): string {
-  return value === null || value === undefined ? 'n/d' : `${value.toFixed(digits)}${unit}`
-}
-
-/** Même logique de seuils que THRESHOLDS côté Python, pour un affichage cohérent. */
-function colorFor(value: number | null, warning: number, critical: number) {
-  if (value === null || value === undefined) return 'blue' as const
-  if (value >= critical) return 'red' as const
-  if (value >= warning) return 'amber' as const
-  return 'green' as const
 }
