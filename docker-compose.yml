@@ -142,6 +142,16 @@ services:
   # ── Assistant IA : microservice Python/FastAPI + Ollama ────────────────────
   # API : http://localhost:8000        Doc interactive : http://localhost:8000/docs
   ai-assistant:
+    # `image` ET `build`, les deux ensemble : le premier donne son nom à ce que
+    # la CI publie et à ce que `docker compose pull` ira chercher, le second
+    # laisse le `docker compose up --build` local intact. Un
+    # docker-compose.prod.yml aurait dupliqué huit services pour n'en changer
+    # que trois, et les deux copies auraient divergé au premier ajout.
+    #
+    # TAG vient du .env : absent, c'est `latest` ; renseigné avec une étiquette
+    # de commit (sha-a1b2c3d), c'est le retour arrière — la seule raison d'être
+    # de cette seconde étiquette, publiée à chaque commit sur `main`.
+    image: aymenzak21/schoolsys-ai-assistant:${TAG:-latest}
     build: ./ai-assistant
     container_name: ai-assistant-ss
     environment:
@@ -197,6 +207,7 @@ services:
   # API : http://localhost:8080   Swagger : http://localhost:8080/swagger-ui.html
   backend:
     profiles: ["app"]
+    image: aymenzak21/schoolsys-backend:${TAG:-latest}
     build: ./backend
     container_name: smartschool-api-ss
     environment:
@@ -252,6 +263,7 @@ services:
   # redirect URIs du client Keycloak restent valables sans reconfiguration.
   frontend:
     profiles: ["app"]
+    image: aymenzak21/schoolsys-frontend:${TAG:-latest}
     build:
       context: ./frontend
       # Vite fige les VITE_* À LA COMPILATION : ce sont des ARG de build, pas
