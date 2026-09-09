@@ -76,72 +76,78 @@ export default function MonitoringPage() {
               le service doivent qualifier un incident de la même façon, sans
               quoi le bandeau dirait « critique » pendant qu'une tuile reste
               verte. */}
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            <KpiCard
-              label="Mémoire (heap)"
-              valeur={data.heap_percent}
-              unite=" %"
-              icon={MemoryStick}
-              seuils={{ alerte: 75, critique: 90 }}
-              max={100}
-              detail={
-                data.heap_used_mb !== null && data.heap_max_mb !== null
-                  ? `${data.heap_used_mb.toFixed(0)} Mo sur ${data.heap_max_mb.toFixed(0)}`
-                  : undefined
-              }
-            />
-            <KpiCard
-              label="CPU"
-              valeur={data.cpu_percent}
-              unite=" %"
-              icon={Cpu}
-              seuils={{ alerte: 70, critique: 85 }}
-              max={100}
-            />
-            <KpiCard
-              label="Latence p95"
-              valeur={data.latency_p95_ms}
-              unite=" ms"
-              decimales={0}
-              icon={Timer}
-              seuils={{ alerte: 1000, critique: 3000 }}
-              detail="95 % des requêtes sont plus rapides"
-            />
-            <KpiCard
-              label="Taux d'erreur"
-              valeur={data.error_rate_percent}
-              unite=" %"
-              decimales={2}
-              icon={ShieldAlert}
-              seuils={{ alerte: 1, critique: 5 }}
-            />
-          </div>
+          <section className="space-y-3">
+            <SectionTitre titre="Charge et performance" indication="Chaque mesure face à son seuil" />
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+              <KpiCard
+                label="Mémoire (heap)"
+                valeur={data.heap_percent}
+                unite=" %"
+                icon={MemoryStick}
+                seuils={{ alerte: 75, critique: 90 }}
+                max={100}
+                detail={
+                  data.heap_used_mb !== null && data.heap_max_mb !== null
+                    ? `${data.heap_used_mb.toFixed(0)} Mo sur ${data.heap_max_mb.toFixed(0)}`
+                    : undefined
+                }
+              />
+              <KpiCard
+                label="CPU"
+                valeur={data.cpu_percent}
+                unite=" %"
+                icon={Cpu}
+                seuils={{ alerte: 70, critique: 85 }}
+                max={100}
+              />
+              <KpiCard
+                label="Latence p95"
+                valeur={data.latency_p95_ms}
+                unite=" ms"
+                decimales={0}
+                icon={Timer}
+                seuils={{ alerte: 1000, critique: 3000 }}
+                detail="95 % des requêtes sont plus rapides"
+              />
+              <KpiCard
+                label="Taux d'erreur"
+                valeur={data.error_rate_percent}
+                unite=" %"
+                decimales={2}
+                icon={ShieldAlert}
+                seuils={{ alerte: 1, critique: 5 }}
+              />
+            </div>
+          </section>
 
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            {/* Pas de jauge ici : un débit n'a pas de limite au-delà de laquelle
-                il irait mal. Une piste sans seuil n'aurait rien à montrer. */}
-            <KpiCard
-              label="Débit"
-              valeur={data.requests_per_second}
-              unite=" req/s"
-              decimales={2}
-              icon={Activity}
-            />
-            <KpiCard
-              label="Connexions en attente"
-              valeur={data.db_connections_pending}
-              decimales={0}
-              icon={Database}
-              seuils={{ alerte: 1, critique: 5 }}
-              detail={
-                data.db_connections_active !== null
-                  ? `${data.db_connections_active.toFixed(0)} connexions actives`
-                  : undefined
-              }
-            />
-            <StatutCard label="Application" statut={data.app_status} icon={Gauge} />
-            <StatutCard label="Base de données" statut={data.db_status} icon={Database} />
-          </div>
+          <section className="space-y-3">
+            <SectionTitre titre="Disponibilité" indication="Ce qui répond, et ce qui attend" />
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+              {/* Pas de jauge ici : un débit n'a pas de limite au-delà de laquelle
+                  il irait mal. Une piste sans seuil n'aurait rien à montrer. */}
+              <KpiCard
+                label="Débit"
+                valeur={data.requests_per_second}
+                unite=" req/s"
+                decimales={2}
+                icon={Activity}
+              />
+              <KpiCard
+                label="Connexions en attente"
+                valeur={data.db_connections_pending}
+                decimales={0}
+                icon={Database}
+                seuils={{ alerte: 1, critique: 5 }}
+                detail={
+                  data.db_connections_active !== null
+                    ? `${data.db_connections_active.toFixed(0)} connexions actives`
+                    : undefined
+                }
+              />
+              <StatutCard label="Application" statut={data.app_status} icon={Gauge} />
+              <StatutCard label="Base de données" statut={data.db_status} icon={Database} />
+            </div>
+          </section>
 
           <AssistantChat />
         </div>
@@ -177,18 +183,44 @@ function StatusBanner({ snapshot }: { snapshot: HealthSnapshot }) {
   }[snapshot.status]
 
   return (
-    <div className={`rounded-xl border p-4 ${style}`}>
-      <div className="flex items-center gap-2 font-semibold">
-        <Icone size={18} className="shrink-0" />
-        {label}
+    <div className={`flex flex-col gap-4 rounded-2xl border p-5 sm:flex-row sm:items-center ${style}`}>
+      <span className="inline-flex shrink-0 items-center justify-center rounded-2xl bg-white/70 p-2.5 dark:bg-white/10">
+        <Icone size={22} />
+      </span>
+
+      <div className="min-w-0 flex-1">
+        <p className="text-base font-semibold leading-tight">{label}</p>
+        {snapshot.issues.length === 0 ? (
+          <p className="mt-0.5 text-sm opacity-80">Aucune mesure au-dessus de son seuil.</p>
+        ) : (
+          /* Les constats en pastilles plutôt qu'en liste à puces : ils sont courts,
+             rarement plus de trois, et une puce par ligne étirait le bandeau sur toute
+             la largeur pour trois mots. */
+          <ul className="mt-1.5 flex flex-wrap gap-1.5">
+            {snapshot.issues.map((issue) => (
+              <li key={issue} className="rounded-full bg-white/70 px-2.5 py-0.5 text-xs font-medium dark:bg-white/10">
+                {issue}
+              </li>
+            ))}
+          </ul>
+        )}
       </div>
-      {snapshot.issues.length > 0 && (
-        <ul className="mt-2 list-disc pl-5 text-sm space-y-0.5">
-          {snapshot.issues.map((issue) => (
-            <li key={issue}>{issue}</li>
-          ))}
-        </ul>
-      )}
+    </div>
+  )
+}
+
+/**
+ * Un intitulé de rangée.
+ *
+ * Huit tuiles alignées sans rien pour les séparer se lisent comme une liste ; en
+ * deux groupes nommés, elles se lisent comme un tableau de bord. Même contenu, lu
+ * en deux temps au lieu d'un balayage.
+ */
+function SectionTitre({ titre, indication }: { titre: string; indication: string }) {
+  return (
+    <div className="flex items-baseline gap-2">
+      <h2 className="text-sm font-semibold text-brand-text dark:text-slate-100">{titre}</h2>
+      <span className="text-xs text-brand-textMuted dark:text-slate-500">{indication}</span>
     </div>
   )
 }
