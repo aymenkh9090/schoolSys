@@ -21,7 +21,7 @@
 |---|---|
 | 1 — `occurrences` : désigner les séances en cause | **faite** — `ScoreExplanationResponse.Occurrence` + `SessionRef`, colonne `lesson_id` (migration 017). `ScoreExplanationOccurrencesTest` 7/7 et `TimetableSolverServicePersistResultTest` 46/46 au vert |
 | 2 — Surlignage dans la grille | à faire |
-| 3 — Suggestions calculées, pas figées | à faire |
+| 3 — Suggestions calculées, pas figées | **faite** — `AlternativeSlotFinder` + `Relocation` sur chaque occurrence. 18 tests de contraintes rejouées, 5 tests de bout en bout, module à 425/425 |
 | 4 — L'assistant rend des désignations | à faire |
 | 5 — Proposer / confirmer un déplacement | à faire, optionnel |
 
@@ -119,15 +119,42 @@ montrer qu'une sur les deux d'un conflit ne montre pas le conflit.
 C'est l'étape qui apporte le plus de valeur pour le moins de travail, et elle
 n'a besoin d'aucun LLM.
 
-### Étape 3 — Des suggestions calculées, pas figées
+### Étape 3 — Des suggestions calculées, pas figées — **faite**
 
-Remplacer la constante de `CONSTRAINT_SUGGESTIONS` par une suggestion qui a vu
-la solution : « déplacer *Maths 7B, lundi 8 h* — *jeudi 10 h* est libre pour cet
-enseignant, cette classe et une salle du bon type ».
+`AlternativeSlotFinder` lit la solution en mémoire et rejoue, une à une, les
+règles dures qu'un déplacement dans le temps peut enfreindre : `TEACHER_CONFLICT`,
+`CLASS_CONFLICT`, `ROOM_CONFLICT`, `ROOM_CAPACITY`, `TEACHER_AVAILABILITY`,
+`LESSON_EXCEEDS_WORKING_BLOCK`, et le couple `SPECIAL_ROOM_REQUIRED` /
+`NORMAL_COURSE_NOT_IN_SPECIAL_ROOM` pour la salle. Chaque occurrence gagne une
+`Relocation` — créneau d'arrivée, salle, `sessionId` cible du `PATCH`, et la
+phrase prête à afficher. `CONSTRAINT_SUGGESTIONS` redevient ce qu'il aurait
+toujours dû être : le repli quand rien ne convient.
 
-Du calcul Java sur `TimetableSolution`, **pas du LLM** : un créneau proposé doit
-être réellement libre, ce qu'un modèle ne peut pas garantir. La phrase statique
-reste le repli quand aucun créneau ne convient.
+Du calcul Java, **pas du LLM** : un créneau proposé doit être réellement libre,
+ce qu'un modèle ne peut pas garantir.
+
+**Trois décisions qui tiennent la suite :**
+
+- **Le créneau d'origine est écarté.** Réattribuer une salle sans bouger
+  l'horaire soigne un conflit de salle, pas un conflit d'enseignant, et le
+  chercheur ignore quelle contrainte l'a fait appeler. Un remède qui ne corrige
+  rien serait pire que le silence.
+- **Un demi-groupe apparié ne reçoit rien.** Déplacer le groupe A sans le
+  groupe B enfreint `PAIRED_DEMI_GROUP_SAME_SLOT` ; déplacer les deux demande
+  une proposition à deux séances, que le contrat de sortie ne porte pas.
+- **La phrase énonce ce qui a été vérifié, jamais que le planning ira mieux.**
+  Le déplacement peut dégrader une contrainte souple — quota du matin, heure
+  creuse. L'arbitrage revient au directeur, qui voit la grille.
+
+Les exceptions des contraintes sont recopiées à l'identique, et testées comme
+telles : deux demi-groupes distincts cohabitent, deux quinzaines opposées ne se
+heurtent pas. Les oublier n'aurait rien cassé de visible — le chercheur se
+serait tu sur des créneaux valides, en silence.
+
+`Lesson.wouldOverlapAt` porte désormais la règle de chevauchement, dont
+`overlapsInTime` est le cas particulier. Une recherche de remplacement qui
+recopierait ce calcul finirait par proposer un créneau que les contraintes
+refusent.
 
 ### Étape 4 — L'assistant rend des désignations
 

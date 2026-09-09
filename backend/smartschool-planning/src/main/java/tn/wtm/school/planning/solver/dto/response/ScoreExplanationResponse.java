@@ -88,6 +88,61 @@ public class ScoreExplanationResponse {
          * une seule des deux séances d'un conflit ne montrerait pas le conflit.
          */
         private List<SessionRef> sessions;
+        /**
+         * Un déplacement qui lèverait cette occurrence, calculé sur la solution.
+         *
+         * <p>{@code null} quand aucun créneau ne convient — c'est fréquent sur
+         * un emploi du temps saturé, et c'est une information en soi : le
+         * conflit ne se règle pas en bougeant une case. L'interface retombe
+         * alors sur la phrase générique de {@code suggestion}.
+         */
+        private Relocation relocation;
+    }
+
+    /**
+     * Un déplacement possible, <b>vérifié</b> sur la solution en mémoire.
+     *
+     * <p>Le créneau d'arrivée est libre pour l'enseignant, pour la classe, et
+     * une salle du bon type y est disponible — les contraintes dures du solveur
+     * ont été rejouées une à une ({@code AlternativeSlotFinder}). Ce n'est pas
+     * une phrase produite par un modèle : un LLM sait écrire « déplacez-le au
+     * jeudi 10 h » sans aucun moyen de savoir si le jeudi 10 h est libre.
+     *
+     * <p><b>Ce n'est pas une promesse d'amélioration du score.</b> Le
+     * déplacement peut dégrader une contrainte souple — quota du matin, heure
+     * creuse chez l'élève. L'arbitrage revient au directeur, et rien ici n'est
+     * appliqué sans son geste : {@code sessionId} n'est qu'une cible offerte au
+     * {@code PATCH}, jamais un ordre exécuté.
+     */
+    @Getter @Setter
+    @NoArgsConstructor @AllArgsConstructor
+    @Builder
+    public static class Relocation {
+        /** Cible du {@code PATCH /jobs/{id}/sessions/{sessionId}}, {@code null} si la séance n'a pas de ligne. */
+        private Long sessionId;
+        /** Identifiant Timefold de la séance à déplacer, unique dans le job. */
+        private Long lessonId;
+        /** Ce qu'on déplace, en clair : « Mathématiques · 7B ». */
+        private String subjectName;
+        private String className;
+        /** D'où — les coordonnées actuelles, ex. "MONDAY" et "08:00". */
+        private String fromDay;
+        private String fromStartTime;
+        /** Vers où. {@code toSlotId} est l'identifiant de créneau à envoyer au PATCH. */
+        private String toDay;
+        private String toStartTime;
+        private Long toSlotId;
+        /** La salle qui accueillerait la séance à l'arrivée — souvent la même qu'avant. */
+        private String toRoomCode;
+        /**
+         * La proposition en une phrase française, prête à afficher.
+         *
+         * <p>Construite ici plutôt que côté client parce que trois consommateurs
+         * la rendraient différemment — l'écran, l'assistant, et un futur export —
+         * et qu'une proposition de déplacement formulée de trois façons devient
+         * trois propositions aux yeux de qui la lit.
+         */
+        private String text;
     }
 
     /**

@@ -9,6 +9,7 @@ import ai.timefold.solver.core.config.solver.termination.TerminationConfig;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
@@ -67,6 +68,15 @@ import static org.mockito.Mockito.when;
 @ExtendWith(MockitoExtension.class)
 class ScoreExplanationOccurrencesTest {
 
+    /**
+     * La phrase de {@code CONSTRAINT_SUGGESTIONS} pour un conflit d'enseignant,
+     * recopiée mot pour mot. La citer plutôt que la lire par réflexion fait
+     * échouer ces tests le jour où quelqu'un la réécrit — c'est voulu : elle
+     * n'est plus qu'un repli, et un repli qui change mérite d'être relu.
+     */
+    private static final String SUGGESTION_FIGEE =
+            "Déplacez l'une des deux séances vers un autre créneau depuis la Consultation du planning.";
+
     private static final String TENANT  = "ecole-1";
     private static final Long   JOB_ID  = 42L;
     private static final Long   YEAR_ID = 2026L;
@@ -103,6 +113,12 @@ class ScoreExplanationOccurrencesTest {
     private final TimeSlotRef lundi8h = TimeSlotRef.builder()
             .id(1L).day(DayOfWeek.MONDAY).orderIndex(1)
             .startTime(LocalTime.of(8, 0)).endTime(LocalTime.of(9, 0))
+            .maxDurationSlots(2).active(true).build();
+
+    /** Lundi 10 h : le créneau libre vers lequel un déplacement est possible. */
+    private final TimeSlotRef lundi10h = TimeSlotRef.builder()
+            .id(2L).day(DayOfWeek.MONDAY).orderIndex(5)
+            .startTime(LocalTime.of(10, 0)).endTime(LocalTime.of(11, 0))
             .maxDurationSlots(2).active(true).build();
 
     @BeforeEach
@@ -219,6 +235,103 @@ class ScoreExplanationOccurrencesTest {
                 .allSatisfy(v -> assertThat(v.getOccurrences()).isNotNull().isEmpty());
     }
 
+
+    // ══════════════════════════════════════════════════════════════════════════
+    // Étape 3 — la suggestion a vu le planning
+    // ══════════════════════════════════════════════════════════════════════════
+
+    /**
+     * Une phrase figée ne connaît pas la solution.
+     *
+     * <p>{@code CONSTRAINT_SUGGESTIONS} est une table de constantes, écrite
+     * avant de savoir ce que le solveur trouverait : « déplacez l'une des deux
+     * séances » est vrai pour toutes les occurrences d'un conflit d'enseignant
+     * et n'aide sur aucune. Ces tests vérifient qu'à sa place vient une
+     * proposition <b>calculée</b> — un créneau dont on a vérifié qu'il est
+     * libre — et que la constante reprend sa place, en repli, dès qu'aucun
+     * créneau ne convient.
+     */
+    @Nested
+    @DisplayName("La suggestion nomme un créneau, ou se tait")
+    class PropositionsDeDeplacement {
+
+        @Test
+        @DisplayName("Un créneau libre ailleurs devient une proposition visant le PATCH")
+        void creneauLibre_devientUneProposition() {
+            armer(deuxSeancesEnConflitAvecCreneauLibre(), sessionsPersistees());
+
+            ScoreExplanationResponse.Relocation proposition = premierConflitEnseignant().getRelocation();
+
+            assertThat(proposition).isNotNull();
+            assertThat(proposition.getToDay()).isEqualTo("MONDAY");
+            assertThat(proposition.getToStartTime()).isEqualTo("10:00");
+            assertThat(proposition.getToSlotId()).isEqualTo(2L);
+            // Sans sessionId, l'écran ne peut viser aucun déplacement : c'est le
+            // maillon que toute l'étape 1 servait à poser.
+            assertThat(proposition.getSessionId()).isIn(1001L, 1002L);
+        }
+
+        @Test
+        @DisplayName("La proposition part de là où la séance est vraiment")
+        void propositionPorteSonPointDeDepart() {
+            armer(deuxSeancesEnConflitAvecCreneauLibre(), sessionsPersistees());
+
+            ScoreExplanationResponse.Relocation proposition = premierConflitEnseignant().getRelocation();
+
+            assertThat(proposition.getFromDay()).isEqualTo("MONDAY");
+            assertThat(proposition.getFromStartTime()).isEqualTo("08:00");
+            assertThat(proposition.getClassName()).isIn("7A", "7B");
+            assertThat(proposition.getToRoomCode()).isIn("A1", "B2");
+        }
+
+        @Test
+        @DisplayName("La phrase affichée nomme le créneau au lieu de renvoyer à la grille")
+        void laPhraseNommeLeCreneau() {
+            armer(deuxSeancesEnConflitAvecCreneauLibre(), sessionsPersistees());
+
+            assertThat(conflitEnseignant().getSuggestion())
+                    .startsWith("Déplacer")
+                    .contains("Lundi 10:00")
+                    // Ce qui a été vérifié, et rien de plus : pas de promesse
+                    // d'un meilleur score, que le déplacement ne garantit pas.
+                    .contains("créneau libre pour")
+                    .isNotEqualTo(SUGGESTION_FIGEE);
+        }
+
+        @Test
+        @DisplayName("Sans créneau libre, la phrase figée reprend sa place")
+        void aucunCreneauLibre_laPhraseFigeeRevient() {
+            // Le décor d'origine n'offre qu'un seul créneau : celui du conflit.
+            armer(deuxSeancesEnConflit(), sessionsPersistees());
+
+            assertThat(premierConflitEnseignant().getRelocation()).isNull();
+            assertThat(conflitEnseignant().getSuggestion()).isEqualTo(SUGGESTION_FIGEE);
+        }
+
+        @Test
+        @DisplayName("Le créneau proposé n'est jamais celui d'où la séance vient")
+        void jamaisLeCreneauDOrigine() {
+            armer(deuxSeancesEnConflitAvecCreneauLibre(), sessionsPersistees());
+
+            ScoreExplanationResponse.Relocation proposition = premierConflitEnseignant().getRelocation();
+
+            assertThat(proposition.getToStartTime()).isNotEqualTo(proposition.getFromStartTime());
+        }
+
+        /** Le même conflit, mais la semaine offre un second créneau, libre pour tous. */
+        private TimetableSolution deuxSeancesEnConflitAvecCreneauLibre() {
+            return TimetableSolution.builder()
+                    .tenantId(TENANT).academicYearId(YEAR_ID).constraintProfileId(1L)
+                    .timeSlots(List.of(lundi8h, lundi10h))
+                    .teachers(List.of(prof))
+                    .rooms(List.of(salleA, salleB))
+                    .lessons(List.of(
+                            seance(1L, "MATH", "Mathématiques", "7A", salleA),
+                            seance(2L, "MATH", "Mathématiques", "7B", salleB)))
+                    .build();
+        }
+    }
+
     // ══════════════════════════════════════════════════════════════════════════
     // Helpers
     // ══════════════════════════════════════════════════════════════════════════
@@ -259,6 +372,10 @@ class ScoreExplanationOccurrencesTest {
     }
 
     private Lesson seance(Long id, String code, String nom, String classe, RoomRef salle) {
+        return seance(id, code, nom, classe, salle, lundi8h);
+    }
+
+    private Lesson seance(Long id, String code, String nom, String classe, RoomRef salle, TimeSlotRef creneau) {
         return Lesson.builder()
                 .id(id)
                 .subjectCode(code).subjectName(nom)
@@ -267,7 +384,7 @@ class ScoreExplanationOccurrencesTest {
                 .sessionType(SessionType.COURS)
                 .groupIndex(0).classStudentCount(30)
                 .durationSlots(2)
-                .teacher(prof).room(salle).timeSlot(lundi8h)
+                .teacher(prof).room(salle).timeSlot(creneau)
                 .build();
     }
 
