@@ -23,7 +23,7 @@
 | 2 — Surlignage dans la grille | **faite** — `designation.ts` (cible + URL), `TimetableGrid.highlightedSessionIds`, bandeau de comptage sur la consultation |
 | 3 — Suggestions calculées, pas figées | **faite** — `AlternativeSlotFinder` + `Relocation` sur chaque occurrence. 18 tests de contraintes rejouées, 5 tests de bout en bout, module à 425/425 |
 | 4 — L'assistant rend des désignations | **faite** — `PlanningChatResponse.conflicts`, rempli par le handler Python. 10 tests. Puces non cliquables tant que l'étape 2 n'existe pas |
-| 5 — Proposer / confirmer un déplacement | à faire, optionnel |
+| 5 — Proposer / confirmer un déplacement | **faite** — application en deux temps depuis le panneau, sur le `PATCH` existant. Reste hors périmètre : le même geste depuis le chat de l'assistant |
 
 ### Ce qui existe déjà
 
@@ -199,11 +199,44 @@ désignées et — quand un créneau convient — le déplacement calculé à l'
   ne le connaît pas davantage. Le rendre depuis le service Python est un petit
   ajout, mais c'en est un.
 
-### Étape 5 — Proposer, puis confirmer un déplacement — optionnel
+### Étape 5 — Proposer, puis confirmer un déplacement — **faite**
 
-Décalquer le schéma des contraintes : **proposer** dans la boucle d'outils,
-**appliquer** par une route HTTP distincte, déclenchée par un clic sur ce qui a
-été affiché mot pour mot.
+Le schéma des contraintes, décalqué : la proposition vient du calcul (étape 3),
+l'application passe par une route HTTP distincte — le `PATCH
+/jobs/{jobId}/sessions/{sessionId}` qui existait déjà pour le glisser-déposer —
+et n'est déclenchée que par un clic sur ce qui a été affiché mot pour mot.
+**Aucune route nouvelle, aucun outil d'écriture ajouté au modèle.**
+
+**Deux temps, pas un clic.** « Appliquer ce déplacement » ouvre une
+confirmation, et la phrase reste affichée juste au-dessus pendant qu'on
+confirme : on valide ce qu'on vient de lire, pas le souvenir qu'on en a. C'est
+l'emploi du temps d'un établissement.
+
+**La salle part avec l'horaire.** La phrase annonce « salle A1 disponible » :
+appliquer autre chose que ce qui a été lu ferait de la proposition un texte
+décoratif.
+
+**Une proposition périmée échoue franchement.** `moveSession` revalide
+enseignant, salle et classe sur les lignes persistées et lève un 409 : entre
+l'explication et le clic, quelqu'un a pu déplacer une séance. Le front rend le
+message du backend tel quel.
+
+**Ce que l'écran dit après coup, et qui compte autant que le reste.**
+`moveSession` ne touche pas `bestSolutions` : l'explication de score se lit sur
+la solution du solveur, que les déplacements manuels ne modifient pas. La
+violation reste donc listée après une application réussie. Sans un mot, le
+directeur en conclut que le bouton n'a rien fait — alors que la grille, elle, a
+changé. Un bandeau le dit une fois : *« 1 déplacement appliqué à la grille. Les
+conflits ci-dessous n'en tiennent pas compte : ils décrivent la dernière
+génération. »* Pour la même raison, la requête d'explication n'est pas
+invalidée — elle rendrait les mêmes données.
+
+**Hors périmètre, assumé.** Le même geste depuis le chat de l'assistant n'est
+pas câblé. Il demande deux choses : le `jobId` dans la réponse Python — que
+`CitedConflict` ne porte pas — et de faire connaître les routes du planning à
+`AssistantChat`, composant partagé avec l'assistant du cahier de séance.
+L'assistant propose donc, et l'application se fait depuis le panneau
+d'explication.
 
 ---
 
