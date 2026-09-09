@@ -13,11 +13,15 @@ cd <racine-du-dépôt>/ai-assistant
 python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 cp .env.example .env        # puis passer AUTH_ENABLED=false pour tester sans Keycloak
-uvicorn app.main:app --reload --host 0.0.0.0 --port 8001
+./run-dev.sh
 ```
 
 - Doc interactive : http://localhost:8001/docs
 - Prérequis : `docker compose up -d prometheus` et `ollama pull qwen2.5:7b`
+
+`run-dev.sh` pose `UVICORN_HOST=0.0.0.0` avant d'appeler uvicorn. Le passer à
+la main marche aussi (`uvicorn app.main:app --reload --host 0.0.0.0 --port
+8001`), mais c'est précisément ce qu'on oublie — d'où le script.
 
 **`--host 0.0.0.0` n'est pas décoratif.** Sans lui, uvicorn n'écoute que sur
 `127.0.0.1` : le service répond parfaitement depuis le poste de développement,
@@ -25,6 +29,13 @@ et reste injoignable pour l'application mobile, qui l'appelle par l'IP du
 portable sur le réseau local. Le symptôme est trompeur — `/health` répond `UP`
 dans le navigateur pendant que le téléphone rapporte
 `Failed to connect to 192.168.0.235:8001`.
+
+Mettre `UVICORN_HOST` dans `.env` ne remplace pas le script : **ça ne
+fonctionne pas**. Ni le `.env` du dossier, ni `uvicorn --env-file .env` ne
+changent l'interface d'écoute — les deux se lient à `127.0.0.1`. Un fichier
+d'environnement est chargé après l'analyse de la ligne de commande, quand
+l'hôte est déjà résolu ; seule une variable exportée dans l'environnement du
+processus est lue.
 
 Le port 8001 est celui que le mobile interroge (`mobile/src/config.ts`). Le
 conteneur `ai-assistant-ss` occupe le 8000 : il est joignable depuis le réseau,
