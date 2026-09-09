@@ -35,8 +35,10 @@ from app.models import (
     ConstraintProposalRequest,
     ConstraintProposalResponse,
     HealthSnapshot,
+    MetricTrends,
     PlanningChatRequest,
     PlanningChatResponse,
+    TimeWindow,
 )
 from app.services.assistant import AssistantService, ToolLoop
 from app.services.cahier_assistant import CahierAssistantService
@@ -254,6 +256,22 @@ async def platform_health(
     secondes. Ne fais jamais transiter un affichage temps réel par le LLM.
     """
     return await state["metrics"].get_snapshot(window)
+
+
+@app.get("/api/monitoring/trends", response_model=MetricTrends, tags=["monitoring"])
+async def platform_trends(
+    window: TimeWindow = "1h",
+    user: dict = Depends(require_super_admin),
+):
+    """
+    La forme récente de chaque mesure — douze points par métrique.
+
+    Séparée de `/health` volontairement : celle-ci est rafraîchie toutes les
+    quinze secondes, alors qu'une tendance sur une heure ne change pas d'un
+    quart de minute. Les fusionner ferait réévaluer cinq requêtes de plage à
+    chaque battement, pour un tracé identique.
+    """
+    return MetricTrends(window=window, trends=await state["metrics"].get_trends(window))
 
 
 @app.get("/api/monitoring/slowest-endpoints", tags=["monitoring"])

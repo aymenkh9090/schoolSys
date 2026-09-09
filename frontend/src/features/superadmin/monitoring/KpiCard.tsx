@@ -1,6 +1,7 @@
 import { AlertTriangle, CheckCircle2, HelpCircle, XCircle } from 'lucide-react'
 
 import { cn } from '@/lib/utils'
+import { Sparkline } from './Sparkline'
 
 /**
  * Une mesure technique, lue face à sa limite.
@@ -57,6 +58,9 @@ interface Ton {
   /** Pastille de l'icône : la seule touche de couleur d'une tuile qui va bien. */
   pastille: string
   pilule: string
+  /** Couleur du tracé de tendance. Neutre quand tout va bien : une courbe qui
+   *  se colore alors que rien ne se passe fait chercher un problème absent. */
+  trace: string
   barre: string
   /** Piste : un pas clair de la MÊME rampe que la barre, jamais un gris neutre —
    *  l'état se lit alors sur toute la largeur, pas seulement sur la part pleine. */
@@ -67,6 +71,7 @@ interface Ton {
 
 const TONS: Record<Severite, Ton> = {
   normal: {
+    trace: 'text-slate-400 dark:text-slate-500',
     carte: 'border-brand-border dark:border-slate-700',
     pastille: 'bg-emerald-50 text-emerald-600 dark:bg-emerald-500/10 dark:text-emerald-400',
     pilule: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-400',
@@ -76,6 +81,7 @@ const TONS: Record<Severite, Ton> = {
     mot: 'Normal',
   },
   alerte: {
+    trace: 'text-amber-600 dark:text-amber-400',
     carte: 'border-amber-200 bg-amber-50/50 dark:border-amber-500/30 dark:bg-amber-500/[0.07]',
     pastille: 'bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-400',
     pilule: 'bg-amber-100 text-amber-800 dark:bg-amber-500/15 dark:text-amber-300',
@@ -85,6 +91,7 @@ const TONS: Record<Severite, Ton> = {
     mot: 'Alerte',
   },
   critique: {
+    trace: 'text-red-600 dark:text-red-500',
     carte: 'border-red-200 bg-red-50/50 dark:border-red-500/30 dark:bg-red-500/[0.07]',
     pastille: 'bg-red-100 text-red-700 dark:bg-red-500/15 dark:text-red-400',
     pilule: 'bg-red-100 text-red-800 dark:bg-red-500/15 dark:text-red-300',
@@ -94,6 +101,7 @@ const TONS: Record<Severite, Ton> = {
     mot: 'Critique',
   },
   inconnu: {
+    trace: 'text-slate-300 dark:text-slate-700',
     carte: 'border-brand-border dark:border-slate-700',
     pastille: 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400',
     pilule: 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400',
@@ -152,9 +160,19 @@ interface Props {
   max?: number
   /** Une précision sous la valeur, quand le chiffre seul ne suffit pas. */
   detail?: string
+  /**
+   * La forme récente de la mesure. Absente quand Prometheus n'a pas d'historique
+   * à en donner — on n'affiche alors aucune courbe, plutôt qu'une ligne plate
+   * qui se lirait comme une mesure stable.
+   */
+  tendance?: number[]
+  /** Période couverte par `tendance`, pour l'infobulle du tracé. */
+  periode?: string
 }
 
-export function KpiCard({ label, valeur, unite = '', decimales = 1, icon: Icon, seuils, max, detail }: Props) {
+export function KpiCard({
+  label, valeur, unite = '', decimales = 1, icon: Icon, seuils, max, detail, tendance, periode,
+}: Props) {
   const etat = severite(valeur, seuils)
   const ton = TONS[etat]
   const absente = valeur === null || valeur === undefined
@@ -176,6 +194,20 @@ export function KpiCard({ label, valeur, unite = '', decimales = 1, icon: Icon, 
 
       {detail && (
         <p className="mt-1.5 text-[11px] leading-snug text-brand-textMuted dark:text-slate-500">{detail}</p>
+      )}
+
+      {/* La variation au-dessus, le niveau en dessous. La courbe remplit toute
+          sa hauteur entre son minimum et son maximum ; la jauge, elle, se lit
+          face aux seuils. Caler la courbe sur l'échelle des seuils l'écraserait
+          en ligne plate dès que tout va bien — soit exactement quand elle sert
+          à repérer qu'une mesure a commencé à monter. */}
+      {tendance && tendance.length > 1 && (
+        <Sparkline
+          points={tendance}
+          unite={unite}
+          periode={periode}
+          className={cn('mt-3 h-6 w-full', ton.trace)}
+        />
       )}
 
       {/* `mt-auto` cale le bas de toutes les tuiles sur la même ligne, que la

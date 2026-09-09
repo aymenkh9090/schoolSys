@@ -110,10 +110,34 @@ export interface PlanningChatResponse extends ChatResponse {
 
 export type TimeWindow = '5m' | '1h' | '24h'
 
+/** Les clés que `trends` peut porter — celles de HISTORY_METRICS côté Python. */
+export type CleTendance = 'memory' | 'cpu' | 'latency' | 'errors' | 'throughput'
+
+/**
+ * La forme récente des mesures, pour la vignette de tendance des tuiles.
+ *
+ * Les points sont dans l'unité d'affichage de la tuile — pourcentage,
+ * millisecondes — et non dans celle de Prometheus : la courbe et le chiffre
+ * posé au-dessus d'elle doivent parler de la même chose.
+ *
+ * Une mesure sans donnée est **absente** de `trends`, jamais présente avec un
+ * tableau vide : l'écran n'affiche alors aucune courbe, au lieu d'une ligne
+ * plate qui se lirait comme une mesure stable.
+ */
+export interface MetricTrends {
+  window: TimeWindow
+  trends: Partial<Record<CleTendance, number[]>>
+}
+
 export const aiAssistantApi = {
   getHealth: (window: TimeWindow = '5m') =>
     aiClient
       .get<HealthSnapshot>('/api/monitoring/health', { params: { window } })
+      .then((r) => r.data),
+
+  getTrends: (window: TimeWindow = '1h') =>
+    aiClient
+      .get<MetricTrends>('/api/monitoring/trends', { params: { window } })
       .then((r) => r.data),
 
   getSlowestEndpoints: (window: TimeWindow = '1h') =>

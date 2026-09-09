@@ -19,6 +19,12 @@ import { KpiCard, StatutCard } from './KpiCard'
 import { aiAssistantApi, type HealthSnapshot } from '@/api/aiAssistant.api'
 import AssistantChat from './AssistantChat'
 
+// Une heure : assez long pour qu'une dérive se voie, assez court pour que la
+// vignette parle de maintenant. La légende du tracé la nomme, sans quoi une
+// courbe sans échelle de temps ne veut rien dire.
+const TENDANCE_FENETRE = '1h' as const
+const TENDANCE_LIBELLE = '1 h'
+
 const GRAFANA_URL = import.meta.env.VITE_GRAFANA_URL ?? 'http://localhost:3001'
 // Dashboard provisionné par fichier (monitoring/dashboards/jvm-micrometer.json),
 // donc son uid est stable : pas d'import manuel à refaire après un down -v.
@@ -31,6 +37,16 @@ export default function MonitoringPage() {
     // 15 s : aligné sur le scrape_interval de Prometheus.
     // Plus fréquent serait inutile — il n'y aurait pas de nouvelle donnée.
     refetchInterval: 15_000,
+  })
+
+  // Requête distincte, et bien plus lente : une tendance sur une heure ne change
+  // pas d'un quart de minute. La rafraîchir au rythme des chiffres ferait
+  // réévaluer cinq requêtes de plage toutes les quinze secondes pour un tracé
+  // identique. Son échec n'empêche rien : les tuiles s'affichent sans courbe.
+  const { data: tendances } = useQuery({
+    queryKey: ['ai', 'trends', TENDANCE_FENETRE],
+    queryFn: () => aiAssistantApi.getTrends(TENDANCE_FENETRE),
+    refetchInterval: 120_000,
   })
 
   return (
@@ -81,6 +97,8 @@ export default function MonitoringPage() {
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
               <KpiCard
                 label="Mémoire (heap)"
+                tendance={tendances?.trends.memory}
+                periode={TENDANCE_LIBELLE}
                 valeur={data.heap_percent}
                 unite=" %"
                 icon={MemoryStick}
@@ -94,6 +112,8 @@ export default function MonitoringPage() {
               />
               <KpiCard
                 label="CPU"
+                tendance={tendances?.trends.cpu}
+                periode={TENDANCE_LIBELLE}
                 valeur={data.cpu_percent}
                 unite=" %"
                 icon={Cpu}
@@ -102,6 +122,8 @@ export default function MonitoringPage() {
               />
               <KpiCard
                 label="Latence p95"
+                tendance={tendances?.trends.latency}
+                periode={TENDANCE_LIBELLE}
                 valeur={data.latency_p95_ms}
                 unite=" ms"
                 decimales={0}
@@ -111,6 +133,8 @@ export default function MonitoringPage() {
               />
               <KpiCard
                 label="Taux d'erreur"
+                tendance={tendances?.trends.errors}
+                periode={TENDANCE_LIBELLE}
                 valeur={data.error_rate_percent}
                 unite=" %"
                 decimales={2}
@@ -127,6 +151,8 @@ export default function MonitoringPage() {
                   il irait mal. Une piste sans seuil n'aurait rien à montrer. */}
               <KpiCard
                 label="Débit"
+                tendance={tendances?.trends.throughput}
+                periode={TENDANCE_LIBELLE}
                 valeur={data.requests_per_second}
                 unite=" req/s"
                 decimales={2}

@@ -53,6 +53,29 @@ class HealthSnapshot(BaseModel):
     issues: list[str] = []
 
 
+class MetricTrends(BaseModel):
+    """
+    La forme récente des mesures, pour la vignette de tendance des tuiles KPI.
+
+    Un chiffre seul ne dit pas s'il monte. « 78 % de mémoire » se lit tout
+    autrement selon qu'on venait de 40 % ou de 82 % : dans le premier cas
+    quelque chose se passe, dans le second cela redescend.
+
+    Les points sont dans l'unité d'affichage de la tuile — pourcentage,
+    millisecondes — et non dans celle de Prometheus : la courbe et le chiffre
+    posé au-dessus d'elle doivent parler de la même chose.
+
+    Une métrique sans donnée est **absente** de `trends`, jamais présente avec
+    une liste vide. L'interface n'affiche alors aucune courbe, au lieu d'une
+    ligne plate qui se lirait comme une mesure stable.
+    """
+
+    window: TimeWindow
+
+    # Clés : memory, cpu, latency, errors, throughput — celles de HISTORY_METRICS.
+    trends: dict[str, list[float]] = {}
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Module Planning
 # ─────────────────────────────────────────────────────────────────────────────
