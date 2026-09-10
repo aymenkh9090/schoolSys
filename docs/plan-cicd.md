@@ -6,7 +6,8 @@
 >
 > **Ce plan ne crée pas la CI : elle existe et elle est verte.** Les quatre jobs
 > de `.github/workflows/ci.yml` testent le backend, le front et l'assistant, et
-> construisent les trois images. Ce qui manque tient en un mot : `push`.
+> construisent les trois images. Ce qui manquait au départ tenait en un mot :
+> `push` — c'est fait (cf. l'état ci-dessous).
 >
 > **La moitié du plan ne parle pas de CI/CD mais de données.** Publier une image
 > est une affaire de dix lignes ; garantir qu'Ibn Khaldoun et Carthage sont
@@ -17,10 +18,14 @@
 > sont faites. Celui-ci ne touche à aucune fonctionnalité — il ne déplace que
 > des artefacts et des données.
 >
-> **État : les cinq étapes sont faites.** Reste la configuration que seul le
-> propriétaire du dépôt et de la machine de démonstration peut poser — secrets
-> Docker Hub, runner self-hosted, variable `DEPLOY_DIR` — détaillée à la fin des
-> étapes 1 et 5.
+> **État au 10/09/2026 : chaîne vérifiée de bout en bout.** Les secrets
+> `DOCKERHUB_USERNAME` / `DOCKERHUB_TOKEN` sont posés (compte `aymenzak21`). Le
+> run CI `#23` sur `main` a **publié pour de vrai** les trois images
+> (`aymenzak21/schoolsys-{backend,frontend,ai-assistant}`, étiquettes `latest`
+> et `sha-74cf487`), et la Quality Gate SonarCloud de `main` est repassée au
+> vert (`new_coverage` 83,3 %, `new_security_rating` A). **Seul `deploy.yml`
+> n'a pas encore tourné en réel** : il attend le runner self-hosted `demo` et la
+> variable `DEPLOY_DIR` sur la machine de démonstration — cf. fin d'étape 5.
 
 ---
 
@@ -28,11 +33,11 @@
 
 | Étape | État |
 |---|---|
-| 1 — Publier les trois images sur Docker Hub | **faite** — job `docker` sous garde de secret, étiquettes `latest` + `sha-<commit>`, `image:` sur les trois services du compose |
+| 1 — Publier les trois images sur Docker Hub | **faite et vérifiée** — job `docker` sous garde de secret, étiquettes `latest` + `sha-<commit>`, `image:` sur les trois services du compose ; secrets posés, run `#23` a publié les trois dépôts `aymenzak21/schoolsys-*` |
 | 2 — Le profil `demo` atteint les conteneurs, et devient pilotable | **faite** — `SPRING_PROFILES_ACTIVE` sur le service `backend`, `demo` par défaut, désarmable par une valeur vide |
 | 3 — Sauvegarder les deux bases, ensemble | **faite** — `scripts/sauvegarde.sh` et `scripts/restauration.sh`, un répertoire horodaté par paire ; dump vérifié restaurable |
 | 4 — Figer le jeu de référence | **faite** — `docs/sql/jeu-reference/` : `app.sql` + `keycloak.sql` versionnés, restaurables par `scripts/restauration.sh docs/sql/jeu-reference` |
-| 5 — Le déploiement local, sur runner self-hosted | **faite** — `.github/workflows/deploy.yml`, `workflow_dispatch` : contrôles → `git pull --ff-only` → sauvegarde → `docker compose pull` + `up -d` → smoke test actuator |
+| 5 — Le déploiement local, sur runner self-hosted | **écrite, pas encore exécutée** — `.github/workflows/deploy.yml`, `workflow_dispatch` : contrôles → `git pull --ff-only` → sauvegarde → `docker compose pull` + `up -d` → smoke test actuator ; attend le runner `demo` et la variable `DEPLOY_DIR` |
 
 ### Ce qui existe déjà
 
@@ -58,6 +63,15 @@ les comptes. Ils survivent à `docker compose down`.
 collèges complets — 26 classes, 785 élèves, 88 enseignants, 530 affectations —
 qui **héritent** du programme national semé par `NationalPatternSeeder`.
 `VerificationJeuDeDonneesIT` en contrôle le résultat.
+
+**La Quality Gate SonarCloud de `main` est verte.** Le gros de la branche
+`jeu-de-donnees-reelles` l'avait fait passer en rouge sur deux conditions ; la
+PR `#3` les a levées (`pom.xml` du backend) : `DemoDataRunner` et `NomsTunisiens`
+sortis de `sonar.coverage.exclusions` — ce sont des fixtures, leur résultat est
+vérifié par `VerificationJeuDeDonneesIT`, pas leurs lignes —, et les deux
+`java:S2077` de `purger()`/`compter()` écartés nominativement (`e8`), le nom de
+table venant de la seule constante `TABLES_A_PURGER`. `new_coverage` 83,3 %,
+`new_security_rating` A.
 
 ---
 
@@ -153,10 +167,13 @@ version — c'est le geste de retour arrière.
   déploiement correspondante. Les retrouver autrement demande de rouvrir les
   logs du job et de lire la sortie de buildx.
 
-**Reste à faire côté GitHub, et personne ne peut le faire à ta place :** poser
-`DOCKERHUB_USERNAME` (`aymenzak21`) et `DOCKERHUB_TOKEN` dans Settings →
-Secrets and variables → Actions. Tant qu'ils manquent, le job construit sans
-publier — il ne casse pas.
+**Fait le 10/09/2026 :** `DOCKERHUB_USERNAME` (`aymenzak21`) et `DOCKERHUB_TOKEN`
+sont posés dans Settings → Secrets and variables → Actions. Le run `#23` sur
+`main` a publié les trois images. Un piège rencontré au passage : un `username`
+erroné (le nom GitHub `aymenkh9090` au lieu du compte Docker Hub `aymenzak21`)
+fait échouer `docker/login-action` — et comme le secret existe, la garde
+`publier` vaut `true` et le job **tombe en échec** au lieu de construire sans
+publier. La garde ne protège que l'absence de secret, pas un secret faux.
 
 ### Étape 2 — Le profil `demo` atteint les conteneurs, et devient pilotable — **faite**
 
@@ -349,11 +366,13 @@ l'écriture a imposé :
 - **Aucun `down`.** `up -d --remove-orphans` suffit à recréer les conteneurs
   dont l'image a changé ; `down -v` reste l'interdit du § 4.
 
-**Reste à faire côté machine de démonstration, et personne ne peut le faire à ta
-place :** installer le runner self-hosted avec le label `demo`, cloner le dépôt
-dans un répertoire fixe avec son `.env`, et déclarer la variable `DEPLOY_DIR`
-(Settings → Secrets and variables → Actions → Variables) pointant vers ce
-répertoire.
+**Seul reste ouvert du plan, et personne ne peut le faire à ta place :** sur la
+machine de démonstration, installer le runner self-hosted avec le label `demo`,
+cloner le dépôt dans un répertoire fixe avec son `.env` (ou
+`scripts/restauration.sh docs/sql/jeu-reference`), et déclarer la variable
+`DEPLOY_DIR` (Settings → Secrets and variables → Actions → Variables) pointant
+vers ce répertoire. Tant que le runner n'existe pas, un déclenchement de
+`deploy.yml` reste en file d'attente sans échouer.
 
 ---
 
