@@ -202,6 +202,16 @@ async def test_une_reponse_inattendue_ne_leve_jamais():
     assert points == []
 
 
+async def test_la_variante_horodatee_garde_chaque_valeur_a_sa_date():
+    """
+    Le trou est retiré avec sa date : le point suivant garde la sienne, et ne
+    glisse pas d'un pas vers le passé — la régression en dépend.
+    """
+    points = await _prometheus_rendant(_serie("40.0", "NaN", "60.0")).query_range_points("x", 60, 300)
+
+    assert points == [(1700000000.0, 40.0), (1700000120.0, 60.0)]
+
+
 async def test_la_fenetre_et_le_pas_partent_dans_la_requete():
     vues = {}
 
