@@ -47,6 +47,10 @@ export function formatDuree(minutes: number): string {
   return reste === 0 ? `${heures} h` : `${heures} h ${String(reste).padStart(2, '0')}`
 }
 
+function majuscule(texte: string): string {
+  return texte.charAt(0).toUpperCase() + texte.slice(1)
+}
+
 /** « dans ~45 min » — le tilde dit que c'est une projection, pas un compte à rebours. */
 function dans(minutes: number): string {
   return minutes < 1 ? "dans moins d'une minute" : `dans ~${formatDuree(minutes)}`
@@ -106,4 +110,131 @@ export function lignePrevision(p: ResourceForecast): LignePrevision {
 export function variationProjetee(p: ResourceForecast): { variation: number; minutes: number } | undefined {
   if (p.at_horizon === null || p.current === null || !p.horizon_minutes) return undefined
   return { variation: p.at_horizon - p.current, minutes: p.horizon_minutes }
+}
+
+/**
+ * Le prochain seuil que la droite franchira, et dans combien de temps.
+ *
+ * Seulement pour `hausse`, et seulement un seuil encore devant nous : l'alerte
+ * si elle n'est pas atteinte, l'incident sinon. `undefined` dans tous les autres
+ * cas — le panneau écrit alors « aucun » ou « non estimable », jamais une durée.
+ */
+export function prochainSeuil(
+  p: ResourceForecast
+): { seuil: number; minutes: number; ton: Exclude<TonPrevision, 'neutre'> } | undefined {
+  if (p.verdict !== 'hausse') return undefined
+  if (p.minutes_to_warning !== null && p.minutes_to_warning > 0) {
+    return { seuil: p.warning_threshold, minutes: p.minutes_to_warning, ton: 'alerte' }
+  }
+  if (p.minutes_to_critical !== null && p.minutes_to_critical > 0) {
+    return { seuil: p.critical_threshold, minutes: p.minutes_to_critical, ton: 'critique' }
+  }
+  return undefined
+}
+
+export interface Recommandation {
+  ton: TonPrevision | 'inconnu'
+  titre: string
+  texte: string
+}
+
+/** Ce qu'on fait quand la ressource monte — propre à chacune. */
+const CONSEIL: Record<string, string> = {
+  cpu:
+    'Repérer le traitement qui charge le processeur (une génération ' +
+    "d'emploi du temps en cours, par exemple) avant d'en lancer un autre.",
+  memory:
+    "Le plancher de la heap monte d'un ramasse-miettes à l'autre, signe " +
+    "possible d'une fuite : prévoir un redémarrage hors des heures de cours.",
+}
+
+/**
+ * La conduite à tenir, déduite des verdicts — jamais rédigée par le modèle.
+ *
+ * La ressource la plus urgente décide : un incident annoncé l'emporte sur une
+ * alerte, une alerte sur une incertitude, une incertitude sur le calme. Un
+ * verdict `incertain` ou `insuffisant` ne rassure pas : il dit qu'on ne sait
+ * pas, et le texte le dit aussi.
+ */
+export function recommandation(
+  previsions: Partial<Record<string, ResourceForecast>>,
+  noms: Record<string, string>
+): Recommandation {
+  const entrees = Object.entries(previsions).filter(
+    (e): e is [string, ResourceForecast] => e[1] !== undefined
+  )
+  const nom = (cle: string) => noms[cle] ?? cle
+  const horizonMin = entrees.find(([, p]) => p.horizon_minutes)?.[1].horizon_minutes ?? null
+  const surHorizon = horizonMin ? `sur ${formatDuree(horizonMin)}` : "dans l'heure qui vient"
+
+  // L'échéance la plus pressante : un seuil d'incident déjà dépassé, puis
+  // l'incident le plus proche, puis l'alerte la plus proche.
+  const rang = (p: ResourceForecast) => {
+    const s = prochainSeuil(p)
+    if (!s) return p.verdict === 'hausse' && p.minutes_to_critical === 0 ? -1 : Infinity
+    return s.ton === 'critique' ? s.minutes : 100_000 + s.minutes
+  }
+  const [urgente] = entrees.filter(([, p]) => rang(p) !== Infinity).sort(([, a], [, b]) => rang(a) - rang(b))
+
+  if (urgente) {
+    const [cle, p] = urgente
+    const conseil = CONSEIL[cle] ?? ''
+    const s = prochainSeuil(p)
+    if (!s) {
+      return {
+        ton: 'critique',
+        titre: 'Intervenir',
+        texte: `${majuscule(nom(cle))} a franchi son seuil d'incident et continue de monter. ${conseil}`,
+      }
+    }
+    return s.ton === 'critique'
+      ? {
+          ton: 'critique',
+          titre: 'Intervenir',
+          texte: `${majuscule(nom(cle))} est déjà en alerte ; à ce rythme, le seuil d'incident (${s.seuil} %) sera atteint ${dans(s.minutes)}. ${conseil}`,
+        }
+      : {
+          ton: 'alerte',
+          titre: 'Anticiper',
+          texte: `À ce rythme, ${nom(cle)} atteindra son seuil d'alerte (${s.seuil} %) ${dans(s.minutes)}. ${conseil}`,
+        }
+  }
+
+  const insuffisant = entrees.find(([, p]) => p.verdict === 'insuffisant')
+  if (insuffisant) {
+    return {
+      ton: 'inconnu',
+      titre: 'Prévision impossible',
+      texte:
+        `Pas assez d'historique pour anticiper ${nom(insuffisant[0])} : il faut au moins ` +
+        "30 min de mesures — l'application a sans doute redémarré. Cela ne veut pas " +
+        "dire qu'il n'y a aucun risque.",
+    }
+  }
+
+  const incertain = entrees.find(([, p]) => p.verdict === 'incertain')
+  if (incertain) {
+    return {
+      ton: 'inconnu',
+      titre: 'Aucune échéance fiable',
+      texte:
+        `${majuscule(nom(incertain[0]))} varie sans tendance nette : aucune droite ne ` +
+        "l'explique assez pour annoncer une échéance. Surveiller son niveau sur les tuiles.",
+    }
+  }
+
+  const enHausse = entrees.find(([, p]) => p.verdict === 'hausse')
+  if (enHausse) {
+    return {
+      ton: 'alerte',
+      titre: 'Surveiller',
+      texte: `${majuscule(nom(enHausse[0]))} monte, sans atteindre son seuil d'incident ${surHorizon}.`,
+    }
+  }
+
+  return {
+    ton: 'neutre',
+    titre: 'Aucune action immédiate',
+    texte: `À ce rythme, aucun seuil ne sera atteint ${surHorizon}.`,
+  }
 }

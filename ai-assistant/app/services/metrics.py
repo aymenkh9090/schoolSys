@@ -251,6 +251,9 @@ class MetricsService:
                 horizon_minutes=p.horizon_min,
                 minutes_to_warning=p.minutes_avant_alerte,
                 minutes_to_critical=p.minutes_avant_incident,
+                # Les points mêmes qui ont servi au calcul : le graphique trace
+                # ce qui a été régressé, pas une série voisine.
+                history=points,
             )
         return previsions
 

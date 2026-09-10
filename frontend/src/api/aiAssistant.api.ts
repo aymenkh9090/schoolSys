@@ -167,6 +167,11 @@ export interface ResourceForecast {
   horizon_minutes: number | null
   minutes_to_warning: number | null
   minutes_to_critical: number | null
+  /**
+   * La série régressée, en couples [horodatage Unix en secondes, valeur] —
+   * trous de redémarrage compris. Vide sans historique.
+   */
+  history: [number, number][]
 }
 
 /** Les ressources qui se consomment, sous les clés de leurs tuiles. */

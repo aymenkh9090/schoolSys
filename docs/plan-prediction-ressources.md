@@ -22,6 +22,7 @@
 | 1 — Le calcul : régression, R², temps avant seuil | **fait** — route `/api/monitoring/forecast` |
 | 2 — L'écran : la projection sur les tuiles | **fait** — pointillé et ligne d'échéance |
 | 3 — L'assistant : « quand la mémoire va-t-elle saturer ? » | **fait** — outil `get_resource_forecast` |
+| 4 — Le panneau : la prévision en grand, à côté de l'assistant | **fait** — `PrevisionPanel` |
 
 ### Ce qui existe déjà
 
@@ -323,6 +324,42 @@ plancher à 75 % signifie que le ramasse-miettes ne libère plus assez, ce qu'un
 pic seul ne dit pas — mais la question viendra. Le libellé vu par le modèle le
 précise (« heap remaining in use after garbage collection »).
 
+### Étape 4 — Le panneau : la prévision en grand, à côté de l'assistant
+
+Ajoutée après coup, d'après une maquette (`docs/images/`) : un panneau
+« Prévision de la saturation des ressources » posé à côté de l'assistant
+technique — jauge, tendance, échéance, graphique, détails, recommandation.
+
+**Réalisé.** `PrevisionPanel.tsx` lit la même réponse `/forecast` que les
+tuiles ; aucun calcul de tendance côté écran. Côté Python, `ResourceForecast`
+porte désormais `history` : les couples `(horodatage, valeur)` mêmes qui ont
+servi à la régression (2 tests). Décisions prises :
+
+- **Un vrai axe du temps, sur toute la fenêtre.** L'axe va toujours de
+  « maintenant − 1 h » à « maintenant + horizon », même quand l'historique est
+  plus court : après un redémarrage, la gauche reste vide, et le trou d'une
+  série interrompue est coupé, pas relié.
+- **La droite part de sa propre valeur, pas du dernier point.** À l'inverse du
+  pointillé des tuiles (§ étape 2), qui reporte une variation : ici les seuils
+  sont tracés, et c'est la droite elle-même qui doit les croiser à l'heure que
+  le texte annonce. Un point marque ce croisement.
+- **Seuils en traits pleins**, alors que la maquette les dessinait en
+  pointillé : sur tout l'écran, le pointillé est réservé à la projection.
+- **Pas de ligne « Réseau »** dans les détails, que la maquette montrait :
+  aucune métrique réseau n'est collectée. Mémoire et CPU seulement — les deux
+  ressources prévues.
+- **La pente ne se cite que sous R² ≥ 0,5** (présence de `at_horizon`) ; sinon
+  le verdict en mots. Sans projection, la légende dit pourquoi.
+- **La recommandation est déduite des verdicts** (`recommandation`,
+  `prevision.ts`), jamais rédigée par le modèle : la ressource la plus pressante
+  décide, et `incertain` / `insuffisant` ne rassurent pas.
+- **La ressource tracée** est la plus pressante tant qu'on n'a rien choisi ; un
+  clic sur une ligne des détails la fixe.
+
+Vérifié sur quatre scénarios (hausse, démo, incident, historique insuffisant),
+en clair et en sombre, à 610 et 1300 px (Chromium headless) ; `tsc -b` sans
+erreur, 264 tests Python verts.
+
 ---
 
 ## 5. La règle à ne pas casser
@@ -351,6 +388,9 @@ ni une durée par défaut.
 | `frontend/src/features/superadmin/monitoring/MonitoringPage.tsx` | 2 | requête de prévision |
 | `ai-assistant/app/tools/definitions.py`, `handlers.py` | 3 | outil `get_resource_forecast` |
 | `ai-assistant/app/services/assistant.py` | 3 | orientation dans le prompt système |
+| `ai-assistant/app/models.py`, `metrics.py` | 4 | `history` : la série régressée, horodatée |
+| `frontend/src/features/superadmin/monitoring/PrevisionPanel.tsx` | 4 | **nouveau** — le panneau |
+| `frontend/src/features/superadmin/monitoring/prevision.ts` | 4 | `prochainSeuil`, `recommandation` |
 
 ---
 

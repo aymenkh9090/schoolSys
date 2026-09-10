@@ -116,6 +116,11 @@ class ResourceForecast(BaseModel):
     # 0 = déjà franchi ; None = pas atteint avant l'horizon, ou verdict sans échéance.
     minutes_to_warning: float | None = None
     minutes_to_critical: float | None = None
+    # La série régressée elle-même, en couples (horodatage Unix, valeur) : ce que
+    # le graphique de prévision trace sous la droite. Horodatée, et non une
+    # simple liste comme `trends` — un axe gradué en heures doit poser chaque
+    # point à son heure, et un redémarrage laisse un trou qu'il faut voir.
+    history: list[tuple[float, float]] = []
 
 
 class ResourceForecasts(BaseModel):

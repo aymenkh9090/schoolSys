@@ -289,3 +289,25 @@ async def test_la_prevision_porte_ses_seuils_et_sa_serie():
     assert memoire.warning_threshold == 75.0
     assert memoire.critical_threshold == 90.0
     assert "floor" in memoire.series
+
+
+async def test_la_prevision_rend_la_serie_regressee_horodatee():
+    """
+    Le graphique trace les points mêmes qui ont servi au calcul, chacun à son
+    heure : un trou de redémarrage doit rester un trou sur l'axe du temps.
+    """
+    expression = FORECAST_METRICS["cpu"][2]
+    points = _droite(20.0, par_heure=10.0)
+    avec_trou = points[:20] + points[40:]
+    prom = FakePrometheus({expression: avec_trou})
+
+    cpu = (await _service(prom).get_forecast("1h"))["cpu"]
+
+    assert cpu.history == avec_trou
+    assert cpu.history[20][0] - cpu.history[19][0] == pytest.approx(21 * 60)
+
+
+async def test_sans_historique_la_serie_est_vide():
+    previsions = await _service(FakePrometheus()).get_forecast("1h")
+
+    assert all(p.history == [] for p in previsions.values())

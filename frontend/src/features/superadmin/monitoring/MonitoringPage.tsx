@@ -18,6 +18,7 @@ import { cn } from '@/lib/utils'
 import { KpiCard, StatutCard } from './KpiCard'
 import { aiAssistantApi, type HealthSnapshot } from '@/api/aiAssistant.api'
 import AssistantChat from './AssistantChat'
+import { PrevisionPanel } from './PrevisionPanel'
 
 // Une heure : assez long pour qu'une dérive se voie, assez court pour que la
 // vignette parle de maintenant. La légende du tracé la nomme, sans quoi une
@@ -54,7 +55,7 @@ export default function MonitoringPage() {
   // calculée sur une heure ne change pas d'un quart de minute. Même fenêtre
   // aussi, pour que le pointillé prolonge la courbe qu'il continue. Son échec
   // n'empêche rien : les tuiles s'affichent sans ligne d'échéance.
-  const { data: previsions } = useQuery({
+  const { data: previsions, isError: previsionEnEchec } = useQuery({
     queryKey: ['ai', 'forecast', TENDANCE_FENETRE],
     queryFn: () => aiAssistantApi.getForecast(TENDANCE_FENETRE),
     refetchInterval: 120_000,
@@ -194,7 +195,19 @@ export default function MonitoringPage() {
             </div>
           </section>
 
-          <AssistantChat />
+          {/* L'assistant et la prévision côte à côte sur grand écran : l'un
+              répond à « quand la mémoire va-t-elle saturer ? », l'autre le
+              montre. En dessous, empilés — un graphique gradué en heures ne
+              tient pas dans une demi-largeur de portable. */}
+          <div className="grid grid-cols-1 items-start gap-6 xl:grid-cols-2">
+            <AssistantChat />
+            <PrevisionPanel
+              previsions={previsions?.forecasts}
+              sante={data}
+              indisponible={previsionEnEchec}
+              fenetreMinutes={TENDANCE_MINUTES}
+            />
+          </div>
         </div>
       )}
     </div>
