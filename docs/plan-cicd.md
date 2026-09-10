@@ -16,6 +16,11 @@
 > **Chantier voisin :** `docs/plan-assistant-conflits.md`, dont les cinq étapes
 > sont faites. Celui-ci ne touche à aucune fonctionnalité — il ne déplace que
 > des artefacts et des données.
+>
+> **État : les cinq étapes sont faites.** Reste la configuration que seul le
+> propriétaire du dépôt et de la machine de démonstration peut poser — secrets
+> Docker Hub, runner self-hosted, variable `DEPLOY_DIR` — détaillée à la fin des
+> étapes 1 et 5.
 
 ---
 
@@ -27,7 +32,7 @@
 | 2 — Le profil `demo` atteint les conteneurs, et devient pilotable | **faite** — `SPRING_PROFILES_ACTIVE` sur le service `backend`, `demo` par défaut, désarmable par une valeur vide |
 | 3 — Sauvegarder les deux bases, ensemble | **faite** — `scripts/sauvegarde.sh` et `scripts/restauration.sh`, un répertoire horodaté par paire ; dump vérifié restaurable |
 | 4 — Figer le jeu de référence | **faite** — `docs/sql/jeu-reference/` : `app.sql` + `keycloak.sql` versionnés, restaurables par `scripts/restauration.sh docs/sql/jeu-reference` |
-| 5 — Le déploiement local, sur runner self-hosted | à faire |
+| 5 — Le déploiement local, sur runner self-hosted | **faite** — `.github/workflows/deploy.yml`, `workflow_dispatch` : contrôles → `git pull --ff-only` → sauvegarde → `docker compose pull` + `up -d` → smoke test actuator |
 
 ### Ce qui existe déjà
 
@@ -318,6 +323,38 @@ sauvegarde des 2 bases  →  docker compose pull  →  docker compose up -d  →
   déclare réussi sans avoir rien vérifié est pire qu'un déploiement manuel : il
   déplace la découverte de la panne au moment de la démonstration.
 
+**Livrée.** `deploy.yml`, sept steps dans l'ordre du schéma ci-dessus. Ce que
+l'écriture a imposé :
+
+- **`concurrency: { group: deploy, cancel-in-progress: false }`.** Les deux
+  moitiés comptent : jamais deux déploiements en parallèle, et jamais
+  l'annulation d'un déploiement en cours. `restauration.sh` — qu'un opérateur
+  peut lancer pendant qu'un déploiement tourne — supprime puis recrée les
+  bases ; une interruption au milieu laisse la machine sans base.
+- **`working-directory` fixé par `vars.DEPLOY_DIR`**, pas par un
+  `actions/checkout`. Le job n'utilise pas du tout `checkout` : il fait
+  `git pull --ff-only` dans le répertoire qui contient déjà le `.env`. Un
+  `checkout` aurait ramené un arbre propre *sans* le `.env`, donc un backend qui
+  ne démarre pas.
+- **`--ff-only`, et un refus si l'arbre a des modifications suivies.** Un
+  correctif appliqué à la main sur la machine arrête le déploiement au lieu
+  d'être écrasé en silence. `.env` et `sauvegardes/` sont gitignorés, donc
+  jamais touchés.
+- **La sauvegarde est sautée, pas échouée, au premier déploiement.** `sauvegarde.sh`
+  refuse sur une pile éteinte ; le step vérifie `docker compose ps` avant de
+  l'appeler.
+- **`TAG` passé par l'environnement du step**, ce qui le fait primer sur le
+  `.env` : l'entrée `tag` du `workflow_dispatch` est le geste de retour arrière,
+  vide elle retombe sur `latest`.
+- **Aucun `down`.** `up -d --remove-orphans` suffit à recréer les conteneurs
+  dont l'image a changé ; `down -v` reste l'interdit du § 4.
+
+**Reste à faire côté machine de démonstration, et personne ne peut le faire à ta
+place :** installer le runner self-hosted avec le label `demo`, cloner le dépôt
+dans un répertoire fixe avec son `.env`, et déclarer la variable `DEPLOY_DIR`
+(Settings → Secrets and variables → Actions → Variables) pointant vers ce
+répertoire.
+
 ---
 
 ## 4. La règle à ne pas casser
@@ -336,7 +373,7 @@ recrée des conteneurs, jamais après.
 | Couche | Fichier |
 |---|---|
 | CI | `.github/workflows/ci.yml` (job `docker`, l. 147) |
-| CD | `.github/workflows/deploy.yml` (à créer) |
+| CD | `.github/workflows/deploy.yml` |
 | Pile | `docker-compose.yml` (services `backend`, `frontend`, `ai-assistant`) |
 | Configuration | `.env.example` |
 | Sauvegarde | `scripts/sauvegarde.sh`, `scripts/restauration.sh` |

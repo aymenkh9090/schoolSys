@@ -357,6 +357,29 @@ qui écoute au-delà de `127.0.0.1`, sans quoi le chat échoue seul, pile debout
 La procédure complète — variables d'environnement, assistant, tableau de
 dépannage — est dans **`mobile/README.md`**.
 
+## 8. Redéployer (runner self-hosted)
+
+La CI publie les trois images sur Docker Hub à chaque commit sur `main`. Pour
+les mettre en service sur la machine de démonstration sans perdre les données :
+le workflow **`.github/workflows/deploy.yml`**, à déclencher à la main depuis
+l'onglet Actions (`workflow_dispatch`).
+
+Il enchaîne : contrôles → `git pull --ff-only` → **sauvegarde des deux bases** →
+`docker compose pull` → `docker compose up -d` → attente de
+`actuator/health` UP. L'entrée `tag` accepte une étiquette de commit
+(`sha-xxxxxxx`) pour un retour arrière ; vide, il déploie `latest`.
+
+Prérequis, une fois par machine :
+
+1. installer un runner self-hosted avec le label `demo` (Settings → Actions →
+   Runners) ;
+2. y cloner le dépôt dans un répertoire fixe, avec son `.env`
+   (`KC_CLIENT_SECRET`, `DB_PASSWORD`) — ou restaurer `docs/sql/jeu-reference/` ;
+3. déclarer la variable `DEPLOY_DIR` (Settings → Secrets and variables →
+   Actions → Variables) pointant vers ce répertoire.
+
+Détail des choix : `docs/plan-cicd.md`, étape 5.
+
 ## Tester l'API sans le frontend (Postman/curl)
 
 Obtenir un token JWT :
