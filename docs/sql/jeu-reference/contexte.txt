@@ -1,0 +1,5 @@
+Jeu de référence — les deux collèges de démonstration, figés.
+
+Origine     : sauvegarde du 2026-09-10, commit 99f6e3e (jeu-de-donnees-reelles)
+Contenu     : cf. LISEZMOI.md
+Restauration: scripts/restauration.sh docs/sql/jeu-reference

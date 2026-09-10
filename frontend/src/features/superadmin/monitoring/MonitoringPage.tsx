@@ -18,12 +18,14 @@ import { cn } from '@/lib/utils'
 import { KpiCard, StatutCard } from './KpiCard'
 import { aiAssistantApi, type HealthSnapshot } from '@/api/aiAssistant.api'
 import AssistantChat from './AssistantChat'
+import { PrevisionPanel } from './PrevisionPanel'
 
 // Une heure : assez long pour qu'une dérive se voie, assez court pour que la
 // vignette parle de maintenant. La légende du tracé la nomme, sans quoi une
 // courbe sans échelle de temps ne veut rien dire.
 const TENDANCE_FENETRE = '1h' as const
 const TENDANCE_LIBELLE = '1 h'
+const TENDANCE_MINUTES = 60
 
 const GRAFANA_URL = import.meta.env.VITE_GRAFANA_URL ?? 'http://localhost:3001'
 // Dashboard provisionné par fichier (monitoring/dashboards/jvm-micrometer.json),
@@ -46,6 +48,16 @@ export default function MonitoringPage() {
   const { data: tendances } = useQuery({
     queryKey: ['ai', 'trends', TENDANCE_FENETRE],
     queryFn: () => aiAssistantApi.getTrends(TENDANCE_FENETRE),
+    refetchInterval: 120_000,
+  })
+
+  // La prévision suit le rythme de la tendance, pour la même raison : une pente
+  // calculée sur une heure ne change pas d'un quart de minute. Même fenêtre
+  // aussi, pour que le pointillé prolonge la courbe qu'il continue. Son échec
+  // n'empêche rien : les tuiles s'affichent sans ligne d'échéance.
+  const { data: previsions, isError: previsionEnEchec } = useQuery({
+    queryKey: ['ai', 'forecast', TENDANCE_FENETRE],
+    queryFn: () => aiAssistantApi.getForecast(TENDANCE_FENETRE),
     refetchInterval: 120_000,
   })
 
@@ -87,6 +99,22 @@ export default function MonitoringPage() {
         <div className={cn('space-y-6 transition-opacity', isFetching && 'opacity-60')}>
           <StatusBanner snapshot={data} />
 
+          {/* L'assistant et la prévision en tête, juste sous le bandeau : c'est
+              là que l'écran répond à « où va-t-on ? », les tuiles en dessous
+              disent le détail de maintenant. Côte à côte sur grand écran, l'un
+              répond à « quand la mémoire va-t-elle saturer ? », l'autre le
+              montre ; empilés en dessous — un graphique gradué en heures ne
+              tient pas dans une demi-largeur de portable. */}
+          <div className="grid grid-cols-1 items-start gap-6 xl:grid-cols-2">
+            <AssistantChat />
+            <PrevisionPanel
+              previsions={previsions?.forecasts}
+              sante={data}
+              indisponible={previsionEnEchec}
+              fenetreMinutes={TENDANCE_MINUTES}
+            />
+          </div>
+
           {/* Les mesures qui ont une limite : chacune se lit face à la sienne.
               Les seuils reprennent ceux de THRESHOLDS côté Python — l'écran et
               le service doivent qualifier un incident de la même façon, sans
@@ -99,6 +127,11 @@ export default function MonitoringPage() {
                 label="Mémoire (heap)"
                 tendance={tendances?.trends.memory}
                 periode={TENDANCE_LIBELLE}
+                periodeMinutes={TENDANCE_MINUTES}
+                prevision={previsions?.forecasts.memory}
+                // La heap brute est une dent de scie que le ramasse-miettes
+                // redescend sans cesse : la régression porte sur son plancher.
+                serieRegressee="le plancher de la heap (minimum sur 5 min, après ramasse-miettes)"
                 valeur={data.heap_percent}
                 unite=" %"
                 icon={MemoryStick}
@@ -114,6 +147,9 @@ export default function MonitoringPage() {
                 label="CPU"
                 tendance={tendances?.trends.cpu}
                 periode={TENDANCE_LIBELLE}
+                periodeMinutes={TENDANCE_MINUTES}
+                prevision={previsions?.forecasts.cpu}
+                serieRegressee="la charge CPU"
                 valeur={data.cpu_percent}
                 unite=" %"
                 icon={Cpu}
@@ -174,8 +210,6 @@ export default function MonitoringPage() {
               <StatutCard label="Base de données" statut={data.db_status} icon={Database} />
             </div>
           </section>
-
-          <AssistantChat />
         </div>
       )}
     </div>

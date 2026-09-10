@@ -38,7 +38,8 @@ TOOL_DEFINITIONS = [
                 "Get the CURRENT JVM heap memory usage and CPU load, right now. "
                 "Use this when the user asks about memory, heap, RAM or CPU "
                 "at this instant. Do NOT use this tool for history, trend or "
-                "evolution over a period: use get_metric_history instead."
+                "evolution over a period: use get_metric_history instead. Do NOT "
+                "use it for predictions either: use get_resource_forecast."
             ),
             "parameters": {"type": "object", "properties": {}, "required": []},
         },
@@ -86,7 +87,9 @@ TOOL_DEFINITIONS = [
                 "trend, evolution, 'is it increasing', 'over the last hour', "
                 "or compares now with before. Always prefer this tool over "
                 "get_memory_usage and get_http_performance whenever the question "
-                "mentions a period of time or an evolution."
+                "mentions a period of time or an evolution. For a PREDICTION "
+                "('when will it', 'at this rate', 'will it saturate'), use "
+                "get_resource_forecast instead."
             ),
             "parameters": {
                 "type": "object",
@@ -103,6 +106,27 @@ TOOL_DEFINITIONS = [
                 },
                 "required": ["metric", "window"],
             },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_resource_forecast",
+            "description": (
+                "PREDICT when memory, CPU, disk space or the database connection "
+                "pool will reach its alert threshold, from the trend of the last "
+                "hour. Use this when the user asks 'when', 'how long before', "
+                "'at this rate', 'will it saturate', 'will memory run out', "
+                "'will the disk be full', or asks for a forecast or a prediction. "
+                "The forecast is already computed: report it as given, never "
+                "compute a time or a date yourself."
+            ),
+            # Aucun paramètre, comme get_memory_usage : les cinq ressources
+            # tiennent en cinq lignes, et un modèle de cette taille choisit
+            # d'autant plus mal qu'il a d'options. La fenêtre est fixée à une
+            # heure — l'horizon de la prévision ne dépasse jamais la durée
+            # observée, et « la journée » ne se prédit pas sur une droite.
+            "parameters": {"type": "object", "properties": {}, "required": []},
         },
     },
     {

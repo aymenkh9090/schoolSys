@@ -129,6 +129,63 @@ export interface MetricTrends {
   trends: Partial<Record<CleTendance, number[]>>
 }
 
+/**
+ * Le verdict d'une prévision, calculé côté Python — l'écran ne fait que le lire.
+ *
+ * - `hausse`      : seuil d'alerte atteint avant l'horizon, durées renseignées ;
+ * - `stable`      : aucun seuil atteint avant l'horizon ;
+ * - `baisse`      : la ressource se libère ;
+ * - `incertain`   : la droite n'explique pas la série — aucune échéance ;
+ * - `insuffisant` : trop peu d'historique pour tracer une droite.
+ */
+export type VerdictPrevision = 'insuffisant' | 'incertain' | 'hausse' | 'stable' | 'baisse'
+
+/**
+ * Où va une ressource, par régression linéaire sur l'heure écoulée.
+ *
+ * Les durées ne sont JAMAIS renseignées hors `hausse`. `0` = seuil déjà franchi ;
+ * `null` = pas atteint avant l'horizon.
+ */
+export interface ResourceForecast {
+  verdict: VerdictPrevision
+  /** Ce qui a été régressé — pour la mémoire, le plancher de la heap, pas la heap brute. */
+  series: string
+  unit: string
+  warning_threshold: number
+  critical_threshold: number
+  points: number
+  r2: number | null
+  slope_per_hour: number | null
+  /** Valeur de la droite maintenant. */
+  current: number | null
+  /**
+   * Valeur de la droite au bout de l'horizon. Absente quand la droite n'explique
+   * pas la série (R² < 0,5) : sa présence est ce qui autorise le pointillé.
+   */
+  at_horizon: number | null
+  /** La durée observée — on ne projette jamais plus loin qu'on a regardé. */
+  horizon_minutes: number | null
+  minutes_to_warning: number | null
+  minutes_to_critical: number | null
+  /**
+   * La série régressée, en couples [horodatage Unix en secondes, valeur] —
+   * trous de redémarrage compris. Vide sans historique.
+   */
+  history: [number, number][]
+}
+
+/**
+ * Les ressources qui se consomment — les clés de FORECAST_METRICS côté Python.
+ * `memory` et `cpu` sont aussi celles des tuiles ; les trois autres n'existent
+ * que dans le panneau de prévision.
+ */
+export type CleRessource = 'memory' | 'cpu' | 'system_cpu' | 'disk' | 'db_pool'
+
+export interface ResourceForecasts {
+  window: TimeWindow
+  forecasts: Partial<Record<CleRessource, ResourceForecast>>
+}
+
 export const aiAssistantApi = {
   getHealth: (window: TimeWindow = '5m') =>
     aiClient
@@ -138,6 +195,11 @@ export const aiAssistantApi = {
   getTrends: (window: TimeWindow = '1h') =>
     aiClient
       .get<MetricTrends>('/api/monitoring/trends', { params: { window } })
+      .then((r) => r.data),
+
+  getForecast: (window: TimeWindow = '1h') =>
+    aiClient
+      .get<ResourceForecasts>('/api/monitoring/forecast', { params: { window } })
       .then((r) => r.data),
 
   getSlowestEndpoints: (window: TimeWindow = '1h') =>

@@ -16,6 +16,11 @@
 > **Chantier voisin :** `docs/plan-assistant-conflits.md`, dont les cinq étapes
 > sont faites. Celui-ci ne touche à aucune fonctionnalité — il ne déplace que
 > des artefacts et des données.
+>
+> **État : les cinq étapes sont faites.** Reste la configuration que seul le
+> propriétaire du dépôt et de la machine de démonstration peut poser — secrets
+> Docker Hub, runner self-hosted, variable `DEPLOY_DIR` — détaillée à la fin des
+> étapes 1 et 5.
 
 ---
 
@@ -24,10 +29,10 @@
 | Étape | État |
 |---|---|
 | 1 — Publier les trois images sur Docker Hub | **faite** — job `docker` sous garde de secret, étiquettes `latest` + `sha-<commit>`, `image:` sur les trois services du compose |
-| 2 — Le profil `demo` atteint les conteneurs, et devient pilotable | à faire |
-| 3 — Sauvegarder les deux bases, ensemble | à faire |
-| 4 — Figer le jeu de référence | à faire |
-| 5 — Le déploiement local, sur runner self-hosted | à faire |
+| 2 — Le profil `demo` atteint les conteneurs, et devient pilotable | **faite** — `SPRING_PROFILES_ACTIVE` sur le service `backend`, `demo` par défaut, désarmable par une valeur vide |
+| 3 — Sauvegarder les deux bases, ensemble | **faite** — `scripts/sauvegarde.sh` et `scripts/restauration.sh`, un répertoire horodaté par paire ; dump vérifié restaurable |
+| 4 — Figer le jeu de référence | **faite** — `docs/sql/jeu-reference/` : `app.sql` + `keycloak.sql` versionnés, restaurables par `scripts/restauration.sh docs/sql/jeu-reference` |
+| 5 — Le déploiement local, sur runner self-hosted | **faite** — `.github/workflows/deploy.yml`, `workflow_dispatch` : contrôles → `git pull --ff-only` → sauvegarde → `docker compose pull` + `up -d` → smoke test actuator |
 
 ### Ce qui existe déjà
 
@@ -153,7 +158,7 @@ version — c'est le geste de retour arrière.
 Secrets and variables → Actions. Tant qu'ils manquent, le job construit sans
 publier — il ne casse pas.
 
-### Étape 2 — Le profil `demo` atteint les conteneurs, et devient pilotable
+### Étape 2 — Le profil `demo` atteint les conteneurs, et devient pilotable — **faite**
 
 Une seule ligne sur le service `backend` du compose :
 
@@ -177,7 +182,23 @@ celui-ci ne désarme que la purge *demandée*, pas celle déclenchée par
 `.env.example` porte la consigne, en toutes lettres : **`demo` au premier
 démarrage, vide dès que la base contient quelque chose qu'on regretterait.**
 
-### Étape 3 — Sauvegarder les deux bases, ensemble
+**Livrée.** Un détail décide de tout : la variable est écrite
+`${SPRING_PROFILES_ACTIVE-demo}`, avec un tiret **sans deux-points**, seule
+ligne du fichier dans ce cas. Avec `:-`, Docker traite une valeur vide comme
+une valeur absente et remet `demo` — le désarmement deviendrait inexprimable.
+« Non renseigné » et « renseigné vide » doivent rester deux choses distinctes,
+et c'est ce caractère qui les sépare. Les deux cas sont vérifiés à
+`docker compose config` : `demo` d'un côté, `""` de l'autre.
+
+**Ce que l'étape ne risquait pas, contrôle fait.** Faire tourner le seeder dans
+un conteneur l'expose à un Keycloak pas encore prêt — `depends_on` ne garantit
+que `service_started`. Sans précaution, un `ApplicationRunner` qui lève empêche
+Spring Boot de démarrer, et « base vide » deviendrait « backend qui ne démarre
+pas ». `espaceAuthentification()` prévoyait déjà le cas : l'appel Keycloak est
+sous `try/catch`, l'échec se solde par un `warn`. Aucune modification Java n'a
+donc été nécessaire.
+
+### Étape 3 — Sauvegarder les deux bases, ensemble — **faite**
 
 Deux scripts dans `scripts/`, `sauvegarde.sh` et `restauration.sh`, chacun
 opérant sur **les deux** bases en un seul geste :
@@ -187,10 +208,13 @@ docker compose exec -T app-db      pg_dump -U postgres smartschool
 docker compose exec -T keycloak-db pg_dump -U keycloak  keycloak
 ```
 
-**Pourquoi les deux, toujours.** `DemoDataRunner` crée les comptes par
-`KeycloakAdminService` : les `school_user` vivent dans `app_pg_data`, les
-identifiants correspondants dans `keycloak_pg_data`. Restaurer l'un sans
-l'autre donne des utilisateurs qui pointent vers des comptes absents. Le
+**Pourquoi les deux, toujours.** La base applicative référence Keycloak par
+identifiant : `DemoDataRunner` fait créer le **groupe** de chaque établissement
+(`espaceAuthentification()`) et range son identifiant dans
+`tenant.keycloak_group_id`. Les comptes créés ensuite depuis l'application
+ajoutent une seconde paire — un `school_user` dans `app_pg_data`, un utilisateur
+dans `keycloak_pg_data`. Restaurer l'un sans l'autre laisse donc des
+identifiants qui ne désignent plus rien, et toute création de compte échoue. Le
 symptôme ressemble à une panne d'authentification, et se cherche du mauvais
 côté. **Les deux volumes forment un couple ; les scripts refusent de les
 dissocier.**
@@ -198,19 +222,79 @@ dissocier.**
 Le dossier des sauvegardes est ignoré par Git — un dump horodaté n'a rien à
 faire dans l'historique.
 
-### Étape 4 — Figer le jeu de référence
+**Livrée.** `sauvegardes/<horodatage>/` contient `app.sql`, `keycloak.sql` et un
+`contexte.txt`. Vérifiée pour de bon, pas seulement écrite : la sauvegarde a été
+prise sur la pile en cours (900 Ko + 420 Ko), puis `app.sql` restauré dans une
+base jetable, qui rendait bien `College Ibn Khaldoun` 16 classes / 481 élèves et
+`College Carthage` 10 / 304 — les chiffres du README.
+
+**Cinq décisions, chacune contre un mode de panne précis :**
+
+- **Un répertoire par sauvegarde**, pas deux fichiers côte à côte. Le couple
+  devient structurel : on ne restaure pas une moitié par distraction.
+- **Un dump s'écrit en `.partiel` puis se renomme.** Une redirection directe
+  crée le fichier avant que `pg_dump` ne s'exécute ; un `Ctrl-C` laisserait un
+  fichier vide qui a l'air d'une sauvegarde. Un `trap` efface les restes et le
+  répertoire s'il n'a pas abouti.
+- **`contexte.txt` note le commit et la branche.** Liquibase et `ddl-auto: update`
+  font évoluer le schéma : un dump ne se restaure que sur le code qui l'a
+  produit, et retrouver lequel trois semaines plus tard relève de la fouille.
+- **La restauration arrête ce qui écrit, et ne redémarre que cela.** La liste
+  est calculée depuis `docker compose ps` : la pile peut tourner sans le profil
+  `app`, auquel cas `backend` n'est pas un conteneur. Keycloak part aussi — on
+  ne supprime pas une base dont un serveur tient les connexions.
+- **`DROP DATABASE … WITH (FORCE)`** coupe les connexions résiduelles au lieu
+  d'échouer sur « database is being accessed by other users ». Un psql oublié,
+  un IDE connecté, et la restauration s'arrêterait à mi-chemin — au pire moment,
+  puisque la base a déjà été supprimée.
+
+**Et le rappel qui referme l'étape 2 :** en fin de restauration, le script
+vérifie que `SPRING_PROFILES_ACTIVE` est désarmé dans le `.env`, et donne la
+commande sinon. Remettre en place des données auxquelles on tient, puis laisser
+le seeder les purger au redémarrage suivant, serait une farce.
+
+### Étape 4 — Figer le jeu de référence — **faite**
 
 Une fois la base semée et vérifiée, le couple de dumps est figé dans
 `docs/sql/`, à côté de `rattrapage-volumes-t1.sql`. C'est le **jeu de
 référence** : sur une machine neuve, Ibn Khaldoun et Carthage se remettent en
-place en quelques secondes, sans rejouer le seeder ni recréer les comptes
-Keycloak, et à l'identique.
+place en quelques secondes, à l'identique, et le realm arrive avec ses clients,
+ses rôles et ses groupes déjà créés — le § 2 du README n'est plus à refaire à
+la main.
 
 Les données sont fictives — noms tunisiens générés par `NomsTunisiens` — donc
 rien ne s'oppose à les versionner.
 
 Bénéfice qui dépasse le déploiement : le jour de la soutenance, le jeu montré
 ne dépend plus de l'exécution correcte d'un runner sur une base inconnue.
+
+**Livrée.** Un **sous-répertoire** `docs/sql/jeu-reference/` plutôt que deux
+fichiers en vrac dans `docs/sql/` : `scripts/restauration.sh` attend un
+répertoire qui contient `app.sql` et `keycloak.sql`, exactement la forme d'un
+`sauvegardes/<horodatage>/`. La restauration du jeu de référence est donc le
+script existant sans un octet de code en plus :
+
+```bash
+scripts/restauration.sh docs/sql/jeu-reference
+```
+
+Le couple a été pris le 2026-09-10 (commit `99f6e3e`) : 785 élèves, 26 classes,
+88 enseignants, 530 affectations sur les deux collèges, et le realm `smartschool`
+avec ses six rôles, ses deux clients et les groupes liés aux
+`tenant.keycloak_group_id`. `LISEZMOI.md` décrit le contenu chiffré, la commande
+de restauration et la procédure de regénération quand le schéma bouge.
+
+**Deux points notés en figeant :**
+
+- **Le dump porte six emplois du temps de test** (`planning_generated_timetable`,
+  2928 séances). Conservés à dessein — un système déjà rempli se montre mieux
+  qu'une base « prête à générer ». Un `--reinitialiser-demo` les enlève pour qui
+  veut l'état vierge.
+- **Le secret du client est dans le dump, et documenté en clair** dans
+  `LISEZMOI.md`. Il doit atterrir dans `KC_CLIENT_SECRET` du `.env` de la
+  machine — le dump Keycloak ne s'auto-suffit pas, `application.yml` lit le
+  secret depuis l'environnement. Pour une démonstration, ce n'en est pas un
+  (§ 6).
 
 ### Étape 5 — Le déploiement local, sur runner self-hosted
 
@@ -239,6 +323,38 @@ sauvegarde des 2 bases  →  docker compose pull  →  docker compose up -d  →
   déclare réussi sans avoir rien vérifié est pire qu'un déploiement manuel : il
   déplace la découverte de la panne au moment de la démonstration.
 
+**Livrée.** `deploy.yml`, sept steps dans l'ordre du schéma ci-dessus. Ce que
+l'écriture a imposé :
+
+- **`concurrency: { group: deploy, cancel-in-progress: false }`.** Les deux
+  moitiés comptent : jamais deux déploiements en parallèle, et jamais
+  l'annulation d'un déploiement en cours. `restauration.sh` — qu'un opérateur
+  peut lancer pendant qu'un déploiement tourne — supprime puis recrée les
+  bases ; une interruption au milieu laisse la machine sans base.
+- **`working-directory` fixé par `vars.DEPLOY_DIR`**, pas par un
+  `actions/checkout`. Le job n'utilise pas du tout `checkout` : il fait
+  `git pull --ff-only` dans le répertoire qui contient déjà le `.env`. Un
+  `checkout` aurait ramené un arbre propre *sans* le `.env`, donc un backend qui
+  ne démarre pas.
+- **`--ff-only`, et un refus si l'arbre a des modifications suivies.** Un
+  correctif appliqué à la main sur la machine arrête le déploiement au lieu
+  d'être écrasé en silence. `.env` et `sauvegardes/` sont gitignorés, donc
+  jamais touchés.
+- **La sauvegarde est sautée, pas échouée, au premier déploiement.** `sauvegarde.sh`
+  refuse sur une pile éteinte ; le step vérifie `docker compose ps` avant de
+  l'appeler.
+- **`TAG` passé par l'environnement du step**, ce qui le fait primer sur le
+  `.env` : l'entrée `tag` du `workflow_dispatch` est le geste de retour arrière,
+  vide elle retombe sur `latest`.
+- **Aucun `down`.** `up -d --remove-orphans` suffit à recréer les conteneurs
+  dont l'image a changé ; `down -v` reste l'interdit du § 4.
+
+**Reste à faire côté machine de démonstration, et personne ne peut le faire à ta
+place :** installer le runner self-hosted avec le label `demo`, cloner le dépôt
+dans un répertoire fixe avec son `.env`, et déclarer la variable `DEPLOY_DIR`
+(Settings → Secrets and variables → Actions → Variables) pointant vers ce
+répertoire.
+
 ---
 
 ## 4. La règle à ne pas casser
@@ -257,11 +373,11 @@ recrée des conteneurs, jamais après.
 | Couche | Fichier |
 |---|---|
 | CI | `.github/workflows/ci.yml` (job `docker`, l. 147) |
-| CD | `.github/workflows/deploy.yml` (à créer) |
+| CD | `.github/workflows/deploy.yml` |
 | Pile | `docker-compose.yml` (services `backend`, `frontend`, `ai-assistant`) |
 | Configuration | `.env.example` |
-| Sauvegarde | `scripts/sauvegarde.sh`, `scripts/restauration.sh` (à créer) |
-| Jeu de référence | `docs/sql/` |
+| Sauvegarde | `scripts/sauvegarde.sh`, `scripts/restauration.sh` |
+| Jeu de référence | `docs/sql/jeu-reference/` (`app.sql`, `keycloak.sql`, `LISEZMOI.md`) |
 | Seeder concerné | `smartschool-api/.../api/demo/DemoDataRunner.java` |
 | Documentation | `README.md` § 4 bis |
 

@@ -76,6 +76,67 @@ class MetricTrends(BaseModel):
     trends: dict[str, list[float]] = {}
 
 
+class ResourceForecast(BaseModel):
+    """
+    Où va une ressource, et quand elle touchera son seuil — par régression linéaire.
+
+    Le verdict gouverne la lecture de tout le reste :
+      - `hausse`      : seuil d'alerte atteint avant l'horizon, durées renseignées ;
+      - `stable`      : aucun seuil atteint avant l'horizon ;
+      - `baisse`      : la ressource se libère ;
+      - `incertain`   : la droite n'explique pas la série, aucune échéance ;
+      - `insuffisant` : trop peu d'historique pour tracer une droite.
+
+    Les durées ne sont JAMAIS renseignées hors `hausse` : une échéance que les
+    données ne soutiennent pas fait intervenir pour rien, puis ignorer la
+    suivante.
+
+    ⚠️ `series` nomme ce qui a été régressé, qui n'est pas toujours ce que la
+    tuile affiche : pour la mémoire, c'est le plancher de la heap après passage
+    du ramasse-miettes, et non la heap brute.
+    """
+
+    verdict: Literal["insuffisant", "incertain", "hausse", "stable", "baisse"]
+    series: str
+    unit: str
+    warning_threshold: float
+    critical_threshold: float
+
+    points: int
+    # Part de la variation expliquée par la droite, de 0 (bruit) à 1 (droite).
+    r2: float | None = None
+    slope_per_hour: float | None = None
+    # Valeur de la droite maintenant, puis au bout de l'horizon. `at_horizon`
+    # n'est rendu que si la droite explique la série (R² ≥ 0,5) : sa présence
+    # est ce qui autorise l'écran à prolonger la courbe en pointillé.
+    current: float | None = None
+    at_horizon: float | None = None
+    # La durée observée : on ne projette jamais plus loin qu'on a regardé.
+    horizon_minutes: float | None = None
+    # 0 = déjà franchi ; None = pas atteint avant l'horizon, ou verdict sans échéance.
+    minutes_to_warning: float | None = None
+    minutes_to_critical: float | None = None
+    # La série régressée elle-même, en couples (horodatage Unix, valeur) : ce que
+    # le graphique de prévision trace sous la droite. Horodatée, et non une
+    # simple liste comme `trends` — un axe gradué en heures doit poser chaque
+    # point à son heure, et un redémarrage laisse un trou qu'il faut voir.
+    history: list[tuple[float, float]] = []
+
+
+class ResourceForecasts(BaseModel):
+    """
+    Les prévisions des ressources qui se consomment : mémoire et CPU.
+
+    Les clés sont celles des tuiles (`memory`, `cpu`), pour que l'écran pose
+    chaque prévision sous la bonne mesure. Chaque ressource est toujours
+    présente : sans historique, son verdict dit `insuffisant`, plutôt qu'une
+    absence qu'on pourrait lire comme un oubli.
+    """
+
+    window: TimeWindow
+    forecasts: dict[str, ResourceForecast] = {}
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Module Planning
 # ─────────────────────────────────────────────────────────────────────────────

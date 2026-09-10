@@ -94,6 +94,23 @@ class PrometheusClient:
         `query_scalar` : une source d'observation indisponible est une
         dégradation, pas une panne.
         """
+        points = await self.query_range_points(promql, minutes, step_seconds)
+        return [valeur for _horodatage, valeur in points]
+
+    async def query_range_points(
+        self, promql: str, minutes: int, step_seconds: int
+    ) -> list[tuple[float, float]]:
+        """
+        La même plage que `query_range`, mais chaque valeur garde son horodatage.
+
+        Une courbe de douze points peut se passer de l'axe du temps ; une
+        régression, non. Un redémarrage retire vingt points de la série : sans
+        horodatage, les points suivants glisseraient de vingt minutes vers le
+        passé, et la pente calculée serait fausse d'autant.
+
+        Mêmes règles que `query_range` : trous retirés, jamais d'exception.
+        Horodatages en secondes Unix, dans l'ordre croissant.
+        """
         fin = time.time()
         debut = fin - minutes * 60
 
@@ -114,12 +131,12 @@ class PrometheusClient:
                 logger.debug("PromQL sans série : %s", promql)
                 return []
 
-            points: list[float] = []
+            points: list[tuple[float, float]] = []
             # values = [[timestamp, "valeur"], ...] — les valeurs sont des chaînes.
-            for _horodatage, brut in results[0].get("values", []):
+            for horodatage, brut in results[0].get("values", []):
                 valeur = float(brut)
                 if not (math.isnan(valeur) or math.isinf(valeur)):
-                    points.append(valeur)
+                    points.append((float(horodatage), valeur))
             return points
 
         except httpx.HTTPError as exc:

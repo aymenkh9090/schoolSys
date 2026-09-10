@@ -39,3 +39,7 @@ __pycache__/
 # pas partir dans le dépôt, sinon la CI tente de créer /home/<qqun>/.m2/... et
 # échoue. Le poste de dev garde son fichier, il n'est simplement plus versionné.
 **/.mvn/maven.config
+
+# Dumps horodatés produits par scripts/sauvegarde.sh. Le jeu de référence, lui,
+# est versionné à part dans docs/sql/ (cf. docs/plan-cicd.md, étape 4).
+sauvegardes/

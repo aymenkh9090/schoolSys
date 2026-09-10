@@ -10,7 +10,8 @@ import logging
 
 from app.clients.actuator import ActuatorClient
 from app.clients.prometheus import PrometheusClient
-from app.models import HealthSnapshot
+from app.models import HealthSnapshot, ResourceForecast
+from app.services.prevision import prevoir
 
 logger = logging.getLogger(__name__)
 
@@ -110,6 +111,51 @@ WINDOW_MINUTES = {"5m": 5, "1h": 60, "24h": 24 * 60}
 TREND_POINTS = 12
 
 
+# ── Prévision (régression linéaire) ──────────────────────────────────────────
+# Les séries régressées, et le seuil que chacune menace. Seules les ressources
+# qui se consomment : latence et taux d'erreur ne se remplissent pas.
+#
+# ⚠️ LA MÉMOIRE RÉGRESSÉE N'EST PAS CELLE DE LA TUILE. La heap est une dent de
+# scie : le ramasse-miettes la fait monter puis chuter en permanence, et une
+# droite tirée à travers mesure le rythme du GC, pas la consommation (R² de 0,00
+# à 0,34 mesuré sur la heap brute, le 10/09/2026). On régresse sur son
+# PLANCHER — le minimum sur 5 min glissantes, soit la heap juste après un
+# passage du GC. C'est ce plancher qui monte lors d'une fuite mémoire.
+FORECAST_METRICS: dict[str, tuple[str, str, str]] = {
+    # clé de la tuile : (série régressée, clé de THRESHOLDS, expression PromQL)
+    "memory": (
+        "Heap memory floor (5 min minimum)",
+        "heap_percent",
+        f"min_over_time(({HISTORY_METRICS['memory'][2]})[5m:15s])",
+    ),
+    "cpu": ("CPU load", "cpu_percent", HISTORY_METRICS["cpu"][2]),
+    # Toute la machine, et non le seul processus de l'API : Ollama, PostgreSQL
+    # et Keycloak tournent sur le même hôte. L'API peut être calme pendant que
+    # le modèle de l'assistant sature le processeur qu'elle partage.
+    "system_cpu": ("Host CPU load", "system_cpu_percent", "100 * system_cpu_usage"),
+    # Le volume où tourne l'API. La prévision canonique : un disque se remplit
+    # à peu près linéairement, et plein, il arrête tout — base comprise.
+    "disk": (
+        "Disk space used",
+        "disk_percent",
+        "100 * (1 - sum(disk_free_bytes) / sum(disk_total_bytes))",
+    ),
+    # Connexions actives sur la taille maximale du pool. Pas de plancher à
+    # prendre comme pour la heap : un pool qui se remplit ne redescend pas
+    # tout seul, c'est justement ce qu'on veut voir venir.
+    "db_pool": (
+        "Database connection pool in use",
+        "db_pool_percent",
+        "100 * sum(hikaricp_connections_active) / sum(hikaricp_connections_max)",
+    ),
+}
+
+# Points d'une régression : un par minute sur une heure. Bien plus que les
+# douze d'une courbe — la vignette montre une forme, la régression mesure une
+# pente, et la précision d'une pente croît avec le nombre de points.
+FORECAST_POINTS = 60
+
+
 # ── Base de données ──────────────────────────────────────────────────────────
 # `pending` est l'indicateur le PLUS PRÉDICTIF d'une saturation :
 # il monte avant que la latence n'explose. Un pool saturé fait
@@ -157,6 +203,13 @@ THRESHOLDS = {
     "latency_p95_ms":  {"warning": 1000.0, "critical": 3000.0},
     "error_rate_pct":  {"warning": 1.0,   "critical": 5.0},
     "db_pending":      {"warning": 1.0,   "critical": 5.0},
+    # Seuils des seules prévisions — aucune tuile ne les affiche encore. Choix
+    # d'exploitation proposés par défaut, à valider (plan prédiction, étape 5).
+    # La machine tolère une charge plus haute qu'un seul processus : 80 % du
+    # CPU hôte laisse encore de la marge à l'API, 70 % du sien non.
+    "system_cpu_percent": {"warning": 80.0, "critical": 95.0},
+    "disk_percent":       {"warning": 80.0, "critical": 90.0},
+    "db_pool_percent":    {"warning": 80.0, "critical": 95.0},
 }
 
 
@@ -189,6 +242,46 @@ class MetricsService:
             if points:
                 tendances[cle] = points
         return tendances
+
+    # ── Prévision ───────────────────────────────────────────────────────────
+
+    async def get_forecast(self, window: str = "1h") -> dict[str, ResourceForecast]:
+        """
+        Où va chaque ressource — par régression sur l'historique de la fenêtre.
+
+        Le calcul est dans `services/prevision.py` ; ici, on lit la série et on
+        nomme ce qui a été régressé. Prometheus ne prédit rien, ce service ne
+        stocke rien : la droite est recalculée à chaque demande.
+        """
+        minutes = WINDOW_MINUTES.get(window, 60)
+        pas = max(15, minutes * 60 // FORECAST_POINTS)
+        # Ce que Prometheus rend sans aucun trou : un point à chaque pas, bornes comprises.
+        attendus = minutes * 60 // pas + 1
+
+        previsions: dict[str, ResourceForecast] = {}
+        for cle, (serie, cle_seuil, expression) in FORECAST_METRICS.items():
+            seuils = THRESHOLDS[cle_seuil]
+            points = await self._prom.query_range_points(expression, minutes, pas)
+            p = prevoir(points, seuils, attendus)
+            previsions[cle] = ResourceForecast(
+                verdict=p.verdict,
+                series=serie,
+                unit="%",
+                warning_threshold=seuils["warning"],
+                critical_threshold=seuils["critical"],
+                points=p.n,
+                r2=p.r2,
+                slope_per_hour=p.pente_par_heure,
+                current=p.valeur_actuelle,
+                at_horizon=p.valeur_horizon,
+                horizon_minutes=p.horizon_min,
+                minutes_to_warning=p.minutes_avant_alerte,
+                minutes_to_critical=p.minutes_avant_incident,
+                # Les points mêmes qui ont servi au calcul : le graphique trace
+                # ce qui a été régressé, pas une série voisine.
+                history=points,
+            )
+        return previsions
 
     # ── Instantané global ───────────────────────────────────────────────────
 

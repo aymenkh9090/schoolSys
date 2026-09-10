@@ -245,6 +245,33 @@ services:
       # sur 3000, le port du dev server Vite (cf. vite.config.ts).
       FRONTEND_BASE_URL: http://localhost:3000
       APP_CORS_ALLOWED_ORIGINS: http://localhost:3000,http://localhost:5173
+
+      # ── Les deux lignes suivantes se ressemblent et n'ont rien à voir ──────
+      #
+      # ENVIRONMENT n'active rien : elle ne sert qu'au tag Micrometer
+      # `environment` (application.yml), lu par Prometheus. Elle a longtemps
+      # donné l'illusion que la pile conteneurisée était en mode démonstration
+      # — elle ne l'était pas, et les deux collèges n'existaient qu'en lançant
+      # l'API depuis Maven.
+      #
+      # SPRING_PROFILES_ACTIVE est la vraie commande : DemoDataRunner est un
+      # @Profile("demo"), et sans profil actif le bean n'est même pas construit.
+      #
+      # `demo` par défaut, parce qu'une base neuve doit se peupler. À VIDER dans
+      # le .env dès que la base contient quelque chose qu'on regretterait —
+      # un emploi du temps généré, par exemple. Raison : run() appelle purger()
+      # dès que structureHeritee() est vrai, c'est-à-dire dès qu'un Level porte
+      # un code absent de la constante NIVEAUX. C'est faux aujourd'hui ; ce sera
+      # vrai au premier commit qui touche NIVEAUX, et la purge emporte alors
+      # planning_generated_timetable. Profil vide = aucune purge possible,
+      # quoi qu'il arrive au code.
+      #
+      # ⚠️ `-` et non `:-`, contrairement à toutes les autres lignes de ce
+      # fichier. Avec `:-`, une valeur vide est traitée comme absente et Docker
+      # remettrait `demo` : le désarmement serait impossible à exprimer. Ici
+      # « non renseigné » et « renseigné vide » doivent rester deux choses
+      # différentes, et c'est ce seul caractère qui les sépare.
+      SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE-demo}
       ENVIRONMENT: demo
     ports:
       # 8080 : API métier. 9091 : actuator, scrapé par Prometheus.

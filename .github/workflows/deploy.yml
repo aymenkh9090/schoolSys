@@ -1,0 +1,135 @@
+name: Déploiement
+
+# Déclenchement MANUEL uniquement, depuis l'onglet Actions. Un déploiement
+# recrée des conteneurs sur la machine de démonstration : il n'a rien à faire
+# sur un `push`, et surtout pas pendant une soutenance.
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "Branche ou tag Git à déployer"
+        required: false
+        default: main
+      tag:
+        description: "Étiquette d'image Docker (vide = latest ; sha-xxxxxxx = retour arrière)"
+        required: false
+        default: ""
+
+# Jamais deux déploiements en parallèle, et jamais l'annulation d'un
+# déploiement en cours : `restauration.sh` supprime puis recrée les bases, et
+# une interruption au milieu laisserait la machine sans base du tout.
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Déployer sur la machine de démonstration
+    # Runner self-hosted installé sur la machine de démo. Le label `demo` évite
+    # qu'un éventuel autre runner self-hosted du compte ne ramasse le job.
+    runs-on: [self-hosted, demo]
+
+    # Tous les steps s'exécutent dans le répertoire de travail FIXE, pas dans le
+    # checkout jetable du runner. Raison : le `.env` (KC_CLIENT_SECRET,
+    # DB_PASSWORD, SMTP_PASSWORD) est gitignoré (.gitignore:23) — il n'existe que
+    # là, sur cette machine. Un `docker compose` lancé ailleurs ne le trouve
+    # pas, le placeholder ${KC_CLIENT_SECRET} d'application.yml reste non résolu,
+    # et le backend refuse de démarrer.
+    #
+    # DEPLOY_DIR est une variable du dépôt (Settings → Secrets and variables →
+    # Actions → Variables), p. ex. /opt/schoolsys.
+    defaults:
+      run:
+        working-directory: ${{ vars.DEPLOY_DIR }}
+
+    steps:
+      - name: Contrôles préalables
+        run: |
+          test -n "${{ vars.DEPLOY_DIR }}" || { echo "::error::La variable DEPLOY_DIR n'est pas définie (Settings → Variables)."; exit 1; }
+          test -f .env || { echo "::error::$PWD/.env absent — le déploiement a besoin de KC_CLIENT_SECRET et DB_PASSWORD."; exit 1; }
+          test -f docker-compose.yml || { echo "::error::$PWD n'est pas un checkout du dépôt."; exit 1; }
+          docker compose version >/dev/null || { echo "::error::docker compose indisponible sur le runner."; exit 1; }
+          # `demo` laissé actif est la porte ouverte à une purge des données
+          # pédagogiques au redémarrage du backend (cf. docs/plan-cicd.md § P3).
+          # On n'échoue pas — c'est un choix d'exploitation — mais on le dit fort.
+          if ! grep -qE '^SPRING_PROFILES_ACTIVE=[[:space:]]*$' .env; then
+            echo "::warning::SPRING_PROFILES_ACTIVE n'est pas désarmé dans .env : DemoDataRunner peut purger les données pédagogiques au redémarrage."
+          fi
+
+      # Le dépôt, pas seulement les images : le compose monte quatre fichiers de
+      # ./monitoring dans Prometheus et Grafana. Un `docker compose pull` sans
+      # `git pull` préalable tirerait des images neuves sur une config ancienne.
+      #
+      # `--ff-only` : si le répertoire a divergé (un correctif appliqué à la
+      # main, un commit local), le déploiement s'arrête ici au lieu d'écraser.
+      # Le `.env` et `sauvegardes/` sont gitignorés, donc épargnés quoi qu'il
+      # arrive.
+      - name: Mettre le dépôt à jour
+        run: |
+          if [ -n "$(git status --porcelain --untracked-files=no)" ]; then
+            echo "::error::Le répertoire de déploiement a des modifications non commitées. Les inspecter avant de relancer."
+            git status --porcelain --untracked-files=no
+            exit 1
+          fi
+          git fetch --prune origin
+          git checkout "${{ inputs.ref }}"
+          git pull --ff-only origin "${{ inputs.ref }}"
+          echo "Déployé depuis $(git rev-parse --short HEAD) ($(git rev-parse --abbrev-ref HEAD))"
+
+      # Le filet, AVANT toute opération qui recrée des conteneurs — jamais après
+      # (docs/plan-cicd.md § 4). Au tout premier déploiement, rien ne tourne
+      # encore : `sauvegarde.sh` refuse alors, et c'est normal, il n'y a rien à
+      # sauver.
+      - name: Sauvegarder les deux bases
+        run: |
+          if docker compose ps --services --status running 2>/dev/null | grep -qx app-db; then
+            scripts/sauvegarde.sh
+          else
+            echo "Pile non démarrée — premier déploiement, rien à sauvegarder."
+          fi
+
+      # TAG passé par l'environnement : docker compose le fait primer sur la
+      # valeur du .env. Vide, `${TAG:-latest}` du compose retombe sur latest.
+      - name: Tirer les images publiées
+        env:
+          TAG: ${{ inputs.tag }}
+        run: docker compose pull
+
+      # `up -d`, jamais `--build` (les images viennent du registre) et jamais
+      # `down` au préalable (inutile, et un `down -v` effacerait les volumes).
+      - name: Lever la pile
+        env:
+          TAG: ${{ inputs.tag }}
+        run: docker compose up -d --remove-orphans
+
+      # Un déploiement qui se déclare réussi sans rien vérifier déplace la
+      # découverte de la panne au moment de la démonstration. On attend que
+      # l'actuator du backend réponde UP — Liquibase et, le cas échéant, le
+      # seeder prennent une minute ou deux.
+      - name: Vérifier la santé du backend
+        run: |
+          for i in $(seq 1 36); do
+            if curl -fsS http://localhost:9091/actuator/health | grep -q '"status":"UP"'; then
+              echo "Backend UP au bout de $((i*5)) s."
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "::error::Le backend n'a pas répondu UP en 180 s."
+          docker compose logs --tail=50 backend
+          exit 1
+
+      - name: Résumé du déploiement
+        if: always()
+        run: |
+          {
+            echo "## Déploiement"
+            echo
+            echo "| | |"
+            echo "|---|---|"
+            echo "| Commit | \`$(git rev-parse --short HEAD)\` ($(git rev-parse --abbrev-ref HEAD)) |"
+            echo "| Étiquette d'image | \`${{ inputs.tag || 'latest' }}\` |"
+            echo "| Santé backend | $(curl -fsS http://localhost:9091/actuator/health 2>/dev/null | grep -o '\"status\":\"[A-Z]*\"' | head -1 || echo 'injoignable') |"
+            derniere=$(ls -1d sauvegardes/*/ 2>/dev/null | sort | tail -1)
+            [ -n "$derniere" ] && echo "| Dernière sauvegarde | \`${derniere%/}\` |"
+          } >> "$GITHUB_STEP_SUMMARY"

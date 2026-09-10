@@ -1,6 +1,10 @@
-import { AlertTriangle, CheckCircle2, HelpCircle, XCircle } from 'lucide-react'
+import {
+  AlertTriangle, ArrowRight, CheckCircle2, CircleDashed, HelpCircle, TrendingDown, TrendingUp, XCircle,
+} from 'lucide-react'
 
+import type { ResourceForecast } from '@/api/aiAssistant.api'
 import { cn } from '@/lib/utils'
+import { formatDuree, lignePrevision, variationProjetee, type SensPrevision, type TonPrevision } from './prevision'
 import { Sparkline } from './Sparkline'
 
 /**
@@ -130,6 +134,33 @@ function Entete({ label, ton, Icon }: { label: string; ton: Ton; Icon: React.Ele
   )
 }
 
+/**
+ * Le texte de la prévision ne se colore que lorsqu'il annonce un seuil.
+ * « Stable sur 1 h » en vert ferait une huitième tache de couleur sur une rangée
+ * où tout va bien ; en ambre, « Alerte dans ~45 min » se voit sur une tuile
+ * encore calme — c'est tout l'intérêt d'anticiper.
+ */
+const TON_PREVISION: Record<TonPrevision, string> = {
+  neutre: 'text-brand-textMuted dark:text-slate-500',
+  alerte: 'font-medium text-amber-700 dark:text-amber-400',
+  critique: 'font-medium text-red-700 dark:text-red-400',
+}
+
+/** Le pointillé prend la couleur du seuil annoncé ; sinon celle du tracé. */
+const POINTILLE: Record<TonPrevision, string | undefined> = {
+  neutre: undefined,
+  alerte: 'text-amber-600 dark:text-amber-400',
+  critique: 'text-red-600 dark:text-red-500',
+}
+
+/** Une icône avec le mot, comme partout sur l'écran : le sens se lit sans la teinte. */
+const ICONE_SENS: Record<SensPrevision, React.ElementType> = {
+  hausse: TrendingUp,
+  stable: ArrowRight,
+  baisse: TrendingDown,
+  inconnu: CircleDashed,
+}
+
 function Pilule({ ton }: { ton: Ton }) {
   return (
     <span
@@ -168,16 +199,30 @@ interface Props {
   tendance?: number[]
   /** Période couverte par `tendance`, pour l'infobulle du tracé. */
   periode?: string
+  /** La même période, en minutes : l'échelle de temps du pointillé. */
+  periodeMinutes?: number
+  /**
+   * Où va la mesure, selon la régression du service Python. Seules les
+   * ressources qui se consomment en ont une — mémoire et CPU.
+   */
+  prevision?: ResourceForecast
+  /** Ce qui a été régressé, en clair — pour la mémoire, ce n'est pas la valeur affichée. */
+  serieRegressee?: string
 }
 
 export function KpiCard({
   label, valeur, unite = '', decimales = 1, icon: Icon, seuils, max, detail, tendance, periode,
+  periodeMinutes, prevision, serieRegressee,
 }: Props) {
   const etat = severite(valeur, seuils)
   const ton = TONS[etat]
   const absente = valeur === null || valeur === undefined
   const borne = max ?? seuils?.critique
   const remplissage = absente || !borne ? 0 : Math.min(100, Math.max(0, (valeur / borne) * 100))
+
+  const ligne = prevision ? lignePrevision(prevision) : undefined
+  const variation = prevision ? variationProjetee(prevision) : undefined
+  const IconeSens = ligne ? ICONE_SENS[ligne.sens] : undefined
 
   return (
     <div className={cn(CARTE, ton.carte)}>
@@ -196,6 +241,22 @@ export function KpiCard({
         <p className="mt-1.5 text-[11px] leading-snug text-brand-textMuted dark:text-slate-500">{detail}</p>
       )}
 
+      {/* Où va la mesure, en une ligne. L'infobulle dit sur quoi porte le
+          calcul : pour la mémoire, le plancher de la heap et non le chiffre
+          au-dessus — un lecteur qui compare les deux doit pouvoir comprendre
+          pourquoi ils diffèrent. */}
+      {ligne && IconeSens && prevision && (
+        <p
+          className={cn('mt-1.5 flex items-start gap-1 text-[11px] leading-snug', TON_PREVISION[ligne.ton])}
+          title={infobullePrevision(prevision, serieRegressee)}
+        >
+          {/* Calée sur la première ligne : sur une tuile étroite, l'échéance
+              peut en prendre deux, et une icône centrée flotterait entre elles. */}
+          <IconeSens size={12} className="mt-[2.5px] shrink-0" aria-hidden />
+          {ligne.texte}
+        </p>
+      )}
+
       {/* La variation au-dessus, le niveau en dessous. La courbe remplit toute
           sa hauteur entre son minimum et son maximum ; la jauge, elle, se lit
           face aux seuils. Caler la courbe sur l'échelle des seuils l'écraserait
@@ -206,6 +267,12 @@ export function KpiCard({
           points={tendance}
           unite={unite}
           periode={periode}
+          dureeMinutes={periodeMinutes}
+          projection={
+            variation && ligne
+              ? { ...variation, className: POINTILLE[ligne.ton], libelle: formatDuree(variation.minutes) }
+              : undefined
+          }
           className={cn('mt-3 h-6 w-full', ton.trace)}
         />
       )}
@@ -255,6 +322,14 @@ export function KpiCard({
       </div>
     </div>
   )
+}
+
+/** « Régression linéaire sur le plancher de la heap — 61 points, R² 0,82 ». */
+function infobullePrevision(p: ResourceForecast, serie?: string): string {
+  const base = `Régression linéaire${serie ? ` sur ${serie}` : ''}`
+  if (p.verdict === 'insuffisant') return `${base} — ${p.points} points, il en faut davantage`
+  const r2 = p.r2 !== null ? `, R² ${p.r2.toFixed(2).replace('.', ',')}` : ''
+  return `${base} — ${p.points} points${r2}`
 }
 
 /**

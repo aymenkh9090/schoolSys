@@ -38,6 +38,7 @@ from app.models import (
     MetricTrends,
     PlanningChatRequest,
     PlanningChatResponse,
+    ResourceForecasts,
     TimeWindow,
 )
 from app.services.assistant import AssistantService, ToolLoop
@@ -272,6 +273,24 @@ async def platform_trends(
     chaque battement, pour un tracé identique.
     """
     return MetricTrends(window=window, trends=await state["metrics"].get_trends(window))
+
+
+@app.get("/api/monitoring/forecast", response_model=ResourceForecasts, tags=["monitoring"])
+async def platform_forecast(
+    window: TimeWindow = "1h",
+    user: dict = Depends(require_super_admin),
+):
+    """
+    Où vont la mémoire et le CPU, et quand ils toucheront leur seuil.
+
+    Une régression linéaire sur la fenêtre, recalculée à chaque appel. Séparée
+    de `/trends` pour la même raison que `/trends` l'est de `/health` : une
+    pente sur une heure ne change pas d'un quart de minute, et soixante points
+    par ressource n'ont rien à faire dans le battement de quinze secondes.
+    """
+    return ResourceForecasts(
+        window=window, forecasts=await state["metrics"].get_forecast(window)
+    )
 
 
 @app.get("/api/monitoring/slowest-endpoints", tags=["monitoring"])
