@@ -44,6 +44,15 @@
     <!-- Code généré (MapStruct) et DTO : mesurés, mais pas reprochés. -->
     <sonar.exclusions>**/target/generated-sources/**,**/dto/**</sonar.exclusions>
 
+    <!-- ── Couverture : le jeu de démonstration est une fixture, pas du métier ──
+         DemoDataRunner et NomsTunisiens ne portent aucune logique : ils sèment
+         des données fictives (deux collèges, noms tunisiens générés). Les tester
+         ligne à ligne reviendrait à réécrire le seed dans l'assertion. Leur
+         résultat, lui, EST vérifié bout en bout par VerificationJeuDeDonneesIT.
+         On les sort donc de la mesure de couverture — ils restent analysés pour
+         tout le reste (bugs, vulnérabilités, duplication). -->
+    <sonar.coverage.exclusions>**/api/demo/DemoDataRunner.java,**/api/demo/NomsTunisiens.java</sonar.coverage.exclusions>
+
     <!-- ── Deux règles écartées, et seulement là où c'est démontré ────────
          Chaque exclusion est nominative : la règle reste active partout
          ailleurs, de sorte qu'une occurrence réelle serait toujours signalée.
@@ -65,8 +74,16 @@
          passe par un en-tête `Authorization` qu'un site tiers ne peut pas
          forger. La justification complète est dans SecurityConfig, à la ligne
          concernée — c'est là qu'un lecteur ira. Cette exclusion tombe si la
-         session cesse d'être STATELESS. -->
-    <sonar.issue.ignore.multicriteria>e1,e2,e3,e4,e5,e6,e7</sonar.issue.ignore.multicriteria>
+         session cesse d'être STATELESS.
+
+         e8 — java:S2077, « requête SQL formatée dynamiquement ». Les deux
+         occurrences (DemoDataRunner.purger() et .compter()) interpolent un nom
+         de table, mais il vient exclusivement de la constante TABLES_A_PURGER
+         (liste écrite en dur dans la classe), jamais d'une entrée. Le tenant_id,
+         lui, est un paramètre lié (`:tenantId`). Aucune concaténation de valeur
+         externe. Une seule entrée suffit : le filtre est par règle + fichier,
+         pas par ligne, et l'exclusion reste nominative sur ce fichier. -->
+    <sonar.issue.ignore.multicriteria>e1,e2,e3,e4,e5,e6,e7,e8</sonar.issue.ignore.multicriteria>
     <sonar.issue.ignore.multicriteria.e1.ruleKey>java:S8696</sonar.issue.ignore.multicriteria.e1.ruleKey>
     <sonar.issue.ignore.multicriteria.e1.resourceKey>**/ServiceAppelImpl.java</sonar.issue.ignore.multicriteria.e1.resourceKey>
     <sonar.issue.ignore.multicriteria.e2.ruleKey>java:S8696</sonar.issue.ignore.multicriteria.e2.ruleKey>
@@ -81,6 +98,8 @@
     <sonar.issue.ignore.multicriteria.e6.resourceKey>**/TimetableConstraintProvider.java</sonar.issue.ignore.multicriteria.e6.resourceKey>
     <sonar.issue.ignore.multicriteria.e7.ruleKey>java:S4502</sonar.issue.ignore.multicriteria.e7.ruleKey>
     <sonar.issue.ignore.multicriteria.e7.resourceKey>**/SecurityConfig.java</sonar.issue.ignore.multicriteria.e7.resourceKey>
+    <sonar.issue.ignore.multicriteria.e8.ruleKey>java:S2077</sonar.issue.ignore.multicriteria.e8.ruleKey>
+    <sonar.issue.ignore.multicriteria.e8.resourceKey>**/DemoDataRunner.java</sonar.issue.ignore.multicriteria.e8.resourceKey>
   </properties>
 
   <modules>
