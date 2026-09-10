@@ -174,10 +174,16 @@ export interface ResourceForecast {
   history: [number, number][]
 }
 
-/** Les ressources qui se consomment, sous les clés de leurs tuiles. */
+/**
+ * Les ressources qui se consomment — les clés de FORECAST_METRICS côté Python.
+ * `memory` et `cpu` sont aussi celles des tuiles ; les trois autres n'existent
+ * que dans le panneau de prévision.
+ */
+export type CleRessource = 'memory' | 'cpu' | 'system_cpu' | 'disk' | 'db_pool'
+
 export interface ResourceForecasts {
   window: TimeWindow
-  forecasts: Partial<Record<'memory' | 'cpu', ResourceForecast>>
+  forecasts: Partial<Record<CleRessource, ResourceForecast>>
 }
 
 export const aiAssistantApi = {

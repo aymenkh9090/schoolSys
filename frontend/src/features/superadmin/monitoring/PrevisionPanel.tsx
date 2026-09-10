@@ -1,14 +1,16 @@
 import { useState } from 'react'
 import {
-  AlertTriangle, ArrowRight, CheckCircle2, CircleDashed, Cpu, HelpCircle, MemoryStick, Server,
-  TrendingDown, TrendingUp, XCircle,
+  AlertTriangle, ArrowRight, CheckCircle2, CircleDashed, Cpu, Database, HardDrive, HelpCircle,
+  MemoryStick, Monitor, Server, TrendingDown, TrendingUp, XCircle,
 } from 'lucide-react'
 import {
   CartesianGrid, ComposedChart, Line, ReferenceArea, ReferenceDot, ReferenceLine, ResponsiveContainer,
   Tooltip, XAxis, YAxis, type TooltipContentProps,
 } from 'recharts'
 
-import type { HealthSnapshot, ResourceForecast, ResourceForecasts } from '@/api/aiAssistant.api'
+import type {
+  CleRessource, HealthSnapshot, ResourceForecast, ResourceForecasts,
+} from '@/api/aiAssistant.api'
 import { cn } from '@/lib/utils'
 import { severite, type Severite } from './KpiCard'
 import {
@@ -38,7 +40,7 @@ import {
  * vide — c'est la forme honnête de « on ne sait pas ».
  */
 
-type Cle = 'cpu' | 'memory'
+type Cle = CleRessource
 
 interface Ressource {
   libelle: string
@@ -50,12 +52,17 @@ interface Ressource {
   serie: string
   /** Quand la série tracée n'est pas le chiffre de la tuile, on le dit. */
   note?: string
-  valeur: (s: HealthSnapshot) => number | null
+  /**
+   * La valeur actuelle, lue dans l'instantané quand une tuile l'affiche — le
+   * panneau et la tuile doivent dire le même chiffre. Absente pour les
+   * ressources sans tuile : on prend alors le dernier point de la série.
+   */
+  valeur?: (s: HealthSnapshot) => number | null
 }
 
 const RESSOURCES: Record<Cle, Ressource> = {
   cpu: {
-    libelle: 'CPU',
+    libelle: 'CPU (API)',
     nom: 'la charge CPU',
     actuel: 'CPU actuel',
     Icone: Cpu,
@@ -75,9 +82,45 @@ const RESSOURCES: Record<Cle, Ressource> = {
       'La tuile, elle, affiche la heap brute : ses pics dépassent ce tracé.',
     valeur: (s) => s.heap_percent,
   },
+  system_cpu: {
+    libelle: 'CPU (machine)',
+    nom: 'la charge CPU de la machine',
+    actuel: 'CPU machine',
+    Icone: Monitor,
+    titreGraphe: 'Évolution de la charge CPU de la machine',
+    serie: 'Charge mesurée',
+    note: "Tout le serveur, et non la seule API : Ollama, PostgreSQL et Keycloak comptent aussi.",
+  },
+  disk: {
+    libelle: 'Disque',
+    nom: 'le disque',
+    actuel: 'Disque occupé',
+    Icone: HardDrive,
+    titreGraphe: "Évolution de l'occupation du disque",
+    serie: 'Espace occupé',
+    note: "Le volume où tourne l'API. Plein, il arrête tout — la base comprise.",
+  },
+  db_pool: {
+    libelle: 'Pool de connexions',
+    nom: 'le pool de connexions',
+    actuel: 'Pool occupé',
+    Icone: Database,
+    titreGraphe: 'Évolution du pool de connexions à la base',
+    serie: 'Connexions actives',
+    note: 'Connexions actives sur la taille maximale du pool.',
+  },
 }
 
-const NOMS: Record<Cle, string> = { cpu: RESSOURCES.cpu.nom, memory: RESSOURCES.memory.nom }
+/** L'ordre d'affichage : les deux ressources des tuiles d'abord. */
+const ORDRE: Cle[] = ['cpu', 'memory', 'system_cpu', 'disk', 'db_pool']
+
+const NOMS = Object.fromEntries(ORDRE.map((c) => [c, RESSOURCES[c].nom])) as Record<Cle, string>
+
+function valeurActuelle(cle: Cle, sante: HealthSnapshot, p?: ResourceForecast): number | null {
+  const lire = RESSOURCES[cle].valeur
+  if (lire) return lire(sante)
+  return p && p.history.length > 0 ? p.history[p.history.length - 1][1] : null
+}
 
 /**
  * Couleurs du tracé, en valeurs et non en classes : recharts les pose en
@@ -152,7 +195,7 @@ export function PrevisionPanel({ previsions, sante, indisponible, fenetreMinutes
         <div className="space-y-5 p-5">
           {prevision && (
             <>
-              <Synthese prevision={prevision} ressource={ressource} valeur={ressource.valeur(sante)} />
+              <Synthese prevision={prevision} ressource={ressource} valeur={valeurActuelle(cle, sante, prevision)} />
               <Graphe prevision={prevision} ressource={ressource} fenetreMinutes={fenetreMinutes} />
             </>
           )}
@@ -164,9 +207,13 @@ export function PrevisionPanel({ previsions, sante, indisponible, fenetreMinutes
   )
 }
 
+/** La première échéance annoncée, incidents d'abord ; le CPU de l'API sinon. */
 function plusPressante(previsions?: ResourceForecasts['forecasts']): Cle {
-  const echeance = (p?: ResourceForecast) => (p ? prochainSeuil(p)?.minutes ?? Infinity : Infinity)
-  return echeance(previsions?.memory) < echeance(previsions?.cpu) ? 'memory' : 'cpu'
+  const rang = (p?: ResourceForecast) => {
+    const s = p ? prochainSeuil(p) : undefined
+    return !s ? Infinity : s.ton === 'critique' ? s.minutes : 100_000 + s.minutes
+  }
+  return ORDRE.reduce((meilleure, cle) => (rang(previsions?.[cle]) < rang(previsions?.[meilleure]) ? cle : meilleure), 'cpu')
 }
 
 // ── Synthèse : où l'on est, où l'on va, quand ────────────────────────────────
@@ -412,10 +459,12 @@ function donneesGraphe(p: ResourceForecast, fenetreMinutes: number): DonneesGrap
   // mesuré (à l'inverse de la vignette des tuiles, qui reporte une variation).
   // Ici les seuils sont tracés : c'est la droite elle-même qui doit les croiser
   // à l'heure que le texte annonce, sans quoi l'œil lirait une autre échéance.
-  // Une ressource ne descend pas sous zéro, quelle que soit la pente.
+  // Une ressource ne descend pas sous 0 % ni ne dépasse 100 %, quelle que soit
+  // la pente : un disque plein ne se remplit pas davantage.
+  const borner = (v: number) => Math.min(100, Math.max(0, v))
   if (projetee) {
-    lignes[lignes.length - 1].projection = Math.max(0, p.current!)
-    lignes.push({ t: maintenant + horizonS, projection: Math.max(0, p.at_horizon!) })
+    lignes[lignes.length - 1].projection = borner(p.current!)
+    lignes.push({ t: maintenant + horizonS, projection: borner(p.at_horizon!) })
   }
 
   return { lignes, debut, maintenant, fin: maintenant + horizonS, dernier, projetee }
@@ -633,10 +682,10 @@ function Details({
         <span className="text-[11px] text-brand-textMuted dark:text-slate-500">Cliquer pour tracer</span>
       </div>
       <ul className="mt-2 space-y-1">
-        {(Object.keys(RESSOURCES) as Cle[]).map((cle) => {
+        {ORDRE.filter((cle) => previsions[cle]).map((cle) => {
           const r = RESSOURCES[cle]
           const p = previsions[cle]
-          const valeur = r.valeur(sante)
+          const valeur = valeurActuelle(cle, sante, p)
           return (
             <li key={cle}>
               <button

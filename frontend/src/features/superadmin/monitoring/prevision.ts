@@ -146,6 +146,15 @@ const CONSEIL: Record<string, string> = {
   memory:
     "Le plancher de la heap monte d'un ramasse-miettes à l'autre, signe " +
     "possible d'une fuite : prévoir un redémarrage hors des heures de cours.",
+  system_cpu:
+    "La charge vient de toute la machine, pas forcément de l'API : Ollama " +
+    "pendant une réponse de l'assistant, PostgreSQL, ou un autre processus.",
+  disk:
+    'Libérer de la place avant que la base ne puisse plus écrire : anciennes ' +
+    'sauvegardes du dossier sauvegardes/, journaux, images Docker inutilisées.',
+  db_pool:
+    'Des requêtes gardent leurs connexions trop longtemps : chercher les ' +
+    "transactions lentes avant d'agrandir le pool, qui ne ferait que retarder l'attente.",
 }
 
 /**

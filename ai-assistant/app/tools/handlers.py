@@ -111,6 +111,11 @@ def _fmt(value: float | None, unit: str = "", digits: int = 1) -> str:
 _FORECAST_LABELS = {
     "memory": "Memory (heap remaining in use after garbage collection)",
     "cpu": "CPU load",
+    # « Whole server » : sans cela, le modèle confond les deux CPU et répond
+    # sur celui de l'API quand on l'interroge sur la machine.
+    "system_cpu": "Host machine CPU load (whole server, including the AI model)",
+    "disk": "Disk space used",
+    "db_pool": "Database connection pool usage",
 }
 
 

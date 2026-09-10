@@ -99,6 +99,22 @@ export default function MonitoringPage() {
         <div className={cn('space-y-6 transition-opacity', isFetching && 'opacity-60')}>
           <StatusBanner snapshot={data} />
 
+          {/* L'assistant et la prévision en tête, juste sous le bandeau : c'est
+              là que l'écran répond à « où va-t-on ? », les tuiles en dessous
+              disent le détail de maintenant. Côte à côte sur grand écran, l'un
+              répond à « quand la mémoire va-t-elle saturer ? », l'autre le
+              montre ; empilés en dessous — un graphique gradué en heures ne
+              tient pas dans une demi-largeur de portable. */}
+          <div className="grid grid-cols-1 items-start gap-6 xl:grid-cols-2">
+            <AssistantChat />
+            <PrevisionPanel
+              previsions={previsions?.forecasts}
+              sante={data}
+              indisponible={previsionEnEchec}
+              fenetreMinutes={TENDANCE_MINUTES}
+            />
+          </div>
+
           {/* Les mesures qui ont une limite : chacune se lit face à la sienne.
               Les seuils reprennent ceux de THRESHOLDS côté Python — l'écran et
               le service doivent qualifier un incident de la même façon, sans
@@ -194,20 +210,6 @@ export default function MonitoringPage() {
               <StatutCard label="Base de données" statut={data.db_status} icon={Database} />
             </div>
           </section>
-
-          {/* L'assistant et la prévision côte à côte sur grand écran : l'un
-              répond à « quand la mémoire va-t-elle saturer ? », l'autre le
-              montre. En dessous, empilés — un graphique gradué en heures ne
-              tient pas dans une demi-largeur de portable. */}
-          <div className="grid grid-cols-1 items-start gap-6 xl:grid-cols-2">
-            <AssistantChat />
-            <PrevisionPanel
-              previsions={previsions?.forecasts}
-              sante={data}
-              indisponible={previsionEnEchec}
-              fenetreMinutes={TENDANCE_MINUTES}
-            />
-          </div>
         </div>
       )}
     </div>

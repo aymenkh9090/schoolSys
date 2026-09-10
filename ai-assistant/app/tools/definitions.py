@@ -113,15 +113,16 @@ TOOL_DEFINITIONS = [
         "function": {
             "name": "get_resource_forecast",
             "description": (
-                "PREDICT when memory or CPU will reach its alert threshold, "
-                "from the trend of the last hour. Use this when the user asks "
-                "'when', 'how long before', 'at this rate', 'will it saturate', "
-                "'will memory run out', or asks for a forecast or a prediction. "
+                "PREDICT when memory, CPU, disk space or the database connection "
+                "pool will reach its alert threshold, from the trend of the last "
+                "hour. Use this when the user asks 'when', 'how long before', "
+                "'at this rate', 'will it saturate', 'will memory run out', "
+                "'will the disk be full', or asks for a forecast or a prediction. "
                 "The forecast is already computed: report it as given, never "
                 "compute a time or a date yourself."
             ),
-            # Aucun paramètre, comme get_memory_usage : les deux ressources
-            # tiennent en deux lignes, et un modèle de cette taille choisit
+            # Aucun paramètre, comme get_memory_usage : les cinq ressources
+            # tiennent en cinq lignes, et un modèle de cette taille choisit
             # d'autant plus mal qu'il a d'options. La fenêtre est fixée à une
             # heure — l'horizon de la prévision ne dépasse jamais la durée
             # observée, et « la journée » ne se prédit pas sur une droite.

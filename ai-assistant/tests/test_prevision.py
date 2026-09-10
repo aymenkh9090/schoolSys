@@ -247,10 +247,32 @@ async def test_la_memoire_regressee_est_le_plancher_pas_la_heap_brute():
     assert memoire in {a["promql"] for a in prom.appels}
 
 
-async def test_seules_la_memoire_et_le_cpu_sont_prevus():
+async def test_seules_les_ressources_qui_se_remplissent_sont_prevues():
+    """Latence et taux d'erreur ne se consomment pas : pas de prévision."""
     previsions = await _service(FakePrometheus()).get_forecast("1h")
 
-    assert set(previsions) == {"memory", "cpu"}
+    assert set(previsions) == {"memory", "cpu", "system_cpu", "disk", "db_pool"}
+
+
+def test_chaque_ressource_prevue_a_ses_seuils():
+    """Une clé de seuil manquante ferait tomber toute la route, pas une ressource."""
+    for _serie, cle_seuil, _expression in FORECAST_METRICS.values():
+        assert THRESHOLDS[cle_seuil]["warning"] < THRESHOLDS[cle_seuil]["critical"]
+
+
+async def test_le_disque_se_lit_en_part_occupee():
+    """Prometheus donne l'espace LIBRE : la prévision porte sur l'occupé."""
+    expression = FORECAST_METRICS["disk"][2]
+    assert "disk_free_bytes" in expression and expression.startswith("100 * (1 -")
+
+    # De 55 à 75 % en une heure : alerte (80 %) dans 15 min, incident (90 %) dans 45.
+    prom = FakePrometheus({expression: _droite(55.0, par_heure=20.0)})
+    disque = (await _service(prom).get_forecast("1h"))["disk"]
+
+    assert disque.verdict == "hausse"
+    assert disque.warning_threshold == 80.0
+    assert disque.minutes_to_warning == pytest.approx(15.0)
+    assert disque.minutes_to_critical == pytest.approx(45.0)
 
 
 async def test_sans_historique_chaque_ressource_dit_insuffisant():

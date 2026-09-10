@@ -129,6 +129,25 @@ FORECAST_METRICS: dict[str, tuple[str, str, str]] = {
         f"min_over_time(({HISTORY_METRICS['memory'][2]})[5m:15s])",
     ),
     "cpu": ("CPU load", "cpu_percent", HISTORY_METRICS["cpu"][2]),
+    # Toute la machine, et non le seul processus de l'API : Ollama, PostgreSQL
+    # et Keycloak tournent sur le même hôte. L'API peut être calme pendant que
+    # le modèle de l'assistant sature le processeur qu'elle partage.
+    "system_cpu": ("Host CPU load", "system_cpu_percent", "100 * system_cpu_usage"),
+    # Le volume où tourne l'API. La prévision canonique : un disque se remplit
+    # à peu près linéairement, et plein, il arrête tout — base comprise.
+    "disk": (
+        "Disk space used",
+        "disk_percent",
+        "100 * (1 - sum(disk_free_bytes) / sum(disk_total_bytes))",
+    ),
+    # Connexions actives sur la taille maximale du pool. Pas de plancher à
+    # prendre comme pour la heap : un pool qui se remplit ne redescend pas
+    # tout seul, c'est justement ce qu'on veut voir venir.
+    "db_pool": (
+        "Database connection pool in use",
+        "db_pool_percent",
+        "100 * sum(hikaricp_connections_active) / sum(hikaricp_connections_max)",
+    ),
 }
 
 # Points d'une régression : un par minute sur une heure. Bien plus que les
@@ -184,6 +203,13 @@ THRESHOLDS = {
     "latency_p95_ms":  {"warning": 1000.0, "critical": 3000.0},
     "error_rate_pct":  {"warning": 1.0,   "critical": 5.0},
     "db_pending":      {"warning": 1.0,   "critical": 5.0},
+    # Seuils des seules prévisions — aucune tuile ne les affiche encore. Choix
+    # d'exploitation proposés par défaut, à valider (plan prédiction, étape 5).
+    # La machine tolère une charge plus haute qu'un seul processus : 80 % du
+    # CPU hôte laisse encore de la marge à l'API, 70 % du sien non.
+    "system_cpu_percent": {"warning": 80.0, "critical": 95.0},
+    "disk_percent":       {"warning": 80.0, "critical": 90.0},
+    "db_pool_percent":    {"warning": 80.0, "critical": 95.0},
 }
 
 

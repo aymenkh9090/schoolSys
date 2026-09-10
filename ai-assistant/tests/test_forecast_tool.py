@@ -13,7 +13,8 @@ import pytest
 from app.models import ChatResponse, ResourceForecast
 from app.services.assistant import SYSTEM_PROMPT, AssistantService, borner_horizon
 from app.tools.definitions import TOOL_DEFINITIONS
-from app.tools.handlers import ToolHandlers, _duration
+from app.services.metrics import FORECAST_METRICS
+from app.tools.handlers import _FORECAST_LABELS, ToolHandlers, _duration
 
 
 def _prevision(**champs) -> ResourceForecast:
@@ -180,6 +181,11 @@ def test_les_durees_se_lisent_sans_division():
 # ─────────────────────────────────────────────────────────────────────────────
 # Branchement : déclaré, enregistré, annoncé dans le prompt
 # ─────────────────────────────────────────────────────────────────────────────
+
+def test_chaque_ressource_prevue_a_un_libelle_pour_le_modele():
+    """Sans libellé, le modèle lirait « db_pool » — et le recopierait tel quel."""
+    assert set(FORECAST_METRICS) == set(_FORECAST_LABELS)
+
 
 def test_chaque_outil_declare_a_son_handler_et_inversement():
     """

@@ -23,6 +23,7 @@
 | 2 — L'écran : la projection sur les tuiles | **fait** — pointillé et ligne d'échéance |
 | 3 — L'assistant : « quand la mémoire va-t-elle saturer ? » | **fait** — outil `get_resource_forecast` |
 | 4 — Le panneau : la prévision en grand, à côté de l'assistant | **fait** — `PrevisionPanel` |
+| 5 — Trois ressources de plus, et le panneau en tête de page | **fait** — seuils par défaut **à valider** |
 
 ### Ce qui existe déjà
 
@@ -360,6 +361,49 @@ Vérifié sur quatre scénarios (hausse, démo, incident, historique insuffisant
 en clair et en sombre, à 610 et 1300 px (Chromium headless) ; `tsc -b` sans
 erreur, 264 tests Python verts.
 
+### Étape 5 — Trois ressources de plus, et le panneau en tête de page
+
+Demandée après l'étape 4 : « d'autres métriques de prédiction », et l'assistant
+avec la prévision en haut de l'écran.
+
+**Le choix des ressources.** Seules se prévoient celles qui se *remplissent*
+face à un maximum — sans maximum, pas de seuil, donc pas d'échéance. Parmi ce
+que l'API expose réellement (vérifié sur `/actuator/prometheus` le 10/09/2026) :
+
+| Ressource | Expression | Retenue ? |
+|---|---|---|
+| CPU de la machine | `100 * system_cpu_usage` | oui — Ollama, PostgreSQL et Keycloak partagent l'hôte |
+| Disque | `100 * (1 - sum(disk_free_bytes) / sum(disk_total_bytes))` | oui — la prévision canonique : il se remplit linéairement, et plein il arrête tout |
+| Pool de connexions | `100 * sum(hikaricp_connections_active) / sum(hikaricp_connections_max)` | oui — la décision du § 7 est prise par défaut, voir ci-dessous |
+| Descripteurs de fichiers | `process_files_open_files / process_files_max_files` | non — 181 sur 1 048 576 : aucun seuil ne sera jamais à portée |
+| Threads | `jvm_threads_live_threads` | non — pas de maximum |
+| Données vivantes après GC | `jvm_gc_live_data_size_bytes / jvm_gc_max_data_size_bytes` | non — redit le plancher de la heap |
+
+**Seuils par défaut — décision d'exploitation à valider.** `THRESHOLDS` :
+CPU machine 80 / 95 %, disque 80 / 90 %, pool 80 / 95 % (l'exemple du § 7). La
+machine tolère plus qu'un seul processus : 80 % du CPU hôte laisse encore de la
+marge à l'API, 70 % du sien non. Aucune tuile ne les affiche : ils ne servent
+qu'à la prévision, et ne changent donc pas le bandeau d'état.
+
+**Réalisé.** Trois entrées dans `FORECAST_METRICS` ; libellés anglais pour le
+modèle (`_FORECAST_LABELS` — « whole server, including the AI model » pour ne
+pas confondre les deux CPU), description de l'outil et prompt système élargis.
+Le panneau passe à cinq lignes de détail ; pour les ressources sans tuile, la
+valeur affichée est le dernier point de la série. Chaque ressource a son
+conseil dans la recommandation (sauvegardes et images Docker pour le disque,
+transactions lentes pour le pool, Ollama pour la machine). La projection est
+bornée à 100 % comme elle l'était à 0. 3 tests de plus (267 verts) : ressources
+prévues, seuils présents, un libellé pour chacune.
+
+**Vérification réelle (10/09/2026)**, conteneur reconstruit : les cinq verdicts
+`stable` ; disque à 24 % avec R² 0,86 (il monte, lentement), pool constant à 0.
+Routage de l'assistant **non rejoué** avec `qwen2.5:7b` : la sortie de l'outil
+passe de deux lignes à cinq.
+
+**Position.** L'assistant et le panneau passent sous le bandeau d'état, avant
+les tuiles : l'écran répond d'abord à « où va-t-on ? », les tuiles détaillent
+le présent.
+
 ---
 
 ## 5. La règle à ne pas casser
@@ -391,6 +435,9 @@ ni une durée par défaut.
 | `ai-assistant/app/models.py`, `metrics.py` | 4 | `history` : la série régressée, horodatée |
 | `frontend/src/features/superadmin/monitoring/PrevisionPanel.tsx` | 4 | **nouveau** — le panneau |
 | `frontend/src/features/superadmin/monitoring/prevision.ts` | 4 | `prochainSeuil`, `recommandation` |
+| `ai-assistant/app/services/metrics.py` | 5 | CPU machine, disque, pool ; leurs seuils |
+| `ai-assistant/app/tools/definitions.py`, `handlers.py`, `services/assistant.py` | 5 | libellés, description, prompt |
+| `frontend/src/features/superadmin/monitoring/PrevisionPanel.tsx`, `MonitoringPage.tsx` | 5 | cinq ressources ; panneau en tête |
 
 ---
 
@@ -404,6 +451,7 @@ ni une durée par défaut.
   ne se consomment pas, et ne varient pas linéairement.
 - **Pas d'alerte envoyée** (mail, notification). La prévision s'affiche ; la
   brancher sur Alertmanager serait un chantier à part.
-- **Décision à prendre avant d'inclure le pool de connexions :** son seuil
-  d'occupation (par exemple alerte à 80 %, incident à 95 % de
-  `hikaricp_connections_max`). C'est un choix d'exploitation, pas de code.
+- **Seuils du pool, du disque et du CPU machine :** pris par défaut à
+  l'étape 5 (80 / 95, 80 / 90, 80 / 95 %) pour que la prévision existe. Ce
+  sont des choix d'exploitation : à confirmer, ou à corriger dans
+  `THRESHOLDS`, sans autre changement de code.
