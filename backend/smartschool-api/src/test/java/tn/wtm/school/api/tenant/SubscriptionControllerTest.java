@@ -12,6 +12,7 @@ import org.springframework.security.test.context.support.WithAnonymousUser;
 import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.web.servlet.MockMvc;
 import tn.wtm.school.common.exceptions.ResourceNotFoundException;
+import tn.wtm.school.api.support.SecuriteWebTestConfig;
 import tn.wtm.school.common.handler.GlobalExceptionHandler;
 import tn.wtm.school.tenant.dto.SubscriptionOverviewResponse;
 import tn.wtm.school.tenant.dto.SubscriptionResponse;

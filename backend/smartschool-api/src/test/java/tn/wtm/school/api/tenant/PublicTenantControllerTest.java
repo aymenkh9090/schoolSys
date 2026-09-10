@@ -7,6 +7,7 @@ import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.context.annotation.Import;
 import org.springframework.test.web.servlet.MockMvc;
 import tn.wtm.school.common.exceptions.ResourceNotFoundException;
+import tn.wtm.school.api.support.SecuriteWebTestConfig;
 import tn.wtm.school.common.handler.GlobalExceptionHandler;
 import tn.wtm.school.tenant.dto.PublicTenantResponse;
 import tn.wtm.school.tenant.enums.EtablissementType;

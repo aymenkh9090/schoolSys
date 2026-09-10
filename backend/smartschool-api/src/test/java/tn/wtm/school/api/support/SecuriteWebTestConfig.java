@@ -1,4 +1,4 @@
-package tn.wtm.school.api.tenant;
+package tn.wtm.school.api.support;
 
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Import;
