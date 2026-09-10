@@ -7,6 +7,7 @@ C'est ici que se joue la qualité perçue du produit.
 import inspect
 import json
 import logging
+import re
 import time
 
 from app.clients.ollama import OllamaClient
@@ -31,6 +32,14 @@ logger = logging.getLogger(__name__)
 #  - « en français » : le modèle raisonne sur des outils anglais mais s'adresse
 #    à un utilisateur francophone.
 #  - « 4 phrases maximum » : un 3B part en digression sans borne explicite.
+#  - « ne calcule jamais une durée » : avec une pente et une valeur sous les
+#    yeux, un modèle fait la division de lui-même — y compris quand l'outil
+#    vient de dire que la tendance n'est pas fiable.
+#  - « n'écris jamais prochaines heures » : observé avec qwen2.5:7b sur une
+#    prévision d'une heure, malgré l'interdit en anglais dans la sortie de
+#    l'outil. En français, avec l'expression exacte, dans le prompt système.
+#    « Ne rassure pas » vient de la même série : sans historique, le modèle
+#    concluait « pas de risque immédiat ».
 
 SYSTEM_PROMPT = """Tu es l'assistant technique de la plateforme SmartSchool.
 Tu aides le super administrateur à comprendre l'état technique de la plateforme
@@ -42,12 +51,42 @@ RÈGLES :
 - Ne décris JAMAIS l'outil que tu vas utiliser : appelle-le, puis donne le résultat.
 - Pour une question d'historique, de tendance ou d'évolution, utilise
   get_metric_history.
+- Pour une question « quand », « à ce rythme », « va-t-on saturer » ou toute
+  prévision sur la mémoire ou le CPU, utilise get_resource_forecast. Ne calcule
+  JAMAIS une durée toi-même.
+- Une prévision ne couvre que l'heure qui vient : n'écris jamais « prochaines
+  heures ». Si elle est impossible ou incertaine, ne rassure pas et n'alarme
+  pas : dis seulement qu'on ne peut pas prévoir.
 - Si la question porte sur un établissement précis (utilisateurs, élèves,
   classes, plannings générés), utilise get_school_metrics avec son nom.
 - Réponds en français, de façon concise : 4 phrases maximum.
 - Donne d'abord le constat chiffré, puis son interprétation.
 - Si quelque chose est anormal, propose une piste de diagnostic concrète.
 """
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Horizon de la prévision
+# ─────────────────────────────────────────────────────────────────────────────
+# La prévision ne regarde jamais plus loin qu'une heure. qwen2.5:7b écrit
+# pourtant « stable dans les prochaines heures » dans plus d'une réponse sur
+# trois — malgré l'interdit dans la sortie de l'outil ET dans le prompt système,
+# en français, avec l'expression exacte (5 sur 14, mesuré le 10/09/2026).
+# Une consigne ne suffit pas, le code tranche : ces formules sont ramenées à
+# l'horizon réellement calculé. Le modèle raconte ; il n'élargit pas.
+
+_HORIZON_ELARGI = re.compile(
+    r"\b(?:dans|pour|sur|au cours|durant|pendant)\s+(?:les|des)\s+"
+    r"(?:prochaines\s+heures|heures\s+(?:à\s+venir|qui\s+viennent))",
+    re.IGNORECASE,
+)
+_PROCHAINES_HEURES = re.compile(r"\bles\s+prochaines\s+heures", re.IGNORECASE)
+
+
+def borner_horizon(answer: str) -> str:
+    """« stable dans les prochaines heures » → « stable dans l'heure qui vient »."""
+    answer = _HORIZON_ELARGI.sub("dans l'heure qui vient", answer)
+    return _PROCHAINES_HEURES.sub("l'heure qui vient", answer)
 
 
 def _accepted_args(handler, raw_args: dict, name: str) -> dict:
@@ -224,7 +263,7 @@ class AssistantService:
         self._registry = handlers.as_registry()
 
     async def ask(self, question: str) -> ChatResponse:
-        return await self._loop.run(
+        response = await self._loop.run(
             question=question,
             system_prompt=SYSTEM_PROMPT,
             tool_definitions=TOOL_DEFINITIONS,
@@ -232,3 +271,8 @@ class AssistantService:
             no_tool_message=self.NO_TOOL_MESSAGE,
             exhausted_message=self.EXHAUSTED_MESSAGE,
         )
+        # Seulement quand la prévision a été consultée : ailleurs, « les
+        # prochaines heures » peut être une formule légitime du modèle.
+        if "get_resource_forecast" in response.tools_used:
+            response.answer = borner_horizon(response.answer)
+        return response

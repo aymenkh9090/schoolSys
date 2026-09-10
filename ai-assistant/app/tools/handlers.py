@@ -8,7 +8,9 @@ Chaque fonction renvoie une CHAÎNE COURTE ET DÉJÀ INTERPRÉTÉE, destinée à
 import logging
 import unicodedata
 
+from app.models import ResourceForecast
 from app.services.metrics import MetricsService
+from app.services.prevision import COUVERTURE_MIN, R2_MIN
 
 logger = logging.getLogger(__name__)
 
@@ -98,6 +100,132 @@ def _fmt(value: float | None, unit: str = "", digits: int = 1) -> str:
     if value is None:
         return "unavailable"
     return f"{value:.{digits}f}{unit}"
+
+
+# ── Prévision ───────────────────────────────────────────────────────────────
+
+# Libellés vus par le modèle. Pour la mémoire, le libellé dit ce qui a été
+# régressé : le plancher de la heap, pas la heap brute. Sans cette précision, le
+# modèle attribuerait l'échéance au chiffre de la tuile — qui, lui, touche le
+# seuil plus tôt, à chaque pic entre deux passages du ramasse-miettes.
+_FORECAST_LABELS = {
+    "memory": "Memory (heap remaining in use after garbage collection)",
+    "cpu": "CPU load",
+}
+
+
+def _duration(minutes: float) -> str:
+    """
+    « 45 minutes », « 2 h 10 min ». Arrondi à cinq minutes au-delà d'une heure
+    et demie : la pente est calculée sur une heure de points, elle ne vaut pas
+    la minute près à deux heures de distance.
+
+    Jamais « 130 minutes » : le modèle le recopie tel quel, et l'utilisateur
+    fait la division.
+    """
+    arrondi = round(minutes)
+    if arrondi < 90:
+        return f"{arrondi} minutes"
+    heures, reste = divmod(round(minutes / 5) * 5, 60)
+    return f"{heures} hours" if reste == 0 else f"{heures} h {reste:02d} min"
+
+
+def _in(minutes: float) -> str:
+    return "in less than a minute" if minutes < 1 else f"in about {_duration(minutes)}"
+
+
+def _next(minutes: float | None) -> str:
+    """
+    « the next hour » plutôt que « the next 60 minutes » : le modèle traduisait
+    « 60 minutes » en « les prochaines heures ». Une heure se dit une heure.
+    """
+    if minutes is None or 55 <= minutes <= 65:
+        return "the next hour"
+    return f"the next {_duration(minutes)}"
+
+
+def _describe_forecast(label: str, f: ResourceForecast) -> str:
+    """
+    Une prévision, en une phrase que le modèle n'a plus qu'à traduire.
+
+    Le verdict est en MAJUSCULES en tête, comme la tendance de
+    get_metric_history : c'est ce que le modèle reprend en premier. Pour les
+    verdicts sans échéance, l'interdit est écrit en toutes lettres — un modèle
+    qui lit « no reliable trend » et une pente produit volontiers une durée de
+    lui-même, par une division qu'on vient justement de refuser de faire.
+    """
+    u = f.unit
+    alerte = f"{f.warning_threshold:.0f}{u}"
+    incident = f"{f.critical_threshold:.0f}{u}"
+    horizon = _next(f.horizon_minutes)
+    r2 = f"R² {f.r2:.2f}" if f.r2 is not None else ""
+
+    if f.verdict == "insuffisant":
+        # Ce qui manque est dit en clair : sans cela, le modèle invente un
+        # nombre de mesures requis (« il faudrait au moins 30 mesures », observé),
+        # puis conclut qu'il n'y a « pas de risque immédiat » — ce que rien ne dit.
+        return (
+            f"{label}: NOT ENOUGH HISTORY ({f.points} measurements over the last "
+            "hour, the application has probably restarted recently). No forecast "
+            f"is possible until at least {_duration(COUVERTURE_MIN * 60)} of "
+            "history has been collected. This does NOT mean there is no risk: "
+            "nothing is known yet. Do NOT give any time estimate."
+        )
+
+    if f.verdict == "incertain":
+        # « Within reach » était lu « pourrait être atteint à tout moment » :
+        # une alarme que la donnée ne porte pas davantage qu'une échéance.
+        return (
+            f"{label}: NO RELIABLE TREND ({r2}: the values fluctuate too much for "
+            "a straight line to explain them). It is not possible to say whether "
+            f"or when the warning threshold ({alerte}) will be reached. Do NOT "
+            "give any time estimate; say that the trend is uncertain."
+        )
+
+    if f.verdict == "stable":
+        if f.r2 is not None and f.r2 < R2_MIN:
+            # Stable par la pente haute : pas de tendance lisible, mais le seuil
+            # est hors d'atteinte quoi qu'il arrive. On ne donne pas la pente,
+            # qui ne veut rien dire ici.
+            return (
+                f"{label}: STABLE. No clear trend, and even at the worst plausible "
+                f"rate the warning threshold ({alerte}) cannot be reached within "
+                f"{horizon}."
+            )
+        return (
+            f"{label}: STABLE ({r2}). No threshold will be reached within "
+            f"{horizon} (warning at {alerte})."
+        )
+
+    if f.verdict == "baisse":
+        return (
+            f"{label}: FALLING at {f.slope_per_hour:.1f}{u} per hour ({r2}, reliable "
+            f"trend). No threshold will be reached within {horizon}."
+        )
+
+    # hausse
+    phrases = [f"{label}: RISING at +{f.slope_per_hour:.1f}{u} per hour ({r2}, reliable trend)."]
+    if f.minutes_to_warning == 0:
+        phrases.append(f"The warning threshold ({alerte}) is already exceeded.")
+    elif f.minutes_to_warning is not None:
+        # « Saturer » est le mot de l'utilisateur, pas celui de la donnée : le
+        # seuil d'alerte déclenche une alerte, la mémoire n'est pas pleine.
+        phrases.append(
+            f"At this rate the warning threshold ({alerte}) will be reached "
+            f"{_in(f.minutes_to_warning)} (an alert, not yet saturation)."
+        )
+    if f.minutes_to_critical == 0:
+        phrases.append(f"The critical threshold ({incident}) is already exceeded.")
+    elif f.minutes_to_critical is not None:
+        phrases.append(
+            f"The critical threshold ({incident}) will be reached "
+            f"{_in(f.minutes_to_critical)}."
+        )
+    else:
+        phrases.append(
+            f"The critical threshold ({incident}) will not be reached within {horizon}."
+        )
+    return " ".join(phrases)
 
 
 class ToolHandlers:
@@ -193,6 +321,35 @@ class ToolHandlers:
             )
         return line
 
+    async def get_resource_forecast(self) -> str:
+        """
+        Quand la mémoire et le CPU toucheront-ils leur seuil ?
+
+        La régression, le R² et le verdict sont calculés en Python
+        (services/prevision.py). Un modèle de cette taille ne sait ni ajuster
+        une droite ni juger un R² ; il sait reformuler « rising, warning in
+        about 45 minutes, R² 0.91 ».
+        """
+        forecasts = await self._metrics.get_forecast("1h")
+        if not forecasts:
+            return "Forecast unavailable (Prometheus may be down). Do NOT give any time estimate."
+
+        lines = [
+            _describe_forecast(_FORECAST_LABELS.get(key, key), forecast)
+            for key, forecast in forecasts.items()
+        ]
+        # Borne rappelée au modèle, en termes qu'il ne peut pas contourner.
+        # « Never extrapolate beyond the time span » ne suffisait pas : qwen2.5:7b
+        # écrivait quand même « pas de problème dans les prochaines heures » sur
+        # une prévision d'une heure. Nommer les formules interdites a suffi.
+        lines.append(
+            "Method: linear regression over the last hour of data, projected at "
+            "most one hour ahead. This forecast says NOTHING about later: never "
+            "write 'in the coming hours', 'today' or 'no risk' — say 'within the "
+            "next hour'."
+        )
+        return "\n".join(lines)
+
     async def get_database_status(self) -> str:
         s = await self._metrics.get_snapshot("5m")
         pending = s.db_connections_pending
@@ -282,6 +439,7 @@ class ToolHandlers:
             "get_http_performance": self.get_http_performance,
             "get_slowest_endpoints": self.get_slowest_endpoints,
             "get_metric_history": self.get_metric_history,
+            "get_resource_forecast": self.get_resource_forecast,
             "get_database_status": self.get_database_status,
             "list_schools": self.list_schools,
             "get_school_metrics": self.get_school_metrics,

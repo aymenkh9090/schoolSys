@@ -21,7 +21,7 @@
 |---|---|
 | 1 — Le calcul : régression, R², temps avant seuil | **fait** — route `/api/monitoring/forecast` |
 | 2 — L'écran : la projection sur les tuiles | **fait** — pointillé et ligne d'échéance |
-| 3 — L'assistant : « quand la mémoire va-t-elle saturer ? » | à faire |
+| 3 — L'assistant : « quand la mémoire va-t-elle saturer ? » | **fait** — outil `get_resource_forecast` |
 
 ### Ce qui existe déjà
 
@@ -282,6 +282,46 @@ le projet n'a pas de lanceur de tests.
 - Une ligne dans `SYSTEM_PROMPT` (`app/services/assistant.py`) pour orienter
   les questions « quand », « à ce rythme », « va-t-on saturer » vers cet outil
   plutôt que vers `get_metric_history`.
+
+**Réalisé.** `get_resource_forecast` ne prend **aucun paramètre** : mémoire et
+CPU tiennent en deux lignes, la fenêtre est fixée à 1 h, et un petit modèle
+choisit d'autant plus mal qu'il a d'options. Chaque verdict devient une phrase
+anglaise déjà interprétée (`_describe_forecast`, `handlers.py`), verdict en
+majuscules en tête. Les descriptions de `get_memory_usage` et
+`get_metric_history` renvoient les prévisions vers le nouvel outil. Un test
+vérifie désormais que chaque outil déclaré a son handler, et inversement.
+
+**Essai réel avec `qwen2.5:7b` (10/09/2026).** Métriques simulées par
+scénario (hausse, démo, incertain, insuffisant), vrai modèle via Ollama,
+7 questions dont 2 témoins, rejouées six fois au fil des corrections.
+**Routage : 42/42** — les
+questions « quand » vont à la prévision, « comment a évolué » à
+`get_metric_history`, « combien en ce moment » à `get_memory_usage`. La
+narration, elle, a exigé quatre corrections, chacune fixée par un test :
+
+| Défaut observé | Correctif |
+|---|---|
+| « il faudrait au moins 30 mesures » — nombre inventé (`insuffisant`) | la sortie dit ce qui manque : « at least 30 minutes of history » (tiré de `COUVERTURE_MIN`) |
+| « pas de risque immédiat » sans aucun historique | « This does NOT mean there is no risk » + « ne rassure pas » dans le prompt |
+| « pourrait être atteint à tout moment » (`incertain`) | « not possible to say whether or when » au lieu de « within reach » |
+| « la mémoire va saturer dans 45 min » pour le seuil d'**alerte** | « (an alert, not yet saturation) » |
+| « stable **dans les prochaines heures** » sur une prévision d'une heure | voir ci-dessous |
+
+Le dernier a résisté à tout : interdit dans la sortie de l'outil, puis dans le
+prompt système en français avec l'expression exacte — encore 5 réponses sur 14.
+**Le code tranche** : quand `get_resource_forecast` a été consulté,
+`borner_horizon` (`assistant.py`) ramène « dans / pour / au cours des
+prochaines heures », « les heures à venir » à « dans l'heure qui vient ». Le
+modèle raconte ; il n'élargit pas l'horizon. Les autres réponses du modèle ne
+sont pas touchées.
+
+**À savoir pour la soutenance.** L'échéance mémoire porte sur le *plancher* de
+la heap, pas sur la heap brute de la tuile. Sur une fuite, la heap brute
+touche 75 % à chaque pic *avant* que le plancher n'y arrive : la tuile peut
+passer en alerte avant l'heure annoncée. Ce n'est pas une contradiction — le
+plancher à 75 % signifie que le ramasse-miettes ne libère plus assez, ce qu'un
+pic seul ne dit pas — mais la question viendra. Le libellé vu par le modèle le
+précise (« heap remaining in use after garbage collection »).
 
 ---
 
