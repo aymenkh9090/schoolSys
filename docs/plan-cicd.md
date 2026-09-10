@@ -26,7 +26,7 @@
 | 1 — Publier les trois images sur Docker Hub | **faite** — job `docker` sous garde de secret, étiquettes `latest` + `sha-<commit>`, `image:` sur les trois services du compose |
 | 2 — Le profil `demo` atteint les conteneurs, et devient pilotable | **faite** — `SPRING_PROFILES_ACTIVE` sur le service `backend`, `demo` par défaut, désarmable par une valeur vide |
 | 3 — Sauvegarder les deux bases, ensemble | **faite** — `scripts/sauvegarde.sh` et `scripts/restauration.sh`, un répertoire horodaté par paire ; dump vérifié restaurable |
-| 4 — Figer le jeu de référence | à faire |
+| 4 — Figer le jeu de référence | **faite** — `docs/sql/jeu-reference/` : `app.sql` + `keycloak.sql` versionnés, restaurables par `scripts/restauration.sh docs/sql/jeu-reference` |
 | 5 — Le déploiement local, sur runner self-hosted | à faire |
 
 ### Ce qui existe déjà
@@ -248,7 +248,7 @@ vérifie que `SPRING_PROFILES_ACTIVE` est désarmé dans le `.env`, et donne la
 commande sinon. Remettre en place des données auxquelles on tient, puis laisser
 le seeder les purger au redémarrage suivant, serait une farce.
 
-### Étape 4 — Figer le jeu de référence
+### Étape 4 — Figer le jeu de référence — **faite**
 
 Une fois la base semée et vérifiée, le couple de dumps est figé dans
 `docs/sql/`, à côté de `rattrapage-volumes-t1.sql`. C'est le **jeu de
@@ -262,6 +262,34 @@ rien ne s'oppose à les versionner.
 
 Bénéfice qui dépasse le déploiement : le jour de la soutenance, le jeu montré
 ne dépend plus de l'exécution correcte d'un runner sur une base inconnue.
+
+**Livrée.** Un **sous-répertoire** `docs/sql/jeu-reference/` plutôt que deux
+fichiers en vrac dans `docs/sql/` : `scripts/restauration.sh` attend un
+répertoire qui contient `app.sql` et `keycloak.sql`, exactement la forme d'un
+`sauvegardes/<horodatage>/`. La restauration du jeu de référence est donc le
+script existant sans un octet de code en plus :
+
+```bash
+scripts/restauration.sh docs/sql/jeu-reference
+```
+
+Le couple a été pris le 2026-09-10 (commit `99f6e3e`) : 785 élèves, 26 classes,
+88 enseignants, 530 affectations sur les deux collèges, et le realm `smartschool`
+avec ses six rôles, ses deux clients et les groupes liés aux
+`tenant.keycloak_group_id`. `LISEZMOI.md` décrit le contenu chiffré, la commande
+de restauration et la procédure de regénération quand le schéma bouge.
+
+**Deux points notés en figeant :**
+
+- **Le dump porte six emplois du temps de test** (`planning_generated_timetable`,
+  2928 séances). Conservés à dessein — un système déjà rempli se montre mieux
+  qu'une base « prête à générer ». Un `--reinitialiser-demo` les enlève pour qui
+  veut l'état vierge.
+- **Le secret du client est dans le dump, et documenté en clair** dans
+  `LISEZMOI.md`. Il doit atterrir dans `KC_CLIENT_SECRET` du `.env` de la
+  machine — le dump Keycloak ne s'auto-suffit pas, `application.yml` lit le
+  secret depuis l'environnement. Pour une démonstration, ce n'en est pas un
+  (§ 6).
 
 ### Étape 5 — Le déploiement local, sur runner self-hosted
 
@@ -311,8 +339,8 @@ recrée des conteneurs, jamais après.
 | CD | `.github/workflows/deploy.yml` (à créer) |
 | Pile | `docker-compose.yml` (services `backend`, `frontend`, `ai-assistant`) |
 | Configuration | `.env.example` |
-| Sauvegarde | `scripts/sauvegarde.sh`, `scripts/restauration.sh` (à créer) |
-| Jeu de référence | `docs/sql/` |
+| Sauvegarde | `scripts/sauvegarde.sh`, `scripts/restauration.sh` |
+| Jeu de référence | `docs/sql/jeu-reference/` (`app.sql`, `keycloak.sql`, `LISEZMOI.md`) |
 | Seeder concerné | `smartschool-api/.../api/demo/DemoDataRunner.java` |
 | Documentation | `README.md` § 4 bis |
 

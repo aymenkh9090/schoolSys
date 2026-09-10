@@ -66,6 +66,18 @@ les assistants sont indisponibles.
 > Automatiser cette étape demande d'importer le realm au démarrage
 > (`--import-realm`) : c'est le prérequis d'un déploiement continu, pas encore
 > fait.
+>
+> **Raccourci : restaurer le jeu de référence.** `docs/sql/jeu-reference/`
+> contient un dump du realm déjà configuré (clients, rôles, groupes) et des deux
+> collèges de démonstration. Une fois l'infra levée :
+>
+> ```bash
+> scripts/restauration.sh docs/sql/jeu-reference
+> ```
+>
+> puis recopier le `KC_CLIENT_SECRET` indiqué dans
+> `docs/sql/jeu-reference/LISEZMOI.md` vers le `.env`. Le § 2 ci-dessous n'est
+> alors plus à faire à la main — il ne sert qu'à repartir d'un realm vierge.
 
 > **Le conteneur `ai-assistant` sert le chat, à une condition.** Ollama écoute
 > par défaut sur le seul `127.0.0.1` de l'hôte, hors de portée d'un conteneur :
