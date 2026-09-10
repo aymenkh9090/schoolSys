@@ -24,6 +24,7 @@ import AssistantChat from './AssistantChat'
 // courbe sans échelle de temps ne veut rien dire.
 const TENDANCE_FENETRE = '1h' as const
 const TENDANCE_LIBELLE = '1 h'
+const TENDANCE_MINUTES = 60
 
 const GRAFANA_URL = import.meta.env.VITE_GRAFANA_URL ?? 'http://localhost:3001'
 // Dashboard provisionné par fichier (monitoring/dashboards/jvm-micrometer.json),
@@ -46,6 +47,16 @@ export default function MonitoringPage() {
   const { data: tendances } = useQuery({
     queryKey: ['ai', 'trends', TENDANCE_FENETRE],
     queryFn: () => aiAssistantApi.getTrends(TENDANCE_FENETRE),
+    refetchInterval: 120_000,
+  })
+
+  // La prévision suit le rythme de la tendance, pour la même raison : une pente
+  // calculée sur une heure ne change pas d'un quart de minute. Même fenêtre
+  // aussi, pour que le pointillé prolonge la courbe qu'il continue. Son échec
+  // n'empêche rien : les tuiles s'affichent sans ligne d'échéance.
+  const { data: previsions } = useQuery({
+    queryKey: ['ai', 'forecast', TENDANCE_FENETRE],
+    queryFn: () => aiAssistantApi.getForecast(TENDANCE_FENETRE),
     refetchInterval: 120_000,
   })
 
@@ -99,6 +110,11 @@ export default function MonitoringPage() {
                 label="Mémoire (heap)"
                 tendance={tendances?.trends.memory}
                 periode={TENDANCE_LIBELLE}
+                periodeMinutes={TENDANCE_MINUTES}
+                prevision={previsions?.forecasts.memory}
+                // La heap brute est une dent de scie que le ramasse-miettes
+                // redescend sans cesse : la régression porte sur son plancher.
+                serieRegressee="le plancher de la heap (minimum sur 5 min, après ramasse-miettes)"
                 valeur={data.heap_percent}
                 unite=" %"
                 icon={MemoryStick}
@@ -114,6 +130,9 @@ export default function MonitoringPage() {
                 label="CPU"
                 tendance={tendances?.trends.cpu}
                 periode={TENDANCE_LIBELLE}
+                periodeMinutes={TENDANCE_MINUTES}
+                prevision={previsions?.forecasts.cpu}
+                serieRegressee="la charge CPU"
                 valeur={data.cpu_percent}
                 unite=" %"
                 icon={Cpu}

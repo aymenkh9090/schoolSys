@@ -20,7 +20,7 @@
 | Étape | État |
 |---|---|
 | 1 — Le calcul : régression, R², temps avant seuil | **fait** — route `/api/monitoring/forecast` |
-| 2 — L'écran : la projection sur les tuiles | à faire |
+| 2 — L'écran : la projection sur les tuiles | **fait** — pointillé et ligne d'échéance |
 | 3 — L'assistant : « quand la mémoire va-t-elle saturer ? » | à faire |
 
 ### Ce qui existe déjà
@@ -231,6 +231,45 @@ fenêtre, depuis le conteneur.
   réponse), ou le faire partir de la valeur de la droite. (2) `current` et
   `at_horizon` sont des valeurs *de la droite* : sur un CPU à 0,1 % qui
   décroît, elles descendent sous 0 (−0,30 % mesuré). Borner le tracé à 0.
+
+**Réalisé.** `frontend/.../monitoring/prevision.ts` met des mots sur le verdict
+— aucun calcul de tendance côté écran. `Sparkline` prolonge la courbe en
+pointillé, `KpiCard` pose la ligne d'échéance sous la valeur, `MonitoringPage`
+interroge `/forecast` toutes les 2 min, sur la même fenêtre que `/trends`.
+Décisions prises :
+
+- **Même échelle de temps pour le passé et la projection.** Une heure
+  d'historique et une heure de projection prennent chacune la moitié de la
+  vignette : comprimer la projection dans un coin la rendrait plus raide
+  qu'elle n'est, et c'est sa pente qu'on lit. L'échelle verticale inclut
+  l'arrivée du pointillé, pour qu'une hausse ne sorte pas du cadre.
+- **Le pointillé reporte une variation, pas une valeur.** Il part du dernier
+  point tracé et monte de `at_horizon − current` : pas de saut au raccord entre
+  heap brute et plancher, et la pente — ce qu'on prédit — reste exacte. Arrivée
+  bornée à 0 (piège 2).
+- **Pas de pointillé sous R² 0,5, même quand le verdict est `stable`.** Changé
+  côté Python : `at_horizon` n'est rendu que si la droite explique la série, et
+  sa présence est ce qui autorise le tracé. Sans cela, le `stable` obtenu par la
+  pente haute aurait dessiné la pente d'une droite refusée. Un test le fixe.
+- **La couleur seulement quand un seuil est annoncé.** Ligne et pointillé en
+  ambre pour « Alerte dans ~45 min », en rouge pour « Incident dans ~40 min » ;
+  « Stable », « En baisse », « Tendance incertaine » restent en gris, comme
+  tout ce qui va bien sur cet écran. Une icône de sens accompagne toujours le
+  mot.
+- **Durées arrondies à 5 min au-delà d'une heure**, avec un tilde, et des
+  espaces insécables pour qu'une tuile étroite ne coupe pas « 47 | min ».
+- **L'infobulle de la ligne dit ce qui a été régressé** (« le plancher de la
+  heap… », nombre de points, R²), pour qui compare la prévision au chiffre
+  au-dessus.
+
+Libellés selon le verdict : `hausse` → « Alerte dans ~X [· incident ~Y] »,
+« Incident dans ~Y » si l'alerte est déjà franchie ; `stable` → « Stable sur
+1 h » ; `baisse` → « En baisse sur 1 h » ; `incertain` → « Tendance
+incertaine » ; `insuffisant` → « Historique insuffisant pour prévoir ».
+
+Vérifié sur huit scénarios rendus en clair et en sombre (Chromium headless, à
+1280 et 1024 px) ; `tsc -b` sans erreur. Pas de test automatisé côté frontend :
+le projet n'a pas de lanceur de tests.
 
 ### Étape 3 — L'assistant : « quand la mémoire va-t-elle saturer ? »
 

@@ -69,8 +69,12 @@ class Prevision:
     r2: float | None = None
     # Unité de la série par heure.
     pente_par_heure: float | None = None
-    # Valeur de la droite au dernier point, et au bout de l'horizon.
+    # Valeur de la droite au dernier point.
     valeur_actuelle: float | None = None
+    # Valeur de la droite au bout de l'horizon — seulement si la droite explique
+    # la série (R² ≥ R2_MIN). C'est elle que l'écran prolonge en pointillé :
+    # sous ce seuil, tracer sa pente dessinerait une tendance que le verdict
+    # vient justement de refuser.
     valeur_horizon: float | None = None
     horizon_min: float | None = None
     # 0 = seuil déjà franchi ; None = pas atteint avant l'horizon.
@@ -153,7 +157,6 @@ def prevoir(
         r2=aj.r2,
         pente_par_heure=aj.pente * 3600,
         valeur_actuelle=actuelle,
-        valeur_horizon=aj.valeur(maintenant + horizon_s),
         horizon_min=horizon_s / 60,
     )
 
@@ -168,6 +171,8 @@ def prevoir(
         if actuelle + pente_haute * horizon_s < seuils["warning"]:
             return Prevision("stable", **chiffres)
         return Prevision("incertain", **chiffres)
+
+    chiffres["valeur_horizon"] = aj.valeur(maintenant + horizon_s)
 
     if aj.pente < 0:
         return Prevision("baisse", **chiffres)

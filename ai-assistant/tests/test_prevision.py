@@ -166,6 +166,21 @@ def test_une_dent_de_scie_loin_du_seuil_est_stable_malgre_un_r2_nul():
     assert p.minutes_avant_alerte is None
 
 
+def test_une_droite_qui_n_explique_rien_n_est_jamais_projetee():
+    """
+    L'écran prolonge la courbe par `valeur_horizon`. Sous R² 0,5, la pente est
+    celle d'une droite que le verdict vient de refuser : la tracer dessinerait
+    une tendance qui n'existe pas — même quand le verdict dit « stable ».
+    """
+    stable = prevoir(_serie([2.0, 8.0] * 30 + [2.0]), SEUILS, attendus=61)
+    incertain = prevoir(_serie([65.0, 80.0] * 30 + [65.0]), SEUILS, attendus=61)
+    hausse = prevoir(_droite(40.0, par_heure=20.0), SEUILS, attendus=61)
+
+    assert stable.valeur_horizon is None
+    assert incertain.valeur_horizon is None
+    assert hausse.valeur_horizon == pytest.approx(80.0)
+
+
 def test_un_seuil_deja_franchi_compte_zero_minute():
     # 70 % → 80 % en une heure : l'alerte est derrière, l'incident pile à l'horizon.
     p = prevoir(_droite(70.0, par_heure=10.0), SEUILS, attendus=61)

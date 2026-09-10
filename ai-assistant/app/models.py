@@ -106,7 +106,9 @@ class ResourceForecast(BaseModel):
     # Part de la variation expliquée par la droite, de 0 (bruit) à 1 (droite).
     r2: float | None = None
     slope_per_hour: float | None = None
-    # Valeur de la droite maintenant, puis au bout de l'horizon.
+    # Valeur de la droite maintenant, puis au bout de l'horizon. `at_horizon`
+    # n'est rendu que si la droite explique la série (R² ≥ 0,5) : sa présence
+    # est ce qui autorise l'écran à prolonger la courbe en pointillé.
     current: float | None = None
     at_horizon: float | None = None
     # La durée observée : on ne projette jamais plus loin qu'on a regardé.
