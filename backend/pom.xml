@@ -50,7 +50,10 @@
          ligne à ligne reviendrait à réécrire le seed dans l'assertion. Leur
          résultat, lui, EST vérifié bout en bout par VerificationJeuDeDonneesIT.
          On les sort donc de la mesure de couverture — ils restent analysés pour
-         tout le reste (bugs, vulnérabilités, duplication). -->
+         tout le reste (bugs, vulnérabilités, duplication).
+         Ces exclusions et celles de sonar.exclusions sont reprises dans le
+         rapport agrégé (coverage-report/pom.xml), sur lequel la CI vérifie le
+         seuil : les deux listes doivent rester identiques. -->
     <sonar.coverage.exclusions>**/api/demo/DemoDataRunner.java,**/api/demo/NomsTunisiens.java</sonar.coverage.exclusions>
 
     <!-- ── Deux règles écartées, et seulement là où c'est démontré ────────
