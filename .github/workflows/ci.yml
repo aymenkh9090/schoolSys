@@ -43,13 +43,14 @@ jobs:
         run: mvn -B verify
 
       - name: Résumé de la couverture
+        id: couverture
         if: always()
         working-directory: backend
         run: |
           rapport=coverage-report/target/site/jacoco-aggregate/jacoco.xml
           if [ ! -f "$rapport" ]; then echo "Pas de rapport agrégé."; exit 0; fi
           python3 - "$rapport" <<'PY' >> "$GITHUB_STEP_SUMMARY"
-          import sys, xml.etree.ElementTree as ET
+          import os, sys, xml.etree.ElementTree as ET
           racine = ET.parse(sys.argv[1]).getroot()
           compteurs = {c.get('type'): (int(c.get('missed')), int(c.get('covered')))
                        for c in racine.findall('counter')}
@@ -62,6 +63,9 @@ jobs:
                   total = manques + couverts
                   taux = couverts / total * 100 if total else 0
                   print(f"| {cle} | **{taux:.1f} %** | {couverts} / {total} |")
+                  if cle == 'LINE':
+                      with open(os.environ['GITHUB_OUTPUT'], 'a') as sortie:
+                          sortie.write(f"lignes={taux:.1f}\n")
           PY
 
       - name: Publier les rapports JaCoCo
@@ -85,7 +89,30 @@ jobs:
         # La version du plugin est figée dans le pom parent : sans cela Maven
         # résoudrait LATEST, et le pipeline changerait de comportement sans
         # qu'une seule ligne du dépôt ait bougé.
-        run: mvn -B sonar:sonar
+        # qualitygate.wait : le scanner attend le verdict de la Quality Gate et
+        # échoue si elle est rouge. Sans lui, l'analyse est envoyée et l'étape
+        # reste verte quel que soit le résultat.
+        run: mvn -B sonar:sonar -Dsonar.qualitygate.wait=true
+
+      # Seuil en cliquet : on le relève par paliers à mesure que des tests
+      # s'ajoutent, jusqu'à 70 %, et on ne le baisse jamais (65,3 % mesurés le
+      # 13/09/2026, d'où un premier cran à 63 %). Il porte sur les
+      # lignes du rapport agrégé, dont le périmètre est celui de Sonar (voir
+      # coverage-report/pom.xml) : le chiffre comparé est celui que SonarCloud
+      # affiche. Étape à part, placée en dernier, pour que l'analyse Sonar
+      # tourne même quand le seuil n'est pas atteint.
+      - name: Seuil de couverture
+        if: ${{ !cancelled() && steps.couverture.outputs.lignes != '' }}
+        env:
+          SEUIL_LIGNES: '63'
+          LIGNES: ${{ steps.couverture.outputs.lignes }}
+        run: |
+          if python3 -c "import os, sys; sys.exit(float(os.environ['LIGNES']) < float(os.environ['SEUIL_LIGNES']))"; then
+            echo "Couverture des lignes : $LIGNES % (seuil $SEUIL_LIGNES %)." | tee -a "$GITHUB_STEP_SUMMARY"
+          else
+            echo "::error::Couverture des lignes à $LIGNES %, sous le seuil de $SEUIL_LIGNES %."
+            exit 1
+          fi
 
   # ── Front ─────────────────────────────────────────────────────────────────
   frontend:

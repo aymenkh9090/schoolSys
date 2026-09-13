@@ -96,6 +96,19 @@
                         <configuration>
                             <title>SchoolSys — couverture agrégée</title>
                             <outputDirectory>${project.build.directory}/site/jacoco-aggregate</outputDirectory>
+                            <!-- Même périmètre que Sonar (sonar.exclusions et
+                                 sonar.coverage.exclusions du pom parent) : le
+                                 jeu de démonstration, les DTO et le code généré
+                                 par MapStruct. Sans cela, le seuil vérifié par
+                                 la CI porterait sur un autre chiffre que celui
+                                 affiché par SonarCloud. Toute exclusion ajoutée
+                                 d'un côté doit l'être de l'autre. -->
+                            <excludes>
+                                <exclude>**/api/demo/DemoDataRunner*</exclude>
+                                <exclude>**/api/demo/NomsTunisiens*</exclude>
+                                <exclude>**/dto/**</exclude>
+                                <exclude>**/*MapperImpl.class</exclude>
+                            </excludes>
                         </configuration>
                     </execution>
                 </executions>
