@@ -94,9 +94,9 @@ jobs:
         # reste verte quel que soit le résultat.
         run: mvn -B sonar:sonar -Dsonar.qualitygate.wait=true
 
-      # Seuil en cliquet : on le relève par paliers à mesure que des tests
-      # s'ajoutent, jusqu'à 70 %, et on ne le baisse jamais (65,3 % mesurés le
-      # 13/09/2026, d'où un premier cran à 63 %). Il porte sur les
+      # Seuil en cliquet : relevé quand la couverture monte, jamais baissé.
+      # 70 %, l'objectif fixé, pour 73,1 % mesurés le 13/09/2026 (58 % avant
+      # l'ajout des tests des services d'organisation). Il porte sur les
       # lignes du rapport agrégé, dont le périmètre est celui de Sonar (voir
       # coverage-report/pom.xml) : le chiffre comparé est celui que SonarCloud
       # affiche. Étape à part, placée en dernier, pour que l'analyse Sonar
@@ -104,7 +104,7 @@ jobs:
       - name: Seuil de couverture
         if: ${{ !cancelled() && steps.couverture.outputs.lignes != '' }}
         env:
-          SEUIL_LIGNES: '63'
+          SEUIL_LIGNES: '70'
           LIGNES: ${{ steps.couverture.outputs.lignes }}
         run: |
           if python3 -c "import os, sys; sys.exit(float(os.environ['LIGNES']) < float(os.environ['SEUIL_LIGNES']))"; then
