@@ -75,9 +75,11 @@ table venant de la seule constante `TABLES_A_PURGER`. `new_coverage` 83,3 %,
 
 **La couverture a désormais un plancher, et la gate bloque.** Depuis le
 13/09/2026, l'étape `Seuil de couverture` du job `backend` fait échouer la CI
-sous `SEUIL_LIGNES` (lignes du rapport JaCoCo agrégé). C'est un cliquet : 63 %
-pour 65,3 % mesurés, relevé par paliers jusqu'à l'objectif de 70 % (environ 360
-lignes à couvrir), jamais baissé. Le rapport agrégé exclut désormais ce que Sonar
+sous `SEUIL_LIGNES` (lignes du rapport JaCoCo agrégé). C'est un cliquet : 58 %
+pour 60,1 % mesurés par la CI sur `main`, relevé par paliers jusqu'à l'objectif
+de 70 % (environ 740 lignes à couvrir), jamais baissé. La branche
+`fix-poids-contraintes-personnalisees` porte à elle seule la mesure à 65,3 % :
+premier palier à 63 % une fois fusionnée. Le rapport agrégé exclut désormais ce que Sonar
 exclut (démo, DTO, `*MapperImpl`), si bien que les deux outils affichent le même
 chiffre. Côté Sonar, `-Dsonar.qualitygate.wait=true` fait échouer l'analyse
 quand la gate « Sonar way » (80 % sur le code nouveau) est rouge. Avant, elle
